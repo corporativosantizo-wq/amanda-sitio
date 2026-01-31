@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Outfit } from 'next/font/google'
 import './globals.css'
+import LayoutWrapper from '@/components/LayoutWrapper'
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -27,7 +28,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className={`${inter.variable} ${outfit.variable}`}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans antialiased">
+        <LayoutWrapper>
+          {children}
+        </LayoutWrapper>
+      </body>
     </html>
   )
 }

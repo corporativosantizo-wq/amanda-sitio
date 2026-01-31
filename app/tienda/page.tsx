@@ -1,0 +1,37 @@
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+
+// Componente del cliente para los filtros
+import TiendaClient from './TiendaClient'
+
+export default async function TiendaPage() {
+  const supabase = await createClient()
+  
+  // Obtener productos activos
+  const { data: productos, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      category:categories(name, slug)
+    `)
+    .eq('status', 'active')
+    .order('is_featured', { ascending: false })
+  
+  // Obtener categorías de productos
+  const { data: categorias } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('type', 'product')
+    .order('name')
+
+  if (error) {
+    console.error('Error fetching products:', error)
+  }
+
+  return (
+    <TiendaClient 
+      productos={productos || []} 
+      categorias={categorias || []} 
+    />
+  )
+}

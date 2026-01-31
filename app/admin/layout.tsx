@@ -1,0 +1,112 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const pathname = usePathname()
+
+  const navigation = [
+    {
+      name: 'Dashboard',
+      href: '/admin',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Posts',
+      href: '/admin/posts',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Productos',
+      href: '/admin/productos',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Mensajes',
+      href: '/admin/mensajes',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
+  ]
+
+  const isActive = (href: string) => {
+    if (href === '/admin') {
+      return pathname === '/admin'
+    }
+    return pathname.startsWith(href)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Sidebar */}
+      <aside className="fixed inset-y-0 left-0 w-64 bg-navy-dark">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-6 py-5 border-b border-navy-light">
+          <div className="w-10 h-10 bg-cyan rounded-lg flex items-center justify-center">
+            <span className="text-navy-dark font-bold text-lg">AS</span>
+          </div>
+          <div>
+            <div className="text-white font-semibold">Amanda Santizo</div>
+            <div className="text-cyan text-xs">Panel Admin</div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="px-4 py-6 space-y-2">
+          {navigation.map((item) => (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                isActive(item.href)
+                  ? 'bg-cyan text-navy-dark font-semibold'
+                  : 'text-slate-light hover:bg-navy-light hover:text-white'
+              }`}
+            >
+              {item.icon}
+              <span>{item.name}</span>
+            </Link>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-navy-light">
+          <Link
+            href="/"
+            className="flex items-center gap-3 px-4 py-3 text-slate-light hover:text-cyan transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Volver al sitio</span>
+          </Link>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="ml-64 min-h-screen">
+        {children}
+      </main>
+    </div>
+  )
+}
