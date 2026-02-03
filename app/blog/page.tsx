@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-// Force redeploy - Feb 3
+export const dynamic = 'force-dynamic'
 export default async function BlogPage() {
   const supabase = await createClient()
   
