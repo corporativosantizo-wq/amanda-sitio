@@ -22,7 +22,9 @@ export default async function BlogPage() {
     .order('name')
 
   if (error) {
-    console.error('Error fetching posts:', error)
+  console.error('Error fetching posts:', error)
+  return <div className="p-10 text-red-500">Error: {error.message}</div>
+}
   }
 
   // Formatear fecha
