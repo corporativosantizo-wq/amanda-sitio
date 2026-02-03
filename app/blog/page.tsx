@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-
+// Force redeploy - Feb 3
+export default async function BlogPage() {
 export default async function BlogPage() {
   const supabase = await createClient()
   
