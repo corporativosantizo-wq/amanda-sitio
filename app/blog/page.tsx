@@ -1,6 +1,9 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+
 export const dynamic = 'force-dynamic'
+
+// Force redeploy - Feb 3
 export default async function BlogPage() {
   const supabase = await createClient()
   
@@ -22,9 +25,20 @@ export default async function BlogPage() {
     .order('name')
 
   if (error) {
-  console.error('Error fetching posts:', error)
-  return <div className="p-10 text-red-500">Error: {error.message}</div>
-}
+    console.error('Error fetching posts:', error)
+    return <div className="p-10 text-red-500">Error: {error.message}</div>
+  }
+
+  if (!posts || posts.length === 0) {
+    return (
+      <div className="p-10">
+        <p className="text-xl font-bold">Debug Info:</p>
+        <p>No posts found</p>
+        <p>URL: {process.env.NEXT_PUBLIC_SUPABASE_URL}</p>
+        <p>Posts data: {JSON.stringify(posts)}</p>
+        <p>Error: {JSON.stringify(error)}</p>
+      </div>
+    )
   }
 
   // Formatear fecha
