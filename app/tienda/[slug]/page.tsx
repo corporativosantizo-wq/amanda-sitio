@@ -99,11 +99,11 @@ export default async function ProductoPage({ params }: PageProps) {
               {/* Precio */}
               <div className="flex items-center gap-4 mb-8">
                 <span className="font-display text-4xl font-bold text-navy">
-                  Q{product.price}
+                  ${product.price}
                 </span>
                 {product.compare_price && (
                   <span className="text-slate line-through text-xl">
-                    Q{product.compare_price}
+                    ${product.compare_price}
                   </span>
                 )}
               </div>
@@ -208,7 +208,7 @@ export default async function ProductoPage({ params }: PageProps) {
                       {prod.name}
                     </h3>
                     <span className="font-display text-xl font-bold text-navy">
-                      Q{prod.price}
+                      ${prod.price}
                     </span>
                   </div>
                 </Link>
