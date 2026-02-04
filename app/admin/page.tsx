@@ -1,8 +1,15 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function AdminDashboard() {
   const supabase = await createClient()
+
+  // Verificar sesión - si no hay sesión, redirigir a login
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) {
+    redirect('/admin/login')
+  }
 
   const { count: postsCount } = await supabase
     .from('posts')
@@ -87,25 +94,4 @@ export default async function AdminDashboard() {
             </Link>
           </div>
           {recentMessages && recentMessages.length > 0 ? (
-            <div className="space-y-3">
-              {recentMessages.map((msg) => (
-                <div key={msg.id} className="p-3 bg-slate-lighter rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-navy">{msg.name}</span>
-                    {msg.status === 'new' && (
-                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Nuevo</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate truncate">{msg.message}</p>
-                  <p className="text-xs text-slate mt-1">{formatDate(msg.created_at)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-slate text-center py-4">No hay mensajes aún</p>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+            <div className
