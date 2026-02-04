@@ -1,4 +1,3 @@
-cat > app/blog/page.tsx << 'EOF'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 
@@ -66,7 +65,7 @@ export default async function BlogPage() {
               {posts.map((post) => (
                 <Link key={post.id} href={`/blog/${post.slug}`}
                   className="group bg-white rounded-2xl border border-slate-light overflow-hidden hover:border-cyan hover:shadow-xl transition-all">
-                  <div className="aspect-[16/9] bg-gradient-to-br from-slate-lighter to-slate-light flex items-center justify-center">
+                  <div className="aspect-[16/9] bg-gradient-to-br from-slate-lighter to-slate-light flex items-center justify-center relative">
                     {post.featured_image ? (
                       <img src={post.featured_image} alt={post.title} className="w-full h-full object-cover"/>
                     ) : (
@@ -108,4 +107,3 @@ export default async function BlogPage() {
     </div>
   )
 }
-EOF
