@@ -20,7 +20,7 @@ export default async function ProductoPage({ params }: PageProps) {
       category:categories(name, slug)
     `)
     .eq('slug', slug)
-    .eq('is_active', true)
+.eq('status', 'active')
     .single()
   
   if (error || !product) {
@@ -36,7 +36,7 @@ export default async function ProductoPage({ params }: PageProps) {
     `)
     .eq('category_id', product.category_id)
     .neq('id', product.id)
-    .eq('is_active', true)
+   .eq('status', 'active')
     .limit(3)
 
   return (
