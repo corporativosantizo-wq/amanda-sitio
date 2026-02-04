@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-
+import { Analytics } from "@vercel/analytics/react"
 export default function AdminLayout({
   children,
 }: {
