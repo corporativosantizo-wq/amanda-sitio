@@ -252,11 +252,11 @@ export async function resumenGastos(mes?: string) {
     .lte('fecha', finMes);
 
   const lista = gastosMes ?? [];
-  const totalMes = lista.reduce((s, g) => s + (g.monto ?? 0), 0);
-  const ivaMes = lista.reduce((s, g) => s + (g.iva_monto ?? 0), 0);
+  const totalMes = lista.reduce((s: number, g: any) => s + (g.monto ?? 0), 0);
+  const ivaMes = lista.reduce((s: number, g: any) => s + (g.iva_monto ?? 0), 0);
   const deduciblesMes = lista
     .filter((g: any) => g.es_deducible)
-    .reduce((s, g) => s + (g.monto ?? 0), 0);
+    .reduce((s: number, g: any) => s + (g.monto ?? 0), 0);
 
   // Por categoría
   const porCategoria: Record<string, number> = {};
