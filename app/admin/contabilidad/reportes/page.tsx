@@ -72,7 +72,7 @@ export default function ReportesPage() {
               sub="Total del mes" />
             <KPICard label="Utilidad bruta" value={Q(reporte.utilidad_bruta)} icon="📊"
               sub={reporte.utilidad_bruta >= 0 ? 'Positiva' : 'Negativa'}
-              trend={reporte.utilidad_bruta >= 0 ? 'up' : 'down'} />
+               />
             <KPICard label="Por cobrar" value={Q(reporte.monto_por_cobrar)} icon="⏳"
               sub={`${reporte.facturas_pendientes} facturas`} />
           </div>
