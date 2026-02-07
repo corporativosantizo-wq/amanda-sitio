@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/contabilidad/reportes/page.tsx
 // Reportes contables - resumen mensual y anual

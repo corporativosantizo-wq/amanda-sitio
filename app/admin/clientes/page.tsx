@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/clientes/page.tsx
 // Directorio de clientes

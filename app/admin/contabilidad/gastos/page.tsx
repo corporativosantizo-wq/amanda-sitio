@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/contabilidad/gastos/page.tsx
 // Lista de gastos con filtros por categoría y mes

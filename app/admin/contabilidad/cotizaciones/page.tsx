@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/contabilidad/cotizaciones/page.tsx
 // Lista de cotizaciones con filtros, paginación y acciones rápidas

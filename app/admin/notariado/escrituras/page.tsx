@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/notariado/escrituras/page.tsx
 // Protocolo notarial - lista de escrituras

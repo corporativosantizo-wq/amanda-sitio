@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/contabilidad/pagos/page.tsx
 // Lista de pagos con filtros y acción rápida de confirmar

@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 // ============================================================================
 // app/admin/contabilidad/facturas/page.tsx
 // Lista de facturas con filtros y acciones
