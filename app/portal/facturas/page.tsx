@@ -30,20 +30,24 @@ const ESTADO_STYLES: Record<string, { bg: string; color: string; label: string }
 };
 
 export default function PortalFacturas() {
-  const { accessToken } = usePortal();
+  const { accessToken, clienteId } = usePortal();
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !clienteId) return;
+    setLoading(true);
     fetch('/api/portal/datos?tipo=facturas', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => setFacturas(d.facturas ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, clienteId]);
 
   const pendientes = facturas.filter(
     (f: Factura) => f.estado === 'pendiente' || f.estado === 'parcial' || f.estado === 'vencida'

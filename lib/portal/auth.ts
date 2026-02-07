@@ -1,6 +1,7 @@
 // ============================================================================
 // lib/portal/auth.ts
 // Funciones de autenticación del portal de clientes
+// Soporta multi-empresa: un auth_user puede tener múltiples clientes
 // ============================================================================
 import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -9,6 +10,7 @@ export interface PortalSession {
   userId: string;
   email: string;
   clienteId: string;
+  clienteIds: string[];
   portalUserId: string;
 }
 
@@ -19,11 +21,13 @@ export const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /**
- * Verifica el token JWT de Supabase Auth y retorna datos del portal
- * Usa service_role para verificar — solo llamar desde API routes
+ * Verifica el token JWT y retorna datos del portal.
+ * Si requestedClienteId se proporciona, valida que el usuario tenga acceso
+ * a ese cliente. Si no, usa el primer cliente vinculado.
  */
 export async function getPortalSession(
-  authHeader: string | null
+  authHeader: string | null,
+  requestedClienteId?: string | null
 ): Promise<PortalSession | null> {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
@@ -42,62 +46,67 @@ export async function getPortalSession(
 
   const db = createAdminClient();
 
-  // Buscar portal_usuarios existente
-  const { data: portalUser } = await db
+  // Obtener TODOS los portal_usuarios activos para este auth_user
+  let { data: portalUsers } = await db
     .from('portal_usuarios')
     .select('id, cliente_id')
     .eq('auth_user_id', user.id)
-    .eq('activo', true)
-    .single();
+    .eq('activo', true);
 
-  if (portalUser) {
-    // Actualizar ultimo_acceso (fire-and-forget)
+  // Auto-crear vinculaciones si no existen
+  if ((!portalUsers || portalUsers.length === 0) && user.email) {
+    const { data: clientes } = await db
+      .from('clientes')
+      .select('id')
+      .eq('email', user.email)
+      .eq('estado', 'activo');
+
+    if (clientes && clientes.length > 0) {
+      const inserts = clientes.map((c: any) => ({
+        cliente_id: c.id,
+        auth_user_id: user.id,
+        email: user.email!,
+      }));
+      const { data: created } = await db
+        .from('portal_usuarios')
+        .insert(inserts)
+        .select('id, cliente_id');
+      portalUsers = created;
+    }
+  }
+
+  if (!portalUsers || portalUsers.length === 0) return null;
+
+  const clienteIds = portalUsers.map((p: any) => p.cliente_id as string);
+
+  // Seleccionar cliente: validar el solicitado o usar el primero
+  let selectedId: string;
+  if (requestedClienteId && clienteIds.includes(requestedClienteId)) {
+    selectedId = requestedClienteId;
+  } else {
+    selectedId = clienteIds[0];
+  }
+
+  const selectedPortalUser = portalUsers.find(
+    (p: any) => p.cliente_id === selectedId
+  );
+
+  // Actualizar ultimo_acceso (fire-and-forget)
+  if (selectedPortalUser) {
     db.from('portal_usuarios')
       .update({ ultimo_acceso: new Date().toISOString() })
-      .eq('id', portalUser.id)
+      .eq('id', selectedPortalUser.id)
       .then(
         () => {},
         () => {}
       );
-
-    return {
-      userId: user.id,
-      email: user.email!,
-      clienteId: portalUser.cliente_id,
-      portalUserId: portalUser.id,
-    };
   }
 
-  // Auto-crear vinculación si el email existe en clientes
-  if (user.email) {
-    const { data: cliente } = await db
-      .from('clientes')
-      .select('id')
-      .eq('email', user.email)
-      .eq('estado', 'activo')
-      .single();
-
-    if (cliente) {
-      const { data: created } = await db
-        .from('portal_usuarios')
-        .insert({
-          cliente_id: cliente.id,
-          auth_user_id: user.id,
-          email: user.email,
-        })
-        .select('id, cliente_id')
-        .single();
-
-      if (created) {
-        return {
-          userId: user.id,
-          email: user.email,
-          clienteId: created.cliente_id,
-          portalUserId: created.id,
-        };
-      }
-    }
-  }
-
-  return null;
+  return {
+    userId: user.id,
+    email: user.email!,
+    clienteId: selectedId,
+    clienteIds,
+    portalUserId: selectedPortalUser?.id ?? portalUsers[0].id,
+  };
 }

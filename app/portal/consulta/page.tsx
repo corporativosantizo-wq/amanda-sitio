@@ -36,7 +36,7 @@ const ESTADO_STYLES: Record<string, { bg: string; color: string; label: string }
 };
 
 export default function PortalConsulta() {
-  const { accessToken } = usePortal();
+  const { accessToken, clienteId } = usePortal();
   const [consultas, setConsultas] = useState<Consulta[]>([]);
   const [loading, setLoading] = useState(true);
   const [asunto, setAsunto] = useState('');
@@ -48,15 +48,19 @@ export default function PortalConsulta() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !clienteId) return;
+    setLoading(true);
     fetch('/api/portal/consulta', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => setConsultas(d.consultas ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, clienteId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +82,7 @@ export default function PortalConsulta() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
+          'X-Cliente-Id': clienteId,
         },
         body: JSON.stringify({
           asunto: finalAsunto,

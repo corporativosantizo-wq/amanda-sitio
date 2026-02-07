@@ -34,22 +34,26 @@ const ESTADO_STYLES: Record<string, { bg: string; color: string; label: string }
 };
 
 export default function PortalCotizaciones() {
-  const { accessToken } = usePortal();
+  const { accessToken, clienteId } = usePortal();
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [detalle, setDetalle] = useState<CotDetalle | null>(null);
   const [detalleLoading, setDetalleLoading] = useState(false);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !clienteId) return;
+    setLoading(true);
     fetch('/api/portal/datos?tipo=cotizaciones', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => setCotizaciones(d.cotizaciones ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, clienteId]);
 
   const verDetalle = async (id: string) => {
     if (!accessToken) return;
@@ -57,7 +61,12 @@ export default function PortalCotizaciones() {
     try {
       const res = await fetch(
         `/api/portal/datos?tipo=cotizacion_detalle&id=${id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Cliente-Id': clienteId,
+          },
+        }
       );
       if (res.ok) {
         const data = await res.json();

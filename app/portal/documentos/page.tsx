@@ -34,16 +34,20 @@ const TIPO_LABELS: Record<string, string> = {
 };
 
 export default function PortalDocumentos() {
-  const { accessToken } = usePortal();
+  const { accessToken, clienteId } = usePortal();
   const [escrituras, setEscrituras] = useState<Escritura[]>([]);
   const [testimonios, setTestimonios] = useState<TestimonioDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !clienteId) return;
+    setLoading(true);
     fetch('/api/portal/documentos', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => {
@@ -52,7 +56,7 @@ export default function PortalDocumentos() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, clienteId]);
 
   const handleDownload = async (tipo: string, id: string) => {
     if (!accessToken || downloading) return;
@@ -60,7 +64,12 @@ export default function PortalDocumentos() {
     try {
       const res = await fetch(
         `/api/portal/documentos?action=download&tipo=${tipo}&id=${id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Cliente-Id': clienteId,
+          },
+        }
       );
       if (res.ok) {
         const data = await res.json();

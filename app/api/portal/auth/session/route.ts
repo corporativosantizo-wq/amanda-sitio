@@ -26,18 +26,28 @@ export async function GET(req: Request) {
   }
 
   const db = createAdminClient();
-  const { data: cliente } = await db
+
+  // Obtener TODOS los clientes vinculados (multi-empresa)
+  const { data: allClientes } = await db
     .from('clientes')
     .select('id, nombre, email, codigo, tipo')
-    .eq('id', session.clienteId)
-    .single();
+    .in('id', session.clienteIds)
+    .eq('estado', 'activo');
 
-  if (!cliente) {
+  if (!allClientes || allClientes.length === 0) {
     return Response.json(
       { error: 'Cliente no encontrado' },
       { status: 404, headers: SECURITY_HEADERS }
     );
   }
 
-  return Response.json({ cliente }, { headers: SECURITY_HEADERS });
+  // Cliente seleccionado (el primero o el que coincida con clienteId)
+  const cliente =
+    allClientes.find((c: any) => c.id === session.clienteId) ??
+    allClientes[0];
+
+  return Response.json(
+    { cliente, clientes: allClientes },
+    { headers: SECURITY_HEADERS }
+  );
 }

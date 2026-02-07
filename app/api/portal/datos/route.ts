@@ -17,7 +17,10 @@ export async function GET(req: Request) {
     );
   }
 
-  const session = await getPortalSession(req.headers.get('authorization'));
+  const session = await getPortalSession(
+    req.headers.get('authorization'),
+    req.headers.get('x-cliente-id')
+  );
   if (!session) {
     return Response.json(
       { error: 'No autorizado' },

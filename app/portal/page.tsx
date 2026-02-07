@@ -21,20 +21,24 @@ function Q(n: number): string {
 }
 
 export default function PortalDashboard() {
-  const { cliente, accessToken } = usePortal();
+  const { cliente, clienteId, accessToken } = usePortal();
   const [resumen, setResumen] = useState<Resumen | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !clienteId) return;
+    setLoading(true);
     fetch('/api/portal/datos?tipo=resumen', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => setResumen(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, clienteId]);
 
   const cards = [
     {

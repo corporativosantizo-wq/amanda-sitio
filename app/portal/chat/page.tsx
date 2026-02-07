@@ -27,7 +27,7 @@ function formatMarkdown(text: string): string {
 }
 
 export default function PortalChat() {
-  const { accessToken } = usePortal();
+  const { accessToken, clienteId } = usePortal();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -40,11 +40,16 @@ export default function PortalChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Cargar historial
+  // Cargar historial (refetch al cambiar de cliente)
   useEffect(() => {
-    if (!accessToken || historyLoaded) return;
+    if (!accessToken || !clienteId) return;
+    setMessages([]);
+    setHistoryLoaded(false);
     fetch('/api/portal/chat', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Cliente-Id': clienteId,
+      },
     })
       .then((r: any) => r.json())
       .then((d: any) => {
@@ -52,7 +57,7 @@ export default function PortalChat() {
       })
       .catch(() => {})
       .finally(() => setHistoryLoaded(true));
-  }, [accessToken, historyLoaded]);
+  }, [accessToken, clienteId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -89,6 +94,7 @@ export default function PortalChat() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
+          'X-Cliente-Id': clienteId,
         },
         body: JSON.stringify({ message: sanitized }),
       });

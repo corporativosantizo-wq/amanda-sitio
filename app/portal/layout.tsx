@@ -26,16 +26,22 @@ interface ClienteData {
 
 interface PortalContextType {
   cliente: ClienteData | null;
+  clientes: ClienteData[];
+  clienteId: string;
   accessToken: string | null;
   loading: boolean;
   logout: () => void;
+  switchCliente: (id: string) => void;
 }
 
 const PortalContext = createContext<PortalContextType>({
   cliente: null,
+  clientes: [],
+  clienteId: '',
   accessToken: null,
   loading: true,
   logout: () => {},
+  switchCliente: () => {},
 });
 
 export const usePortal = () => useContext(PortalContext);
@@ -84,6 +90,8 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   const [cliente, setCliente] = useState<ClienteData | null>(null);
+  const [clientes, setClientes] = useState<ClienteData[]>([]);
+  const [clienteId, setClienteId] = useState<string>('');
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -98,9 +106,22 @@ export default function PortalLayout({
     const supabase = createPortalClient();
     await supabase.auth.signOut();
     setCliente(null);
+    setClientes([]);
+    setClienteId('');
     setAccessToken(null);
     router.replace('/portal/login');
   }, [router]);
+
+  const switchCliente = useCallback(
+    (id: string) => {
+      const found = clientes.find((c: ClienteData) => c.id === id);
+      if (found) {
+        setCliente(found);
+        setClienteId(found.id);
+      }
+    },
+    [clientes]
+  );
 
   useEffect(() => {
     const supabase = createPortalClient();
@@ -119,6 +140,8 @@ export default function PortalLayout({
           if (res.ok) {
             const data = await res.json();
             setCliente(data.cliente);
+            setClientes(data.clientes ?? [data.cliente]);
+            setClienteId(data.cliente.id);
           } else {
             await supabase.auth.signOut();
           }
@@ -143,12 +166,16 @@ export default function PortalLayout({
           if (res.ok) {
             const data = await res.json();
             setCliente(data.cliente);
+            setClientes(data.clientes ?? [data.cliente]);
+            setClienteId(data.cliente.id);
           }
         } catch {
           // silenciar
         }
       } else if (event === 'SIGNED_OUT') {
         setCliente(null);
+        setClientes([]);
+        setClienteId('');
         setAccessToken(null);
       }
     });
@@ -172,7 +199,7 @@ export default function PortalLayout({
   if (isPublicPath) {
     return (
       <PortalContext.Provider
-        value={{ cliente, accessToken, loading, logout }}
+        value={{ cliente, clientes, clienteId, accessToken, loading, logout, switchCliente }}
       >
         {children}
       </PortalContext.Provider>
@@ -222,7 +249,7 @@ export default function PortalLayout({
 
   // ── Layout autenticado ──
   return (
-    <PortalContext.Provider value={{ cliente, accessToken, loading, logout }}>
+    <PortalContext.Provider value={{ cliente, clientes, clienteId, accessToken, loading, logout, switchCliente }}>
       <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
         {/* Header */}
         <header
@@ -301,9 +328,33 @@ export default function PortalLayout({
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '14px', color: '#374151' }}>
-              {cliente.nombre}
-            </span>
+            {clientes.length > 1 ? (
+              <select
+                value={clienteId}
+                onChange={(e: any) => switchCliente(e.target.value)}
+                style={{
+                  fontSize: '14px',
+                  color: '#374151',
+                  background: '#f9fafb',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  maxWidth: '220px',
+                }}
+              >
+                {clientes.map((c: ClienteData) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ fontSize: '14px', color: '#374151' }}>
+                {cliente.nombre}
+              </span>
+            )}
             <button
               onClick={logout}
               style={{
