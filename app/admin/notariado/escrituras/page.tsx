@@ -81,7 +81,7 @@ export default function EscriturasListPage() {
         className="w-full max-w-sm px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
 
       {/* Table */}
-      {loading ? <TableSkeleton rows={10} cols={7} /> : escrituras.length === 0 ? (
+      {loading ? <TableSkeleton rows={10} /> : escrituras.length === 0 ? (
         <EmptyState icon="📜" title="Sin escrituras" description={`No hay escrituras en ${anio}`} />
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

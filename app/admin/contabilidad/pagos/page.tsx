@@ -91,7 +91,7 @@ export default function PagosListPage() {
         className="w-full max-w-sm px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
 
       {/* Table */}
-      {loading ? <TableSkeleton rows={8} cols={7} /> : pagos.length === 0 ? (
+      {loading ? <TableSkeleton rows={8} /> : pagos.length === 0 ? (
         <EmptyState icon="💰" title="Sin pagos" description={tab === 'registrado' ? 'No hay pagos por confirmar' : 'Aún no se han registrado pagos'} />
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

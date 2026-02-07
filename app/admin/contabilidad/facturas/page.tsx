@@ -90,7 +90,7 @@ export default function FacturasListPage() {
       />
 
       {/* Table */}
-      {loading ? <TableSkeleton rows={8} cols={7} /> : facturas.length === 0 ? (
+      {loading ? <TableSkeleton rows={8} /> : facturas.length === 0 ? (
         <EmptyState icon="🧾" title="Sin facturas" description={tab ? `No hay facturas ${tab}s` : 'Aún no has generado facturas'} />
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

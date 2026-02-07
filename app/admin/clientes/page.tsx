@@ -76,7 +76,7 @@ export default function ClientesListPage() {
         className="w-full max-w-sm px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
 
       {/* Table */}
-      {loading ? <TableSkeleton rows={10} cols={6} /> : clientes.length === 0 ? (
+      {loading ? <TableSkeleton rows={10} /> : clientes.length === 0 ? (
         <EmptyState icon="👤" title="Sin clientes" description="Agrega tu primer cliente"
           action={{ label: '+ Nuevo cliente', onClick: () => router.push('/admin/clientes/nuevo') }} />
       ) : (
