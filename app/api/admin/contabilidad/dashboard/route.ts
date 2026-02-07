@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     // Flujo de efectivo del mes
     const ingresosNetos = pagos.cobrado_mes;
-    const egresosNetos = gastos.total_gastos;
+    const egresosNetos = gastos.total;
     const flujoNeto = ingresosNetos - egresosNetos;
 
     return NextResponse.json({
