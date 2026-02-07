@@ -100,6 +100,10 @@ export default function PortalChat() {
         return;
       }
 
+      // Delay artificial para simular que una persona está escribiendo
+      const typingDelay = 1000 + Math.random() * 1000; // 1-2 segundos
+      await new Promise((resolve) => setTimeout(resolve, typingDelay));
+
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
