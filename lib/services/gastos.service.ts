@@ -255,7 +255,7 @@ export async function resumenGastos(mes?: string) {
   const totalMes = lista.reduce((s, g) => s + (g.monto ?? 0), 0);
   const ivaMes = lista.reduce((s, g) => s + (g.iva_monto ?? 0), 0);
   const deduciblesMes = lista
-    .filter(g => g.es_deducible)
+    .filter((g: any) => g.es_deducible)
     .reduce((s, g) => s + (g.monto ?? 0), 0);
 
   // Por categoría

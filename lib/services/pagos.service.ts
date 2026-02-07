@@ -286,10 +286,10 @@ export async function estadoCuentaCliente(clienteId: string) {
     .eq('cliente_id', clienteId)
     .neq('estado', 'anulada');
 
-  const totalPagado = (pagosConfirmados ?? []).reduce((sum, p) => sum + (p.monto ?? 0), 0);
-  const totalFact = (totalFacturado ?? []).reduce((sum, f) => sum + (f.total ?? 0), 0);
+  const totalPagado = (pagosConfirmados ?? []).reduce((sum: number, p: any) => sum + (p.monto ?? 0), 0);
+  const totalFact = (totalFacturado ?? []).reduce((sum: number, f: any) => sum + (f.total ?? 0), 0);
   const saldoPendiente = (facturasPendientes ?? []).reduce(
-    (sum, f) => sum + ((f as any).monto_a_recibir ?? 0), 0
+    (sum: number, f: any) => sum + ((f as any).monto_a_recibir ?? 0), 0
   );
 
   // Facturas vencidas
@@ -337,13 +337,13 @@ export async function resumenPagos() {
   ]);
 
   const montoPorConfirmar = (porConfirmar.data ?? []).reduce(
-    (sum, p) => sum + ((p as any).monto ?? 0), 0
+    (sum: number, p: any) => sum + ((p as any).monto ?? 0), 0
   );
   const montoCobradoMes = (cobradoMes.data ?? []).reduce(
-    (sum, p) => sum + ((p as any).monto ?? 0), 0
+    (sum: number, p: any) => sum + ((p as any).monto ?? 0), 0
   );
   const montoCobradoSemana = (cobradoSemana.data ?? []).reduce(
-    (sum, p) => sum + ((p as any).monto ?? 0), 0
+    (sum: number, p: any) => sum + ((p as any).monto ?? 0), 0
   );
 
   return {

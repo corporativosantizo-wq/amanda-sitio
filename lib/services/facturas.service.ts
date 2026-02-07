@@ -384,13 +384,13 @@ export async function resumenFacturas() {
 
   const facturasHoy = pendientes.data ?? [];
   const montoPendiente = facturasHoy.reduce(
-    (sum, f) => sum + ((f as any).monto_a_recibir ?? 0), 0
+    (sum: number, f: any) => sum + ((f as any).monto_a_recibir ?? 0), 0
   );
 
   const facturasMes = mesActual.data ?? [];
-  const totalFacturadoMes = facturasMes.reduce((sum, f) => sum + (f.total ?? 0), 0);
-  const pagadasMes = facturasMes.filter(f => f.estado === 'pagada');
-  const totalCobradoMes = pagadasMes.reduce((sum, f) => sum + (f.total ?? 0), 0);
+  const totalFacturadoMes = facturasMes.reduce((sum: number, f: any) => sum + (f.total ?? 0), 0);
+  const pagadasMes = facturasMes.filter((f: any) => f.estado === 'pagada');
+  const totalCobradoMes = pagadasMes.reduce((sum: number, f: any) => sum + (f.total ?? 0), 0);
 
   return {
     pendientes_count: pendientes.count ?? 0,
