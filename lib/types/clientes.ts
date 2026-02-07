@@ -53,6 +53,7 @@ export interface ClienteInsert {
   nit_facturacion?: string | null;
   direccion_facturacion?: string | null;
   notas?: string | null;
+  activo?: boolean;
 }
 
 export interface ClienteUpdate extends Partial<ClienteInsert> {}
