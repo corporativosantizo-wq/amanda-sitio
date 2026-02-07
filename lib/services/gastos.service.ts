@@ -278,7 +278,7 @@ export async function resumenGastos(mes?: string) {
     categoriasDetalle = (cats ?? []).map((c: any) => ({
       nombre: c.nombre,
       monto: porCategoria[c.id] ?? 0,
-    })).sort((a, b) => b.monto - a.monto);
+    })).sort((a: any, b: any) => b.monto - a.monto);
   }
 
   // Promedio diario
