@@ -68,8 +68,8 @@ export default function PortalDashboard() {
 
   const quickLinks = [
     {
-      title: 'Chat con IA',
-      desc: 'Consulte sobre procesos legales',
+      title: 'Asistente',
+      desc: 'Consulte con Astrid sobre sus trámites',
       href: '/portal/chat',
       color: '#0891b2',
     },

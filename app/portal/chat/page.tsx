@@ -1,6 +1,6 @@
 // ============================================================================
 // app/portal/chat/page.tsx
-// Chat IA para clientes del portal
+// Asistente del portal de clientes
 // ============================================================================
 'use client';
 
@@ -122,10 +122,10 @@ export default function PortalChat() {
   };
 
   const SUGGESTIONS = [
-    '¿Qué es un juicio ejecutivo?',
-    '¿Cuáles son los plazos de una apelación?',
-    '¿Qué necesito para una escritura de compraventa?',
-    '¿Qué significa "en período de prueba"?',
+    '¿Cuál es el estado de mi trámite?',
+    '¿Qué documentos necesito para una escritura?',
+    '¿Cuál es el costo de una consulta?',
+    '¿Cómo puedo agendar una cita con la Licda. Santizo?',
   ];
 
   return (
@@ -181,10 +181,10 @@ export default function PortalChat() {
           <div
             style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}
           >
-            Asistente Legal
+            Astrid Bolaños — Asistente del Bufete
           </div>
-          <div style={{ fontSize: '12px', color: '#6b7280' }}>
-            Consultas generales sobre procesos legales
+          <div style={{ fontSize: '12px', color: '#16a34a' }}>
+            En línea
           </div>
         </div>
       </div>
@@ -225,19 +225,21 @@ export default function PortalChat() {
                 margin: '0 0 8px',
               }}
             >
-              Asistente Legal
+              Astrid Bolaños
             </h2>
             <p
               style={{
                 fontSize: '14px',
                 color: '#6b7280',
-                maxWidth: '400px',
+                maxWidth: '460px',
                 margin: '0 auto 24px',
-                lineHeight: '1.5',
+                lineHeight: '1.6',
               }}
             >
-              Puedo responder preguntas generales sobre procesos legales en
-              Guatemala. Para atención personalizada, solicite una consulta.
+              Buen día, soy Astrid. Estoy aquí para ayudarle con información
+              sobre sus trámites, seguimientos, costos y consultas generales.
+              Para atención jurídica personalizada, solicite una cita con la
+              Licda. Amanda Santizo.
             </p>
             <div
               style={{
@@ -343,7 +345,7 @@ export default function PortalChat() {
                   <span style={{ animation: 'pulse 1.5s infinite' }}>
                     &bull;&bull;&bull;
                   </span>
-                  Pensando...
+                  Astrid está escribiendo...
                 </div>
               </div>
             )}
@@ -384,7 +386,7 @@ export default function PortalChat() {
             value={input}
             onChange={(e: any) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Escriba su consulta..."
+            placeholder="Escriba su consulta aquí..."
             disabled={isLoading}
             rows={1}
             style={{
@@ -437,8 +439,7 @@ export default function PortalChat() {
             textAlign: 'center',
           }}
         >
-          Límite: 20 mensajes por día. Para consultas especializadas, solicite
-          una consulta personalizada.
+          Horario de atención: lunes a viernes, 7:00 AM a 3:00 PM
         </p>
       </div>
 
