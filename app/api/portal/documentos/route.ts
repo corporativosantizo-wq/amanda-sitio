@@ -98,6 +98,45 @@ export async function GET(req: Request) {
 
         fileUrl = test.pdf_url;
         fileName = `testimonio-${esc.numero}-${test.tipo}.pdf`;
+      } else if (tipo === 'documento') {
+        // Documentos del sistema documental (aprobados)
+        const { data: doc } = await db
+          .from('documentos')
+          .select('id, storage_path, nombre_archivo')
+          .eq('id', docId)
+          .eq('cliente_id', session.clienteId)
+          .eq('estado', 'aprobado')
+          .single();
+
+        if (!doc || !doc.storage_path) {
+          return Response.json(
+            { error: 'Documento no encontrado' },
+            { status: 404, headers: SECURITY_HEADERS }
+          );
+        }
+
+        // Generar signed URL desde bucket 'documentos'
+        const docStorage = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          { auth: { persistSession: false } }
+        );
+
+        const { data: docSignedData, error: docSignError } = await docStorage.storage
+          .from('documentos')
+          .createSignedUrl(doc.storage_path, 600);
+
+        if (docSignError || !docSignedData) {
+          return Response.json(
+            { error: 'Error al generar enlace de descarga' },
+            { status: 500, headers: SECURITY_HEADERS }
+          );
+        }
+
+        return Response.json(
+          { url: docSignedData.signedUrl, fileName: doc.nombre_archivo },
+          { headers: SECURITY_HEADERS }
+        );
       } else {
         return Response.json(
           { error: 'Tipo de documento no válido' },
@@ -141,6 +180,14 @@ export async function GET(req: Request) {
         { headers: SECURITY_HEADERS }
       );
     }
+
+    // Listar documentos aprobados del sistema documental
+    const { data: documentosAprobados } = await db
+      .from('documentos')
+      .select('id, titulo, tipo, fecha_documento, nombre_archivo, storage_path, created_at')
+      .eq('cliente_id', session.clienteId)
+      .eq('estado', 'aprobado')
+      .order('fecha_documento', { ascending: false });
 
     // Listar documentos del cliente
     const { data: escrituras } = await db
@@ -192,6 +239,13 @@ export async function GET(req: Request) {
           tiene_pdf: !!e.pdf_escritura_url,
         })),
         testimonios,
+        documentos: (documentosAprobados ?? []).map((d: any) => ({
+          id: d.id,
+          titulo: d.titulo,
+          tipo: d.tipo,
+          fecha: d.fecha_documento,
+          nombre_archivo: d.nombre_archivo,
+        })),
       },
       { headers: SECURITY_HEADERS }
     );

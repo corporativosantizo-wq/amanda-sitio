@@ -26,6 +26,14 @@ interface TestimonioDoc {
   pdf_url: string;
 }
 
+interface DocumentoGeneral {
+  id: string;
+  titulo: string | null;
+  tipo: string | null;
+  fecha: string | null;
+  nombre_archivo: string;
+}
+
 const TIPO_LABELS: Record<string, string> = {
   primer_testimonio: 'Primer Testimonio',
   testimonio_especial: 'Testimonio Especial',
@@ -33,10 +41,23 @@ const TIPO_LABELS: Record<string, string> = {
   segundo_testimonio: 'Segundo Testimonio',
 };
 
+const TIPO_DOC_LABELS: Record<string, string> = {
+  contrato_comercial: 'Contrato Comercial',
+  escritura_publica: 'Escritura Pública',
+  testimonio: 'Testimonio',
+  acta_notarial: 'Acta Notarial',
+  poder: 'Poder',
+  contrato_laboral: 'Contrato Laboral',
+  demanda_memorial: 'Demanda / Memorial',
+  resolucion_judicial: 'Resolución Judicial',
+  otro: 'Otro',
+};
+
 export default function PortalDocumentos() {
   const { accessToken, clienteId } = usePortal();
   const [escrituras, setEscrituras] = useState<Escritura[]>([]);
   const [testimonios, setTestimonios] = useState<TestimonioDoc[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoGeneral[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
 
@@ -53,6 +74,7 @@ export default function PortalDocumentos() {
       .then((d: any) => {
         setEscrituras(d.escrituras ?? []);
         setTestimonios(d.testimonios ?? []);
+        setDocumentos(d.documentos ?? []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -82,7 +104,7 @@ export default function PortalDocumentos() {
     setDownloading(null);
   };
 
-  const totalDocs = escrituras.length + testimonios.length;
+  const totalDocs = escrituras.length + testimonios.length + documentos.length;
 
   return (
     <div style={{ padding: '32px 24px', maxWidth: '1000px', margin: '0 auto' }}>
@@ -235,6 +257,107 @@ export default function PortalDocumentos() {
                         />
                       </svg>
                       {downloading === esc.id ? 'Descargando...' : 'Descargar'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Otros Documentos */}
+          {documentos.length > 0 && (
+            <div style={{ marginBottom: '32px' }}>
+              <h2
+                style={{
+                  fontSize: '17px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  margin: '0 0 12px',
+                }}
+              >
+                Otros Documentos
+              </h2>
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {documentos.map((doc: DocumentoGeneral) => (
+                  <div
+                    key={doc.id}
+                    style={{
+                      background: 'white',
+                      borderRadius: '14px',
+                      padding: '20px 24px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          color: '#111827',
+                        }}
+                      >
+                        {doc.titulo ?? doc.nombre_archivo}
+                      </div>
+                      {doc.tipo && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#6b7280',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {TIPO_DOC_LABELS[doc.tipo] ?? doc.tipo}
+                        </div>
+                      )}
+                      {doc.fecha && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#9ca3af',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {new Date(doc.fecha).toLocaleDateString('es-GT')}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDownload('documento', doc.id)}
+                      disabled={downloading === doc.id}
+                      style={{
+                        padding: '10px 18px',
+                        background: downloading === doc.id ? '#e5e7eb' : 'linear-gradient(135deg, #0d9488, #0891b2)',
+                        color: downloading === doc.id ? '#6b7280' : 'white',
+                        border: 'none',
+                        borderRadius: '10px',
+                        cursor: downloading === doc.id ? 'not-allowed' : 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                      {downloading === doc.id ? 'Descargando...' : 'Descargar'}
                     </button>
                   </div>
                 ))}
