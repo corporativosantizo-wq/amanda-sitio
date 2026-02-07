@@ -440,7 +440,7 @@ export async function resumenCotizaciones() {
 
   const cotizacionesMes = mesActual.data ?? [];
   const totalCotizado = cotizacionesMes.reduce((sum: number, c: any) => sum + (c.total ?? 0), 0);
-  const aceptadas = cotizacionesMes.filter(c => c.estado === EstadoCotizacion.ACEPTADA);
+  const aceptadas = cotizacionesMes.filter((c: any) => c.estado === EstadoCotizacion.ACEPTADA);
   const montoAceptado = aceptadas.reduce((sum: number, c: any) => sum + (c.total ?? 0), 0);
 
   return {
