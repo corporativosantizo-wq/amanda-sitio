@@ -12,7 +12,8 @@ const isPublicRoute = createRouteMatcher([
   '/blog(.*)',
   '/servicios(.*)',
   '/api/webhooks(.*)',    // Webhooks de Clerk, Megaprint, etc.
-  '/portal/(.*)',         // Portal de clientes usa su propia auth
+  '/api/portal(.*)',      // Portal API usa Supabase Auth, no Clerk
+  '/portal(.*)',          // Portal de clientes usa su propia auth
   '/sign-in(.*)',
   '/sign-up(.*)',
 ]);
