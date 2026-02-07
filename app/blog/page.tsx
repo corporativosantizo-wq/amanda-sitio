@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-
-export const dynamic = 'force-dynamic'
+import { unstable_noStore as noStore } from 'next/cache'
 
 export default async function BlogPage() {
+  // Prevenir el caching de datos - siempre obtener datos frescos
+  noStore()
+  
   const supabase = await createClient()
   
   const { data: posts, error } = await supabase

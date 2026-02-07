@@ -1,14 +1,16 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-
-export const dynamic = 'force-dynamic'
+import { unstable_noStore as noStore } from 'next/cache'
 
 interface PageProps {
   params: Promise<{ slug: string }>
 }
 
 export default async function PostPage({ params }: PageProps) {
+  // Prevenir el caching de datos - siempre obtener datos frescos
+  noStore()
+  
   const { slug } = await params
   const supabase = await createClient()
   

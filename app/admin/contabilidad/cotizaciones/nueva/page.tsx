@@ -1,0 +1,595 @@
+// ============================================================================
+// app/admin/contabilidad/cotizaciones/nueva/page.tsx
+// Formulario de nueva cotización con selector de catálogo
+// ============================================================================
+
+'use client';
+
+import { useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { PageHeader, Q } from '@/components/admin/ui';
+import {
+  CATALOGO, CATEGORIAS, CATEGORIA_COLORES,
+  buscarServicios,
+  type ServicioCatalogo, type CategoriaServicio,
+} from '@/lib/data/catalogo-servicios';
+
+// ── Types ───────────────────────────────────────────────────────────────
+
+interface ItemForm {
+  id: string;
+  descripcion: string;
+  cantidad: number;
+  precio_unitario: number;
+  orden: number;
+  codigoCatalogo?: string;
+}
+
+interface ClienteBusqueda {
+  id: string;
+  codigo: string;
+  nombre: string;
+  nit: string;
+  email: string;
+}
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+const CONDICIONES_DEFAULT = `TÉRMINOS Y CONDICIONES
+
+1. Esta cotización incluye 2 consultas de 15 minutos vía Teams (grabadas).
+2. Consultas adicionales: Q100.00 cada una.
+3. NO incluye consultas ilimitadas ni asesoría fuera del alcance contratado.
+4. Honorarios no incluyen gastos de registro, timbres fiscales ni aranceles.
+5. Anticipo del 60% para iniciar. Saldo del 40% al finalizar.
+6. Cotización válida por 30 días.
+
+DATOS PARA PAGO:
+Banco Industrial — Cuenta Monetaria No. 455-008846-4
+A nombre de: Invest & Jure-Advisor, S.A.`;
+
+// ── Form Page ───────────────────────────────────────────────────────────
+
+export default function NuevaCotizacionPage() {
+  const router = useRouter();
+  const { mutate, loading: guardando, error: errorGuardar } = useMutate();
+
+  // Client
+  const [clienteId, setClienteId] = useState('');
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<ClienteBusqueda | null>(null);
+  const [clienteBusqueda, setClienteBusqueda] = useState('');
+  const [showClienteDropdown, setShowClienteDropdown] = useState(false);
+
+  // Items
+  const [items, setItems] = useState<ItemForm[]>([]);
+
+  // Catalog
+  const [showCatalogo, setShowCatalogo] = useState(false);
+  const [catFiltro, setCatFiltro] = useState<CategoriaServicio | ''>('');
+  const [catalogoBusqueda, setCatalogoBusqueda] = useState('');
+
+  // Terms
+  const [condiciones, setCondiciones] = useState(CONDICIONES_DEFAULT);
+  const [notas, setNotas] = useState('');
+
+  // Client search
+  const clienteUrl = clienteBusqueda.length >= 2
+    ? `/api/admin/clientes?q=${encodeURIComponent(clienteBusqueda)}&limit=5`
+    : null;
+  const { data: clientesResult } = useFetch<{ data: ClienteBusqueda[] }>(clienteUrl);
+
+  // ── Calculations ────────────────────────────────────────────────────
+
+  const calc = useMemo(() => {
+    const total = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
+    const sinIva = Math.round((total / 1.12) * 100) / 100;
+    const iva = Math.round((total - sinIva) * 100) / 100;
+    const anticipo = Math.round(total * 0.6 * 100) / 100;
+    const saldo = Math.round(total * 0.4 * 100) / 100;
+    return { total, sinIva, iva, anticipo, saldo };
+  }, [items]);
+
+  // ── Catalog filtering ───────────────────────────────────────────────
+
+  const catalogoFiltrado = useMemo(() => {
+    return buscarServicios(
+      catalogoBusqueda,
+      catFiltro || undefined,
+    );
+  }, [catFiltro, catalogoBusqueda]);
+
+  // ── Item actions ────────────────────────────────────────────────────
+
+  const agregarDesdeCatalogo = useCallback((srv: ServicioCatalogo) => {
+    setItems(prev => [...prev, {
+      id: crypto.randomUUID(),
+      descripcion: `${srv.nombre} — ${srv.descripcion}`,
+      cantidad: 1,
+      precio_unitario: srv.precioBase,
+      orden: prev.length,
+      codigoCatalogo: srv.codigo,
+    }]);
+  }, []);
+
+  const agregarManual = useCallback(() => {
+    setItems(prev => [...prev, {
+      id: crypto.randomUUID(),
+      descripcion: '',
+      cantidad: 1,
+      precio_unitario: 0,
+      orden: prev.length,
+    }]);
+  }, []);
+
+  const actualizarItem = useCallback((id: string, campo: string, valor: string | number) => {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, [campo]: valor } : i));
+  }, []);
+
+  const eliminarItem = useCallback((id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id).map((item, idx) => ({ ...item, orden: idx })));
+  }, []);
+
+  const moverItem = useCallback((id: string, dir: 'up' | 'down') => {
+    setItems(prev => {
+      const idx = prev.findIndex(i => i.id === id);
+      const ni = dir === 'up' ? idx - 1 : idx + 1;
+      if (ni < 0 || ni >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[ni]] = [copy[ni], copy[idx]];
+      return copy.map((item, i) => ({ ...item, orden: i }));
+    });
+  }, []);
+
+  // ── Client selection ────────────────────────────────────────────────
+
+  const seleccionarCliente = useCallback((c: ClienteBusqueda) => {
+    setClienteId(c.id);
+    setClienteSeleccionado(c);
+    setClienteBusqueda('');
+    setShowClienteDropdown(false);
+  }, []);
+
+  // ── Save ────────────────────────────────────────────────────────────
+
+  const guardar = useCallback(async (enviar: boolean) => {
+    if (!clienteId) return alert('Selecciona un cliente');
+    if (items.length === 0) return alert('Agrega al menos un servicio');
+    if (items.some(i => !i.descripcion.trim() || i.precio_unitario <= 0)) {
+      return alert('Todos los items necesitan descripción y precio');
+    }
+
+    const body = {
+      cliente_id: clienteId,
+      items: items.map(i => ({
+        descripcion: i.descripcion,
+        cantidad: i.cantidad,
+        precio_unitario: i.precio_unitario,
+        orden: i.orden,
+      })),
+      condiciones,
+      notas: notas || null,
+    };
+
+    const result = await mutate('/api/admin/contabilidad/cotizaciones', {
+      body,
+      onSuccess: async (data: any) => {
+        if (enviar && data?.id) {
+          await mutate(`/api/admin/contabilidad/cotizaciones/${data.id}/acciones`, {
+            body: { accion: 'enviar' },
+          });
+        }
+        router.push(`/admin/contabilidad/cotizaciones/${data?.id ?? ''}`);
+      },
+      onError: (err) => alert(`Error: ${err}`),
+    });
+  }, [clienteId, items, condiciones, notas, mutate, router]);
+
+  // ── Render ──────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      <PageHeader
+        title="Nueva cotización"
+        description="Selecciona servicios del catálogo o agrega items personalizados"
+      />
+
+      {/* ══════════ 1. CLIENTE ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">1. Cliente</h3>
+
+        {clienteSeleccionado ? (
+          <div className="flex items-center justify-between bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-lg p-4 border border-slate-200">
+            <div>
+              <p className="font-medium text-slate-900">{clienteSeleccionado.nombre}</p>
+              <p className="text-sm text-slate-500">
+                NIT: {clienteSeleccionado.nit || 'CF'} · {clienteSeleccionado.email || 'Sin email'}
+              </p>
+            </div>
+            <button
+              onClick={() => { setClienteSeleccionado(null); setClienteId(''); }}
+              className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1 rounded-md hover:bg-red-50"
+            >
+              Cambiar
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              autoFocus
+              placeholder="Buscar por nombre, NIT o código..."
+              value={clienteBusqueda}
+              onChange={e => { setClienteBusqueda(e.target.value); setShowClienteDropdown(true); }}
+              onFocus={() => setShowClienteDropdown(true)}
+              className="w-full px-4 py-3 pl-10 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+
+            {showClienteDropdown && clienteBusqueda.length >= 2 && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowClienteDropdown(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden max-h-60 overflow-y-auto">
+                  {clientesResult && clientesResult.data.length > 0 ? (
+                    clientesResult.data.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => seleccionarCliente(c)}
+                        className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0"
+                      >
+                        <span className="font-medium text-slate-900">{c.nombre}</span>
+                        <span className="text-slate-400 text-xs ml-2">{c.codigo}</span>
+                        {c.nit && <span className="text-slate-400 text-xs ml-2">NIT: {c.nit}</span>}
+                      </button>
+                    ))
+                  ) : clientesResult ? (
+                    <div className="p-4 text-center">
+                      <p className="text-sm text-slate-500">No se encontró cliente</p>
+                      <button
+                        onClick={() => router.push('/admin/clientes?nuevo=true')}
+                        className="mt-2 text-sm text-[#0891B2] font-medium hover:underline"
+                      >
+                        + Crear cliente nuevo
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ══════════ 2. SERVICIOS ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">2. Servicios</h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCatalogo(!showCatalogo)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                showCatalogo
+                  ? 'bg-[#1E40AF] text-white'
+                  : 'bg-blue-50 text-[#1E40AF] hover:bg-blue-100'
+              }`}
+            >
+              📋 Catálogo {showCatalogo ? '▲' : '▼'}
+            </button>
+            <button
+              onClick={agregarManual}
+              className="px-3 py-1.5 text-sm font-medium border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50"
+            >
+              + Item libre
+            </button>
+          </div>
+        </div>
+
+        {/* ── Catalog Picker ── */}
+        {showCatalogo && (
+          <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+            <div className="px-5 pt-4 pb-2 space-y-3">
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Buscar servicio por nombre o código..."
+                value={catalogoBusqueda}
+                onChange={e => setCatalogoBusqueda(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0891B2]/30 focus:border-[#0891B2]"
+              />
+              {/* Category pills */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                <button
+                  onClick={() => setCatFiltro('')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap border transition-all ${
+                    !catFiltro ? 'bg-[#1E40AF] text-white border-[#1E40AF]' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  Todos ({CATALOGO.length})
+                </button>
+                {CATEGORIAS.map(cat => {
+                  const count = CATALOGO.filter(s => s.categoria === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setCatFiltro(catFiltro === cat ? '' : cat)}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap border transition-all ${
+                        catFiltro === cat
+                          ? 'bg-[#1E40AF] text-white border-[#1E40AF]'
+                          : `${CATEGORIA_COLORES[cat]} hover:opacity-80`
+                      }`}
+                    >
+                      {cat} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Service grid */}
+            <div className="px-5 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-y-auto">
+              {catalogoFiltrado.map(srv => {
+                const yaAgregado = items.some(i => i.codigoCatalogo === srv.codigo);
+                return (
+                  <button
+                    key={srv.codigo}
+                    onClick={() => !yaAgregado && agregarDesdeCatalogo(srv)}
+                    disabled={yaAgregado}
+                    className={`text-left p-3 rounded-lg border transition-all ${
+                      yaAgregado
+                        ? 'bg-emerald-50/50 border-emerald-200 cursor-default'
+                        : 'bg-white border-slate-200 hover:border-[#0891B2] hover:shadow-md cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 leading-tight">{srv.nombre}</p>
+                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{srv.descripcion}</p>
+                        <span className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded border ${CATEGORIA_COLORES[srv.categoria]}`}>
+                          {srv.categoria}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold text-[#1E40AF]">{Q(srv.precioBase)}</p>
+                        {yaAgregado && <span className="text-[10px] text-emerald-600 font-medium">✓</span>}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {catalogoFiltrado.length === 0 && (
+                <div className="col-span-full py-6 text-center text-sm text-slate-400">
+                  No se encontraron servicios
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Items List ── */}
+        {items.length === 0 ? (
+          <div className="p-10 text-center">
+            <span className="text-3xl">📋</span>
+            <p className="text-sm text-slate-500 mt-2">Aún no has agregado servicios</p>
+            <p className="text-xs text-slate-400 mt-1">Abre el catálogo o agrega items libres</p>
+          </div>
+        ) : (
+          <>
+            {/* Header row */}
+            <div className="hidden sm:grid grid-cols-12 gap-2 px-5 py-2 bg-slate-50/80 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+              <div className="col-span-1">#</div>
+              <div className="col-span-5">Descripción</div>
+              <div className="col-span-2 text-center">Cant.</div>
+              <div className="col-span-2 text-right">Precio</div>
+              <div className="col-span-1 text-right">Total</div>
+              <div className="col-span-1" />
+            </div>
+
+            {/* Items */}
+            {items.map((item, idx) => (
+              <div
+                key={item.id}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-2 px-5 py-3 border-b border-slate-100 hover:bg-slate-50/40 group transition-colors"
+              >
+                {/* # + move */}
+                <div className="hidden sm:flex col-span-1 items-center gap-1">
+                  <span className="text-xs text-slate-400 w-4">{idx + 1}</span>
+                  <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => moverItem(item.id, 'up')}
+                      disabled={idx === 0}
+                      className="text-[10px] text-slate-400 hover:text-slate-700 disabled:invisible leading-none"
+                    >▲</button>
+                    <button
+                      onClick={() => moverItem(item.id, 'down')}
+                      disabled={idx === items.length - 1}
+                      className="text-[10px] text-slate-400 hover:text-slate-700 disabled:invisible leading-none"
+                    >▼</button>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="sm:col-span-5">
+                  <textarea
+                    value={item.descripcion}
+                    onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                    rows={1}
+                    placeholder="Descripción del servicio..."
+                    className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-[#0891B2]/30 focus:border-[#0891B2]"
+                    onInput={(e) => {
+                      const el = e.target as HTMLTextAreaElement;
+                      el.style.height = 'auto';
+                      el.style.height = el.scrollHeight + 'px';
+                    }}
+                  />
+                  {item.codigoCatalogo && (
+                    <span className="text-[10px] text-[#0891B2] ml-1">{item.codigoCatalogo}</span>
+                  )}
+                </div>
+
+                {/* Quantity */}
+                <div className="sm:col-span-2 flex sm:justify-center items-start gap-2">
+                  <label className="sm:hidden text-xs text-slate-400 pt-2">Cant:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={item.cantidad}
+                    onChange={e => actualizarItem(item.id, 'cantidad', Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-16 px-2 py-1.5 text-sm text-center border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0891B2]/30"
+                  />
+                </div>
+
+                {/* Price */}
+                <div className="sm:col-span-2 flex sm:justify-end items-start gap-2">
+                  <label className="sm:hidden text-xs text-slate-400 pt-2">Precio:</label>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">Q</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="50"
+                      value={item.precio_unitario}
+                      onChange={e => actualizarItem(item.id, 'precio_unitario', Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-24 pl-6 pr-2 py-1.5 text-sm text-right border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0891B2]/30"
+                    />
+                  </div>
+                </div>
+
+                {/* Line total */}
+                <div className="sm:col-span-1 flex sm:justify-end items-start">
+                  <label className="sm:hidden text-xs text-slate-400 pt-2 mr-2">Total:</label>
+                  <span className="text-sm font-semibold text-slate-900 pt-1.5">
+                    {Q(item.cantidad * item.precio_unitario)}
+                  </span>
+                </div>
+
+                {/* Delete */}
+                <div className="sm:col-span-1 flex sm:justify-end items-start">
+                  <button
+                    onClick={() => eliminarItem(item.id)}
+                    className="p-1.5 text-slate-300 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                    title="Eliminar"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* ── Totals ── */}
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-blue-50/20">
+              <div className="flex justify-end">
+                <div className="w-72 space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Subtotal (sin IVA)</span>
+                    <span className="text-slate-700">{Q(calc.sinIva)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">IVA (12%)</span>
+                    <span className="text-slate-700">{Q(calc.iva)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold border-t-2 border-[#1E40AF] pt-2 mt-1">
+                    <span className="text-[#1E40AF]">TOTAL</span>
+                    <span className="text-[#1E40AF]">{Q(calc.total)}</span>
+                  </div>
+                  <div className="mt-2 bg-blue-50 rounded-lg p-3 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-blue-700">Anticipo 60%</span>
+                      <span className="font-medium text-blue-800">{Q(calc.anticipo)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-blue-700">Saldo 40%</span>
+                      <span className="font-medium text-blue-800">{Q(calc.saldo)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ══════════ 3. TÉRMINOS ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">3. Términos y condiciones</h3>
+          <button
+            onClick={() => setCondiciones(CONDICIONES_DEFAULT)}
+            className="text-xs text-slate-400 hover:text-slate-600"
+          >
+            Restaurar
+          </button>
+        </div>
+        <textarea
+          value={condiciones}
+          onChange={e => setCondiciones(e.target.value)}
+          rows={8}
+          className="w-full px-4 py-3 text-sm border border-slate-200 rounded-lg font-mono leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+        />
+      </section>
+
+      {/* ══════════ 4. NOTAS INTERNAS ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">
+          4. Notas internas{' '}
+          <span className="text-xs text-slate-400 font-normal">(no van en la cotización)</span>
+        </h3>
+        <textarea
+          value={notas}
+          onChange={e => setNotas(e.target.value)}
+          rows={2}
+          placeholder="Ej: Cliente referido por Lic. García, negociar si pide descuento..."
+          className="w-full px-4 py-3 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+        />
+      </section>
+
+      {/* ══════════ ACTIONS ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div>
+            {items.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-slate-500">
+                  {items.length} servicio{items.length > 1 ? 's' : ''}
+                </span>
+                <span className="text-xl font-bold text-[#1E40AF]">{Q(calc.total)}</span>
+                {clienteSeleccionado && (
+                  <span className="text-sm text-slate-400">→ {clienteSeleccionado.nombre}</span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => router.back()}
+              className="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => guardar(false)}
+              disabled={guardando || items.length === 0}
+              className="px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-30"
+            >
+              {guardando ? 'Guardando...' : '💾 Guardar borrador'}
+            </button>
+            <button
+              onClick={() => guardar(true)}
+              disabled={guardando || !clienteId || items.length === 0}
+              className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {guardando ? 'Enviando...' : '📤 Guardar y enviar'}
+            </button>
+          </div>
+        </div>
+
+        {errorGuardar && (
+          <div className="mt-3 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+            {errorGuardar}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

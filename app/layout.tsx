@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, Outfit } from 'next/font/google'
 import './globals.css'
 import LayoutWrapper from '@/components/LayoutWrapper'
+import { Providers } from './providers'
 import { Analytics } from "@vercel/analytics/react"
 
 const inter = Inter({ 
@@ -30,9 +31,11 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${inter.variable} ${outfit.variable}`}>
       <body className="font-sans antialiased">
-        <LayoutWrapper>
-          {children}
-        </LayoutWrapper>
+        <Providers>
+          <LayoutWrapper>
+            {children}
+          </LayoutWrapper>
+        </Providers>
         <Analytics />
       </body>
     </html>
