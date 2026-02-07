@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import {
   PageHeader, Badge, Q, EmptyState, TableSkeleton,
@@ -51,14 +52,27 @@ export default function ClientesListPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Clientes"
-        description={`${data?.total ?? 0} clientes activos`}
-        action={{
-          label: '+ Nuevo cliente',
-          onClick: () => router.push('/admin/clientes/nuevo'),
-        }}
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Clientes</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{data?.total ?? 0} clientes activos</p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Link
+            href="/admin/clientes/importar"
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
+          >
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+            Importar Excel
+          </Link>
+          <button
+            onClick={() => router.push('/admin/clientes/nuevo')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all"
+          >
+            + Nuevo cliente
+          </button>
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1">
