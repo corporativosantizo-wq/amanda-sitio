@@ -23,6 +23,7 @@ export default function UploadDocumentos() {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(-1);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const formatSize = (bytes: number): string => {
@@ -68,6 +69,7 @@ export default function UploadDocumentos() {
     if (files.length === 0) return;
     setStep('processing');
     setUploading(true);
+    setGlobalError(null);
 
     // Paso 1: Subir todos los PDFs
     const formData = new FormData();
@@ -82,10 +84,22 @@ export default function UploadDocumentos() {
         method: 'POST',
         body: formData,
       });
-      const data = await res.json();
+
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        setGlobalError(`Error del servidor (HTTP ${res.status}): respuesta no es JSON — ${text.slice(0, 200)}`);
+        for (const f of files) updateFile(f.id, { status: 'error', error: `HTTP ${res.status}` });
+        setUploading(false);
+        return;
+      }
 
       if (!res.ok) {
-        for (const f of files) updateFile(f.id, { status: 'error', error: data.error });
+        const errorMsg = data.error ?? `Error HTTP ${res.status}`;
+        setGlobalError(`Error al subir: ${errorMsg}`);
+        for (const f of files) updateFile(f.id, { status: 'error', error: errorMsg });
         setUploading(false);
         return;
       }
@@ -104,8 +118,14 @@ export default function UploadDocumentos() {
         const match = files.find((f: FileEntry) => f.nombre === fileName);
         if (match) updateFile(match.id, { status: 'error', error: err });
       }
-    } catch {
-      for (const f of files) updateFile(f.id, { status: 'error', error: 'Error de conexión.' });
+
+      if (uploadedDocs.length === 0 && (data.errores ?? []).length > 0) {
+        setGlobalError(`Ningún archivo se subió correctamente. Errores: ${(data.errores ?? []).join('; ')}`);
+      }
+    } catch (connErr: any) {
+      const errorMsg = `Error de conexión: ${connErr.message ?? 'No se pudo conectar al servidor'}`;
+      setGlobalError(errorMsg);
+      for (const f of files) updateFile(f.id, { status: 'error', error: errorMsg });
       setUploading(false);
       return;
     }
@@ -125,15 +145,22 @@ export default function UploadDocumentos() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ documento_id: doc.id }),
         });
-        const result = await res.json();
+
+        let result: any;
+        try {
+          result = await res.json();
+        } catch {
+          updateFile(match.id, { status: 'error', error: `Respuesta inválida del servidor (HTTP ${res.status})` });
+          continue;
+        }
 
         if (res.ok) {
           updateFile(match.id, { status: 'clasificado', resultado: result.documento });
         } else {
-          updateFile(match.id, { status: 'error', error: result.error });
+          updateFile(match.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
         }
-      } catch {
-        updateFile(match.id, { status: 'error', error: 'Error al clasificar.' });
+      } catch (classErr: any) {
+        updateFile(match.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
       }
 
       // Delay 1s entre documentos
@@ -243,6 +270,21 @@ export default function UploadDocumentos() {
         </>
       )}
 
+      {/* Error global */}
+      {globalError && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <svg width="20" height="20" fill="none" stroke="#dc2626" viewBox="0 0 24 24" className="shrink-0 mt-0.5">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-red-800">Error</p>
+              <p className="text-sm text-red-700 mt-1 break-words whitespace-pre-wrap">{globalError}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Step 2: Procesamiento */}
       {(step === 'processing' || step === 'done') && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -289,13 +331,21 @@ export default function UploadDocumentos() {
                         s.icon
                       )}
                     </span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-900 truncate">{f.nombre}</p>
-                      <p className="text-xs" style={{ color: s.color }}>
-                        {f.status === 'clasificado' && f.resultado?.tipo
-                          ? `${s.text}: ${f.resultado.titulo ?? f.resultado.tipo}`
-                          : f.error ?? s.text}
-                      </p>
+                      {f.status === 'clasificado' && f.resultado?.tipo ? (
+                        <p className="text-xs" style={{ color: s.color }}>
+                          {s.text}: {f.resultado.titulo ?? f.resultado.tipo}
+                        </p>
+                      ) : f.status === 'error' && f.error ? (
+                        <p className="text-xs text-red-600 break-words whitespace-pre-wrap max-w-lg">
+                          {f.error}
+                        </p>
+                      ) : (
+                        <p className="text-xs" style={{ color: s.color }}>
+                          {s.text}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <span className="text-xs text-slate-400 shrink-0">{f.tamano}</span>

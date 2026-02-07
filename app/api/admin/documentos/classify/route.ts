@@ -13,10 +13,6 @@ import {
 } from '@/lib/services/documentos.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
-
 const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo & Asociados). Analiza el documento legal PDF y extrae información estructurada.
 
 Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
@@ -49,6 +45,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const documentoId = body.documento_id;
 
+    console.log(`[Classify] Iniciando clasificación para documento: ${documentoId}`);
+
     if (!documentoId) {
       return NextResponse.json(
         { error: 'documento_id es requerido.' },
@@ -56,7 +54,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar que el documento existe y está pendiente
+    // Verificar API key
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('[Classify] FALTA variable ANTHROPIC_API_KEY');
+      return NextResponse.json(
+        { error: 'Configuración incompleta: falta ANTHROPIC_API_KEY en el servidor.' },
+        { status: 500 }
+      );
+    }
+
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+    });
+
+    // Paso 1: Verificar que el documento existe y está pendiente
+    console.log(`[Classify] Paso 1: Buscando documento en BD...`);
     const db = createAdminClient();
     const { data: doc, error: fetchErr } = await db
       .from('documentos')
@@ -64,35 +76,55 @@ export async function POST(req: NextRequest) {
       .eq('id', documentoId)
       .single();
 
-    if (fetchErr || !doc) {
+    if (fetchErr) {
+      console.error(`[Classify] Error al buscar documento:`, fetchErr);
       return NextResponse.json(
-        { error: 'Documento no encontrado.' },
+        { error: `Error al buscar documento en BD: ${fetchErr.message} (code: ${fetchErr.code})` },
+        { status: 500 }
+      );
+    }
+
+    if (!doc) {
+      console.error(`[Classify] Documento no encontrado: ${documentoId}`);
+      return NextResponse.json(
+        { error: `Documento no encontrado: ${documentoId}` },
         { status: 404 }
       );
     }
 
+    console.log(`[Classify] Documento encontrado: ${doc.nombre_archivo}, estado: ${doc.estado}, path: ${doc.storage_path}`);
+
     if (doc.estado !== 'pendiente') {
       return NextResponse.json(
-        { error: `Documento ya está en estado: ${doc.estado}` },
+        { error: `Documento ya está en estado "${doc.estado}", se esperaba "pendiente".` },
         { status: 400 }
       );
     }
 
-    // Descargar PDF de Storage
+    // Paso 2: Descargar PDF de Storage
+    console.log(`[Classify] Paso 2: Descargando PDF de Storage: ${doc.storage_path}`);
     let pdfBuffer: Buffer;
     try {
       pdfBuffer = await descargarPDF(doc.storage_path);
-    } catch {
+      console.log(`[Classify] PDF descargado OK: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+    } catch (dlErr: any) {
+      const detail = dlErr instanceof DocumentoError
+        ? `${dlErr.message} — ${JSON.stringify(dlErr.details)}`
+        : (dlErr.message ?? 'desconocido');
+      console.error(`[Classify] Error al descargar PDF:`, detail, dlErr);
       return NextResponse.json(
-        { error: 'No se pudo descargar el PDF de Storage.' },
+        { error: `No se pudo descargar el PDF de Storage: ${detail}` },
         { status: 500 }
       );
     }
 
     const base64 = pdfBuffer.toString('base64');
+    console.log(`[Classify] Base64 generado: ${(base64.length / 1024).toFixed(0)} KB`);
 
-    // Llamar a Claude
+    // Paso 3: Llamar a Claude
+    console.log(`[Classify] Paso 3: Enviando a Claude API...`);
     let clasificacion: any;
+    let rawResponse = '';
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
@@ -118,18 +150,35 @@ export async function POST(req: NextRequest) {
         ],
       });
 
+      console.log(`[Classify] Claude respondió. stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+
       const textBlock = response.content.find((b: any) => b.type === 'text') as any;
-      const responseText = textBlock?.text ?? '';
+      rawResponse = textBlock?.text ?? '';
+      console.log(`[Classify] Respuesta raw (primeros 500 chars): ${rawResponse.slice(0, 500)}`);
 
       // Limpiar markdown si Claude lo envuelve en backticks
-      const cleaned = responseText
+      const cleaned = rawResponse
         .replace(/^```json?\s*/i, '')
         .replace(/```\s*$/, '')
         .trim();
 
       clasificacion = JSON.parse(cleaned);
+      console.log(`[Classify] JSON parseado OK: tipo=${clasificacion.tipo}, confianza=${clasificacion.confianza}`);
     } catch (parseErr: any) {
+      console.error(`[Classify] Error en Claude API o JSON parse:`, parseErr.message);
+      console.error(`[Classify] Respuesta raw que falló el parse: ${rawResponse.slice(0, 1000)}`);
+
+      // Si es un error de la API (no un parse error), retornar inmediatamente
+      if (parseErr.status || parseErr.error) {
+        const apiMsg = parseErr.error?.message ?? parseErr.message ?? 'Error de API';
+        return NextResponse.json(
+          { error: `Error de Claude API: ${apiMsg} (status: ${parseErr.status ?? 'N/A'})` },
+          { status: 500 }
+        );
+      }
+
       // Si falla el parsing, guardar como 'otro' con baja confianza
+      console.warn(`[Classify] Usando clasificación fallback (tipo=otro, confianza=0)`);
       clasificacion = {
         tipo: 'otro',
         titulo: doc.nombre_archivo,
@@ -140,33 +189,62 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Buscar cliente por nombre fuzzy
+    // Paso 4: Buscar cliente por nombre fuzzy
+    console.log(`[Classify] Paso 4: Fuzzy match — cliente_probable: "${clasificacion.cliente_probable}"`);
     let clienteMatch = null;
     if (clasificacion.cliente_probable) {
-      clienteMatch = await buscarClienteFuzzy(clasificacion.cliente_probable);
+      try {
+        clienteMatch = await buscarClienteFuzzy(clasificacion.cliente_probable);
+        if (clienteMatch) {
+          console.log(`[Classify] Match encontrado: ${clienteMatch.nombre} (${clienteMatch.codigo}), confianza: ${clienteMatch.confianza}`);
+        } else {
+          console.log(`[Classify] No se encontró match para "${clasificacion.cliente_probable}"`);
+        }
+      } catch (fuzzyErr: any) {
+        console.error(`[Classify] Error en fuzzy match (no fatal):`, fuzzyErr.message);
+      }
     }
 
-    // Guardar clasificación
-    const resultado = await clasificarDocumento(doc.id, {
-      tipo: clasificacion.tipo ?? 'otro',
-      titulo: clasificacion.titulo ?? doc.nombre_archivo,
-      descripcion: clasificacion.descripcion ?? null,
-      fecha_documento: clasificacion.fecha_documento ?? null,
-      numero_documento: clasificacion.numero_documento ?? null,
-      partes: clasificacion.partes ?? [],
-      nombre_cliente_extraido: clasificacion.cliente_probable ?? null,
-      confianza_ia: clasificacion.confianza ?? 0,
-      metadata: clasificacion.datos_adicionales ?? {},
-      cliente_id: clienteMatch?.id ?? null,
-    });
+    // Paso 5: Guardar clasificación en BD
+    console.log(`[Classify] Paso 5: Guardando clasificación en BD...`);
+    try {
+      const resultado = await clasificarDocumento(doc.id, {
+        tipo: clasificacion.tipo ?? 'otro',
+        titulo: clasificacion.titulo ?? doc.nombre_archivo,
+        descripcion: clasificacion.descripcion ?? null,
+        fecha_documento: clasificacion.fecha_documento ?? null,
+        numero_documento: clasificacion.numero_documento ?? null,
+        partes: clasificacion.partes ?? [],
+        nombre_cliente_extraido: clasificacion.cliente_probable ?? null,
+        confianza_ia: clasificacion.confianza ?? 0,
+        metadata: clasificacion.datos_adicionales ?? {},
+        cliente_id: clienteMatch?.id ?? null,
+      });
 
-    return NextResponse.json({
-      documento: resultado,
-      cliente_match: clienteMatch,
-    });
+      console.log(`[Classify] Clasificación guardada OK: id=${resultado.id}, tipo=${resultado.tipo}`);
+
+      return NextResponse.json({
+        documento: resultado,
+        cliente_match: clienteMatch,
+      });
+    } catch (saveErr: any) {
+      const detail = saveErr instanceof DocumentoError
+        ? `${saveErr.message} — ${JSON.stringify(saveErr.details)}`
+        : (saveErr.message ?? 'desconocido');
+      console.error(`[Classify] Error al guardar clasificación:`, detail, saveErr);
+      return NextResponse.json(
+        { error: `Error al guardar clasificación en BD: ${detail}` },
+        { status: 500 }
+      );
+    }
   } catch (error: any) {
-    console.error('[Documentos Classify] Error:', error);
-    const msg = error instanceof DocumentoError ? error.message : 'Error al clasificar documento.';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error('[Classify] Error general no capturado:', error);
+    const detail = error instanceof DocumentoError
+      ? `${error.message} — ${JSON.stringify(error.details)}`
+      : (error.message ?? 'Error desconocido');
+    return NextResponse.json(
+      { error: `Error al clasificar: ${detail}` },
+      { status: 500 }
+    );
   }
 }
