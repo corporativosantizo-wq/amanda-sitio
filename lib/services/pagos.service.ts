@@ -95,6 +95,7 @@ export async function obtenerPago(id: string): Promise<PagoConRelaciones> {
 export async function registrarPago(input: PagoInsert): Promise<Pago> {
   // 1. Generar número
   const { data: numData, error: numError } = await db()
+    // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'PAG' });
   if (numError) throw new PagoError('Error al generar número', numError);
   const numero = numData as string;

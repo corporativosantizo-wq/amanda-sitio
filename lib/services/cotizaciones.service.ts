@@ -96,6 +96,7 @@ export async function obtenerCotizacion(id: string): Promise<CotizacionConClient
 export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizacion> {
   // 1. Generar número secuencial
   const { data: numData, error: numError } = await db()
+    // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'COT' });
 
   if (numError) throw new CotizacionError('Error al generar número', numError);

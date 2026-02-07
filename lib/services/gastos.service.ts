@@ -109,6 +109,7 @@ export async function obtenerGasto(id: string): Promise<GastoConCategoria> {
 export async function crearGasto(input: GastoInsert): Promise<Gasto> {
   // 1. Generar número
   const { data: numData, error: numError } = await db()
+    // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'GAS' });
   if (numError) throw new GastoError('Error al generar número', numError);
   const numero = numData as string;

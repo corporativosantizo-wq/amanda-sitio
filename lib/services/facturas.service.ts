@@ -107,6 +107,7 @@ export async function obtenerFactura(id: string): Promise<FacturaConCliente> {
 export async function crearFactura(input: FacturaInsert): Promise<Factura> {
   // 1. Generar número
   const { data: numData, error: numError } = await db()
+    // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'FAC' });
   if (numError) throw new FacturaError('Error al generar número', numError);
   const numero = numData as string;

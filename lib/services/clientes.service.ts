@@ -89,6 +89,7 @@ export async function obtenerCliente(id: string): Promise<ClienteConStats> {
 export async function crearCliente(input: ClienteInsert): Promise<Cliente> {
   // Generar código
   const { data: numData, error: numError } = await db()
+    // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'CLI' });
   if (numError) { console.error('RPC ERROR:', JSON.stringify(numError)); throw new ClienteError('Error al generar código', numError); }
   const codigo = numData as string;
