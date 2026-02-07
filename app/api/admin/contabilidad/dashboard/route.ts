@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       resumenCotizaciones(),
       resumenFacturas(),
       resumenPagos(),
-      resumenGastos(desde, hasta),
+      resumenGastos(),
     ]);
 
     // Flujo de efectivo del mes
