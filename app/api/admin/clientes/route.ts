@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     const s = req.nextUrl.searchParams;
     const result = await listarClientes({
       busqueda: s.get('q') ?? undefined,
-      tipo: (s.get('tipo') as 'individual' | 'empresa') ?? undefined,
+      tipo: (s.get('tipo') as 'persona' | 'empresa') ?? undefined,
       activo: s.has('activo') ? s.get('activo') === 'true' : undefined,
       page: parseInt(s.get('page') ?? '1'),
       limit: parseInt(s.get('limit') ?? '20'),
