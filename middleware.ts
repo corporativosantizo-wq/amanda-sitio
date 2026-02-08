@@ -1,29 +1,19 @@
 // ============================================================================
 // middleware.ts
 // Clerk authentication middleware
-// Protege /admin y /api/admin, permite rutas públicas
+// SOLO protege /admin y /api/admin — todo lo demás es público
 // ============================================================================
 
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// Rutas que NO requieren autenticación
-const isPublicRoute = createRouteMatcher([
-  '/',
-  '/blog(.*)',
-  '/servicios(.*)',
-  '/api/webhooks(.*)',    // Webhooks de Clerk, Megaprint, etc.
-  '/api/portal(.*)',      // Portal API usa Supabase Auth, no Clerk
-  '/api/cron(.*)',        // Cron jobs (protegidos por CRON_SECRET)
-  '/api/pagos(.*)',       // Stripe webhooks/checkout
-  '/api/public(.*)',      // Agendamiento público, disponibilidad
-  '/agendar(.*)',         // Página pública de agendamiento
-  '/portal(.*)',          // Portal de clientes usa su propia auth
-  '/sign-in(.*)',
-  '/sign-up(.*)',
+// Rutas que SÍ requieren autenticación con Clerk (whitelist)
+const isProtectedRoute = createRouteMatcher([
+  '/admin(.*)',
+  '/api/admin(.*)',
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
+  if (isProtectedRoute(req)) {
     await auth.protect();
   }
 });
