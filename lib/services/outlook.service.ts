@@ -3,7 +3,6 @@
 // Microsoft Graph API: OAuth, Calendar CRUD, Teams links, sendMail
 // ============================================================================
 
-import { ConfidentialClientApplication } from '@azure/msal-node';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { encrypt, decrypt } from '@/lib/crypto';
@@ -21,7 +20,7 @@ export class OutlookError extends Error {
   }
 }
 
-// ── MSAL Config ─────────────────────────────────────────────────────────────
+// ── Config ──────────────────────────────────────────────────────────────────
 
 const SCOPES = [
   'Calendars.ReadWrite',
@@ -30,24 +29,6 @@ const SCOPES = [
   'OnlineMeetings.ReadWrite',
   'offline_access',
 ];
-
-function getMsalApp(): ConfidentialClientApplication {
-  const clientId = process.env.AZURE_CLIENT_ID;
-  const clientSecret = process.env.AZURE_CLIENT_SECRET;
-  const tenantId = process.env.AZURE_TENANT_ID;
-
-  if (!clientId || !clientSecret || !tenantId) {
-    throw new OutlookError('Faltan variables de entorno de Azure (AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID)');
-  }
-
-  return new ConfidentialClientApplication({
-    auth: {
-      clientId,
-      clientSecret,
-      authority: `https://login.microsoftonline.com/${tenantId}`,
-    },
-  });
-}
 
 function getRedirectUri(): string {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
@@ -75,57 +56,90 @@ export function getOutlookAuthUrl(): string {
 }
 
 export async function exchangeCodeForTokens(code: string): Promise<void> {
-  const msalApp = getMsalApp();
+  const redirectUri = getRedirectUri();
+  console.log('[Outlook] ── exchangeCodeForTokens ──');
+  console.log('[Outlook] Code recibido:', code.substring(0, 20) + '...');
+  console.log('[Outlook] Redirect URI:', redirectUri);
 
-  const result = await msalApp.acquireTokenByCode({
-    code,
-    scopes: SCOPES,
-    redirectUri: getRedirectUri(),
+  // Exchange code for tokens via direct token endpoint
+  // (NOT using MSAL acquireTokenByCode — it consumes the single-use code
+  // and doesn't expose the refresh_token)
+  const tenantId = process.env.AZURE_TENANT_ID!;
+  const clientId = process.env.AZURE_CLIENT_ID!;
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+
+  console.log('[Outlook] Token endpoint:', tokenUrl);
+  console.log('[Outlook] Client ID:', clientId.substring(0, 8) + '...');
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: process.env.AZURE_CLIENT_SECRET!,
+      code,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+      scope: SCOPES.join(' '),
+    }),
   });
 
-  if (!result || !result.accessToken) {
-    throw new OutlookError('No se pudo obtener token de acceso');
-  }
-
-  // MSAL doesn't directly expose refresh token via acquireTokenByCode in some versions.
-  // We'll do a manual token exchange to get both tokens.
-  const tenantId = process.env.AZURE_TENANT_ID!;
-  const tokenResponse = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.AZURE_CLIENT_ID!,
-        client_secret: process.env.AZURE_CLIENT_SECRET!,
-        code,
-        redirect_uri: getRedirectUri(),
-        grant_type: 'authorization_code',
-        scope: SCOPES.join(' '),
-      }),
-    }
-  );
+  const responseText = await tokenResponse.text();
+  console.log('[Outlook] Token response status:', tokenResponse.status);
 
   if (!tokenResponse.ok) {
-    const errBody = await tokenResponse.text();
-    throw new OutlookError('Error al intercambiar code por tokens', errBody);
+    console.error('[Outlook] ERROR token exchange:', responseText);
+    throw new OutlookError('Error al intercambiar code por tokens', responseText);
   }
 
-  const tokens = await tokenResponse.json();
+  const tokens = JSON.parse(responseText);
+  console.log('[Outlook] access_token recibido:', tokens.access_token ? `${tokens.access_token.substring(0, 20)}... (${tokens.access_token.length} chars)` : 'NULL');
+  console.log('[Outlook] refresh_token recibido:', tokens.refresh_token ? `${tokens.refresh_token.substring(0, 20)}... (${tokens.refresh_token.length} chars)` : 'NULL');
+  console.log('[Outlook] expires_in:', tokens.expires_in);
+
+  if (!tokens.access_token) {
+    throw new OutlookError('Token response no contiene access_token', tokens);
+  }
+
+  // Encrypt tokens
+  const encryptedAccess = encrypt(tokens.access_token);
+  const encryptedRefresh = tokens.refresh_token ? encrypt(tokens.refresh_token) : null;
+  console.log('[Outlook] Encrypted access_token:', encryptedAccess ? `${encryptedAccess.substring(0, 30)}... (${encryptedAccess.length} chars)` : 'NULL');
+  console.log('[Outlook] Encrypted refresh_token:', encryptedRefresh ? `${encryptedRefresh.substring(0, 30)}... (${encryptedRefresh.length} chars)` : 'NULL');
+
   const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString();
 
-  const { error } = await db()
-    .from('configuracion')
-    .update({
-      outlook_access_token_encrypted: encrypt(tokens.access_token),
-      outlook_refresh_token_encrypted: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
-      outlook_token_expires_at: expiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .not('id', 'is', null);
+  // Save to DB
+  const updatePayload = {
+    outlook_access_token_encrypted: encryptedAccess,
+    outlook_refresh_token_encrypted: encryptedRefresh,
+    outlook_token_expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  };
+  console.log('[Outlook] Guardando en configuracion...');
 
-  if (error) throw new OutlookError('Error al guardar tokens', error);
-  console.log('[Outlook] Tokens guardados OK, expiran:', expiresAt);
+  const { data: updateData, error, count } = await db()
+    .from('configuracion')
+    .update(updatePayload)
+    .not('id', 'is', null)
+    .select('id, outlook_access_token_encrypted, outlook_refresh_token_encrypted, outlook_token_expires_at');
+
+  if (error) {
+    console.error('[Outlook] ERROR al guardar en BD:', JSON.stringify(error));
+    throw new OutlookError('Error al guardar tokens', error);
+  }
+
+  console.log('[Outlook] Update result rows:', updateData?.length ?? 0);
+  if (updateData && updateData.length > 0) {
+    const saved = updateData[0];
+    console.log('[Outlook] Verificación BD — access_token guardado:', saved.outlook_access_token_encrypted ? 'SÍ' : 'NULL');
+    console.log('[Outlook] Verificación BD — refresh_token guardado:', saved.outlook_refresh_token_encrypted ? 'SÍ' : 'NULL');
+    console.log('[Outlook] Verificación BD — expires_at:', saved.outlook_token_expires_at);
+  } else {
+    console.error('[Outlook] ADVERTENCIA: update no afectó ninguna fila. ¿Existe la tabla configuracion con datos?');
+  }
+
+  console.log('[Outlook] ── Tokens guardados OK, expiran:', expiresAt, '──');
 }
 
 // ── Token Management ────────────────────────────────────────────────────────
