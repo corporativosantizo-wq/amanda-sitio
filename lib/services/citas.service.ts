@@ -49,17 +49,22 @@ export async function obtenerDisponibilidad(
   const date = new Date(fecha + 'T12:00:00');
   const dayOfWeek = date.getDay(); // 0=Dom, 1=Lun, ...
   if (!config.dias.includes(dayOfWeek)) {
+    console.log(`[Disponibilidad] fecha=${fecha}, tipo=${tipo}: día ${dayOfWeek} no válido (permitidos: ${config.dias})`);
     return []; // No hay slots disponibles este día
   }
 
-  // Verificar que no es fecha pasada
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
+  // Verificar que no es fecha pasada (usar zona Guatemala)
+  const nowGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
+  nowGT.setHours(0, 0, 0, 0);
   const fechaDate = new Date(fecha + 'T00:00:00');
-  if (fechaDate < hoy) return [];
+  if (fechaDate < nowGT) {
+    console.log(`[Disponibilidad] fecha=${fecha} es pasada (hoy GT: ${nowGT.toISOString()})`);
+    return [];
+  }
 
   // Generar slots base
   const slots = generarSlots(config.hora_inicio, config.hora_fin, config.duracion_min);
+  console.log(`[Disponibilidad] fecha=${fecha}, tipo=${tipo}: ${slots.length} slots base generados (${config.hora_inicio}-${config.hora_fin}, cada ${config.duracion_min}min)`);
 
   // Obtener citas existentes del día (no canceladas)
   const { data: citasExistentes } = await db()
@@ -74,6 +79,8 @@ export async function obtenerDisponibilidad(
     .select('hora_inicio, hora_fin')
     .eq('fecha', fecha);
 
+  console.log(`[Disponibilidad] fecha=${fecha}: citas existentes=${JSON.stringify(citasExistentes ?? [])}, bloqueos=${JSON.stringify(bloqueos ?? [])}`);
+
   // Filtrar slots ocupados por citas
   let disponibles = slots.filter((slot: SlotDisponible) => {
     const ocupado = (citasExistentes ?? []).some((cita: any) =>
@@ -81,6 +88,7 @@ export async function obtenerDisponibilidad(
     );
     return !ocupado;
   });
+  console.log(`[Disponibilidad] Después de filtrar citas: ${disponibles.length} slots`);
 
   // Filtrar slots bloqueados
   disponibles = disponibles.filter((slot: SlotDisponible) => {
@@ -89,6 +97,7 @@ export async function obtenerDisponibilidad(
     );
     return !bloqueado;
   });
+  console.log(`[Disponibilidad] Después de filtrar bloqueos: ${disponibles.length} slots`);
 
   // Si Outlook conectado, filtrar por busy slots
   try {
@@ -97,6 +106,7 @@ export async function obtenerDisponibilidad(
       const startISO = `${fecha}T${config.hora_inicio}:00`;
       const endISO = `${fecha}T${config.hora_fin}:00`;
       const busySlots = await getFreeBusy(startISO, endISO);
+      console.log(`[Disponibilidad] Outlook busy slots: ${JSON.stringify(busySlots)}`);
 
       disponibles = disponibles.filter((slot: SlotDisponible) => {
         const busy = busySlots.some((b: any) => {
@@ -106,12 +116,15 @@ export async function obtenerDisponibilidad(
         });
         return !busy;
       });
+      console.log(`[Disponibilidad] Después de filtrar Outlook: ${disponibles.length} slots`);
+    } else {
+      console.log(`[Disponibilidad] Outlook no conectado, sin filtrar`);
     }
-  } catch {
-    // Si falla Outlook, continuamos sin filtrar
-    console.warn('[Citas] No se pudo consultar Outlook free/busy');
+  } catch (outlookErr) {
+    console.warn('[Citas] No se pudo consultar Outlook free/busy:', outlookErr);
   }
 
+  console.log(`[Disponibilidad] RESULTADO FINAL: ${disponibles.length} slots disponibles:`, disponibles.map((s: SlotDisponible) => s.hora_inicio));
   return disponibles;
 }
 
@@ -209,10 +222,25 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
 
   // Validar que el slot esté disponible
   const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo);
-  const slotValido = disponibles.some(
-    (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
-  );
+
+  let slotValido: boolean;
+  if (input.tipo === 'consulta_nueva') {
+    // consulta_nueva books a 60-min block but disponibilidad returns 30-min sub-slots.
+    // Validate that both the :00 and :30 sub-slots are available.
+    const halfHour = input.hora_inicio.replace(':00', ':30');
+    const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
+    const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
+    slotValido = hasStart && hasHalf;
+    console.log(`[crearCita] consulta_nueva validation: hora=${input.hora_inicio}, halfHour=${halfHour}, hasStart=${hasStart}, hasHalf=${hasHalf}, slotValido=${slotValido}`);
+  } else {
+    slotValido = disponibles.some(
+      (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
+    );
+    console.log(`[crearCita] seguimiento validation: hora_inicio=${input.hora_inicio}, hora_fin=${input.hora_fin}, slotValido=${slotValido}`);
+  }
+
   if (!slotValido) {
+    console.error(`[crearCita] Slot NO disponible. fecha=${input.fecha}, tipo=${input.tipo}, hora_inicio=${input.hora_inicio}, hora_fin=${input.hora_fin}. Slots disponibles:`, JSON.stringify(disponibles));
     throw new CitaError('El horario seleccionado ya no está disponible.');
   }
 

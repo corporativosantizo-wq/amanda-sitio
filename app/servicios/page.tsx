@@ -128,9 +128,12 @@ export default function ServiciosPage() {
               Cada servicio está diseñado para darte claridad, protección y confianza 
               en cada decisión legal.
             </p>
-            <button className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 hover:shadow-lg transform hover:scale-105">
-              Agenda consulta gratuita
-            </button>
+            <Link
+              href="/agendar"
+              className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 hover:shadow-lg transform hover:scale-105"
+            >
+              Agenda una consulta
+            </Link>
           </div>
         </div>
       </section>
@@ -218,9 +221,12 @@ export default function ServiciosPage() {
             Agenda una consulta inicial gratuita de 15 minutos.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300">
-              Agenda consulta gratuita
-            </button>
+            <Link
+              href="/agendar"
+              className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
+            >
+              Agenda una consulta
+            </Link>
             <Link
               href="/contacto"
               className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300 flex items-center justify-center"

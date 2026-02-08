@@ -78,7 +78,9 @@ export async function POST(req: NextRequest) {
     const config = HORARIOS[tipoCita];
 
     // Double-check availability
+    console.log(`[Agendar] Verificando disponibilidad: fecha=${fecha}, hora=${hora}, tipo=${tipoCita}`);
     const slots = await obtenerDisponibilidad(fecha, tipoCita);
+    console.log(`[Agendar] obtenerDisponibilidad retornó ${slots.length} slots:`, slots.map((s: any) => s.hora_inicio));
 
     // For consulta_nueva the public page sends the hour; match to a slot
     let matchedSlot: { hora_inicio: string; hora_fin: string; duracion_minutos: number } | null = null;
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest) {
       const hasStart = slots.some((s: any) => s.hora_inicio === hora);
       const halfHour = hora.replace(':00', ':30');
       const hasHalf = slots.some((s: any) => s.hora_inicio === halfHour);
+      console.log(`[Agendar] consulta_nueva check: hora=${hora}, halfHour=${halfHour}, hasStart=${hasStart}, hasHalf=${hasHalf}`);
 
       if (hasStart && hasHalf) {
         const [h] = hora.split(':').map(Number);
@@ -100,15 +103,19 @@ export async function POST(req: NextRequest) {
     } else {
       // Seguimiento — exact 15-min slot
       const found = slots.find((s: any) => s.hora_inicio === hora);
+      console.log(`[Agendar] seguimiento check: hora=${hora}, found=${!!found}`);
       if (found) matchedSlot = found;
     }
 
     if (!matchedSlot) {
+      console.error(`[Agendar] RECHAZADO: No se encontró slot para fecha=${fecha}, hora=${hora}, tipo=${tipoCita}`);
       return NextResponse.json(
         { error: 'El horario seleccionado ya no está disponible. Por favor elige otro.' },
         { status: 409 }
       );
     }
+
+    console.log(`[Agendar] Slot matched: ${matchedSlot.hora_inicio}-${matchedSlot.hora_fin} (${matchedSlot.duracion_minutos}min)`);
 
     // Find or create client
     const db = createAdminClient();

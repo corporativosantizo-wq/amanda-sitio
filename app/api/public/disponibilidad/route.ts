@@ -26,12 +26,12 @@ export async function GET(req: NextRequest) {
   try {
     const slots = await obtenerDisponibilidad(fecha, tipo);
 
-    // Filter out past slots if the requested date is today
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    // Filter out past slots if the requested date is today (use Guatemala timezone)
+    const nowGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
+    const todayStr = `${nowGT.getFullYear()}-${String(nowGT.getMonth() + 1).padStart(2, '0')}-${String(nowGT.getDate()).padStart(2, '0')}`;
     const isToday = fecha === todayStr;
-    const currentHH = now.getHours();
-    const currentMM = now.getMinutes();
+    const currentHH = nowGT.getHours();
+    const currentMM = nowGT.getMinutes();
 
     function isSlotInPast(horaInicio: string): boolean {
       if (!isToday) return false;
