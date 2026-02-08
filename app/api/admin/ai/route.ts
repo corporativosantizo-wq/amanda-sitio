@@ -350,12 +350,12 @@ Puedes gestionar las cuentas por cobrar del despacho usando la herramienta gesti
 Puedes buscar, actualizar y crear clientes usando la herramienta gestionar_clientes. Acciones disponibles:
 
 ### Acciones:
-- **buscar**: Busca clientes por nombre o email. Retorna id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion.
+- **buscar**: Busca clientes por nombre, email, empresa, razón social o NIT (ILIKE, case-insensitive).
 - **actualizar**: Actualiza datos de un cliente existente. Requiere cliente_id (UUID) y los campos a modificar en datos.
 - **crear**: Crea un nuevo cliente. Requiere al menos nombre en datos.
 
 ### Campos disponibles para actualizar/crear:
-nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion
+nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, representante_legal, nit_facturacion, direccion_facturacion, notas, tipo, estado, fuente
 
 ### Ejemplos:
 - "Actualiza el correo de Ricardo Valle a ricardo@gmail.com" → buscar(busqueda="Ricardo Valle") para obtener ID, luego actualizar(cliente_id=UUID, datos={email:"ricardo@gmail.com"})
@@ -903,18 +903,19 @@ async function handleGestionarClientes(
 
   switch (accion) {
     case 'buscar': {
-      if (!busqueda?.trim()) throw new Error('Se requiere busqueda (nombre o email)');
+      if (!busqueda?.trim()) throw new Error('Se requiere busqueda (nombre, email, empresa, NIT, etc.)');
+      const q = busqueda.trim();
       const { data, error } = await db
         .from('clientes')
-        .select('id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion')
-        .or(`nombre.ilike.%${busqueda.trim()}%,email.ilike.%${busqueda.trim()}%`)
+        .select('id, codigo, tipo, nombre, nit, dpi, telefono, email, direccion, empresa, representante_legal, razon_social, nit_facturacion, direccion_facturacion, notas, activo')
+        .or(`nombre.ilike.%${q}%,email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`)
         .limit(5);
 
       if (error) throw new Error(`Error al buscar: ${error.message}`);
       if (!data?.length) return `No se encontraron clientes con "${busqueda}".`;
 
       const lines = data.map((c: any) =>
-        `- **${c.nombre}** (id: ${c.id})\n  Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'}\n  Empresa: ${c.empresa ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}\n  Razón social: ${c.razon_social ?? 'N/A'} | NIT fact: ${c.nit_facturacion ?? 'N/A'} | Dir fact: ${c.direccion_facturacion ?? 'N/A'}`
+        `- **${c.nombre}** (id: ${c.id}, código: ${c.codigo ?? 'N/A'}, tipo: ${c.tipo ?? 'N/A'})\n  Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'}\n  Empresa: ${c.empresa ?? 'N/A'} | Rep. legal: ${c.representante_legal ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}\n  Razón social: ${c.razon_social ?? 'N/A'} | NIT fact: ${c.nit_facturacion ?? 'N/A'} | Dir fact: ${c.direccion_facturacion ?? 'N/A'}${c.notas ? `\n  Notas: ${c.notas}` : ''}`
       );
       return `${data.length} cliente(s) encontrado(s):\n${lines.join('\n\n')}`;
     }
@@ -923,7 +924,7 @@ async function handleGestionarClientes(
       if (!clienteId) throw new Error('Se requiere cliente_id (UUID) para actualizar');
       if (!datos || Object.keys(datos).length === 0) throw new Error('Se requiere al menos un campo en datos para actualizar');
 
-      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'nit_facturacion', 'direccion_facturacion'];
+      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'representante_legal', 'nit_facturacion', 'direccion_facturacion', 'notas', 'tipo', 'estado', 'fuente'];
       const payload: any = {};
       for (const key of allowed) {
         if (datos[key] !== undefined) payload[key] = datos[key];
@@ -935,7 +936,7 @@ async function handleGestionarClientes(
         .from('clientes')
         .update(payload)
         .eq('id', clienteId)
-        .select('id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion')
+        .select('id, codigo, nombre, email, telefono, dpi, nit, empresa, representante_legal, direccion, razon_social, nit_facturacion, direccion_facturacion')
         .single();
 
       if (error) throw new Error(`Error al actualizar: ${error.message}`);
@@ -948,7 +949,7 @@ async function handleGestionarClientes(
     case 'crear': {
       if (!datos?.nombre?.trim()) throw new Error('Se requiere al menos el nombre del cliente');
 
-      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'nit_facturacion', 'direccion_facturacion'];
+      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'representante_legal', 'nit_facturacion', 'direccion_facturacion', 'notas', 'tipo', 'fuente'];
       const payload: any = {};
       for (const key of allowed) {
         if (datos[key] !== undefined) payload[key] = datos[key];
@@ -957,11 +958,11 @@ async function handleGestionarClientes(
       const { data, error } = await db
         .from('clientes')
         .insert(payload)
-        .select('id, nombre, email, telefono')
+        .select('id, codigo, nombre, email, telefono, nit')
         .single();
 
       if (error) throw new Error(`Error al crear cliente: ${error.message}`);
-      return `Cliente creado: **${data.nombre}** (id: ${data.id}) — Email: ${data.email ?? 'N/A'}, Tel: ${data.telefono ?? 'N/A'}`;
+      return `Cliente creado: **${data.nombre}** (id: ${data.id}, código: ${data.codigo ?? 'N/A'}) — Email: ${data.email ?? 'N/A'}, Tel: ${data.telefono ?? 'N/A'}, NIT: ${data.nit ?? 'N/A'}`;
     }
 
     default:
@@ -1255,11 +1256,11 @@ export async function POST(req: Request) {
             },
             busqueda: {
               type: 'string',
-              description: 'Nombre o email para buscar.',
+              description: 'Texto para buscar en nombre, email, empresa, razon_social o NIT.',
             },
             datos: {
               type: 'object',
-              description: 'Datos a actualizar o crear: nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion.',
+              description: 'Datos a actualizar o crear: nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, representante_legal, nit_facturacion, direccion_facturacion, notas, tipo, estado, fuente.',
             },
           },
           required: ['accion'],
