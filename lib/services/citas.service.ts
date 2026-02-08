@@ -20,8 +20,14 @@ import {
   updateCalendarEvent,
   deleteCalendarEvent,
   getFreeBusy,
-  sendEmail,
+  sendMail,
 } from './outlook.service';
+import {
+  emailConfirmacionCita,
+  emailRecordatorio24h,
+  emailRecordatorio1h,
+  emailCancelacionCita,
+} from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
 
@@ -322,8 +328,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       // Enviar email de confirmación
       if (clienteEmail) {
         try {
-          const html = generarEmailConfirmacion(cita);
-          await sendEmail(clienteEmail, `Confirmación de cita — ${cita.titulo}`, html);
+          const email = emailConfirmacionCita(cita);
+          await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
           await db()
             .from('citas')
             .update({ email_confirmacion_enviado: true })
@@ -405,8 +411,8 @@ export async function cancelarCita(id: string): Promise<Cita> {
   // Email de cancelación
   if (cita.cliente?.email) {
     try {
-      const html = generarEmailCancelacion(cita);
-      await sendEmail(cita.cliente.email, `Cita cancelada — ${cita.titulo}`, html);
+      const email = emailCancelacionCita(cita);
+      await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
     } catch {
       console.warn('[Citas] Error al enviar email de cancelación');
     }
@@ -516,8 +522,8 @@ export async function enviarRecordatorios(): Promise<{
   for (const cita of citas24h ?? []) {
     if (cita.cliente?.email) {
       try {
-        const html = generarEmailRecordatorio(cita, '24h');
-        await sendEmail(cita.cliente.email, `Recordatorio: su cita es mañana — ${cita.titulo}`, html);
+        const email = emailRecordatorio24h(cita);
+        await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
         await db()
           .from('citas')
           .update({ recordatorio_24h_enviado: true })
@@ -546,8 +552,8 @@ export async function enviarRecordatorios(): Promise<{
     if (diffMin > 0 && diffMin <= 75) {
       if (cita.cliente?.email) {
         try {
-          const html = generarEmailRecordatorio(cita, '1h');
-          await sendEmail(cita.cliente.email, `¡Su cita es en 1 hora! — ${cita.titulo}`, html);
+          const email = emailRecordatorio1h(cita);
+          await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
           await db()
             .from('citas')
             .update({ recordatorio_1h_enviado: true })
@@ -580,56 +586,7 @@ export async function enviarRecordatorios(): Promise<{
   return { enviados_24h, enviados_1h, completadas };
 }
 
-// ── Email Templates ─────────────────────────────────────────────────────────
-
-function emailWrapper(content: string): string {
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.07);">
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#0d9488,#06b6d4);padding:24px 32px;text-align:center;">
-            <span style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:1px;">AS</span>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.9);font-size:13px;">Amanda Santizo & Asociados</p>
-          </td>
-        </tr>
-        <!-- Content -->
-        <tr><td style="padding:32px;">${content}</td></tr>
-        <!-- Footer -->
-        <tr>
-          <td style="padding:16px 32px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
-            <p style="margin:0;color:#9ca3af;font-size:12px;">Amanda Santizo & Asociados — Servicios Legales y Notariales</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-}
-
-function formatearFechaGT(fecha: string): string {
-  const d = new Date(fecha + 'T12:00:00');
-  return d.toLocaleDateString('es-GT', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'America/Guatemala',
-  });
-}
-
-function formatearHora(hora: string): string {
-  const [h, m] = hora.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
+// ── Calendar Event Body (NOT an email template — used for Outlook event) ────
 
 function generarBodyEvento(cita: any): string {
   const clienteNombre = cita.cliente?.nombre ?? 'Sin cliente asignado';
@@ -638,94 +595,4 @@ function generarBodyEvento(cita: any): string {
 <p><strong>Tipo:</strong> ${tipo}</p>
 <p><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT')}</p>
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
-}
-
-function generarEmailConfirmacion(cita: any): string {
-  const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
-  const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
-
-  let teamsBtn = '';
-  if (cita.teams_link) {
-    teamsBtn = `
-      <tr><td style="padding:16px 0;">
-        <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
-          Unirse a la reunión
-        </a>
-      </td></tr>`;
-  }
-
-  let costoSection = '';
-  if (cita.costo > 0) {
-    costoSection = `<p style="margin:8px 0;font-size:14px;"><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT')}</p>`;
-  }
-
-  return emailWrapper(`
-    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Confirmada</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita ha sido agendada exitosamente.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
-      <tr><td>
-        <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipo}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
-        ${costoSection}
-      </td></tr>
-    </table>
-    <table>${teamsBtn}</table>
-    <p style="color:#64748b;font-size:13px;margin-top:16px;">Si necesita cancelar o reprogramar, contáctenos con anticipación.</p>
-  `);
-}
-
-function generarEmailRecordatorio(cita: any, tipo: '24h' | '1h'): string {
-  const tipoCita = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
-  const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
-
-  const titulo = tipo === '24h' ? 'Recordatorio: su cita es mañana' : '¡Su cita es en 1 hora!';
-  const bgColor = tipo === '1h' ? '#fef3c7' : '#f0fdfa';
-  const subtitulo = tipo === '24h'
-    ? 'Le recordamos que tiene una cita programada para mañana.'
-    : 'Su cita está por comenzar. Por favor prepárese para conectarse.';
-
-  let teamsBtn = '';
-  if (cita.teams_link) {
-    teamsBtn = `
-      <tr><td style="padding:16px 0;">
-        <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
-          Unirse a la reunión
-        </a>
-      </td></tr>`;
-  }
-
-  return emailWrapper(`
-    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">${titulo}</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">${subtitulo}</p>
-    <table width="100%" style="margin:16px 0;background:${bgColor};border-radius:8px;padding:16px;">
-      <tr><td>
-        <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
-      </td></tr>
-    </table>
-    <table>${teamsBtn}</table>
-  `);
-}
-
-function generarEmailCancelacion(cita: any): string {
-  const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
-  const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
-
-  return emailWrapper(`
-    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Cancelada</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita ha sido cancelada.</p>
-    <table width="100%" style="margin:16px 0;background:#fef2f2;border-radius:8px;padding:16px;">
-      <tr><td>
-        <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipo}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
-      </td></tr>
-    </table>
-    <p style="color:#64748b;font-size:13px;margin-top:16px;">Si desea reagendar, no dude en contactarnos.</p>
-  `);
 }

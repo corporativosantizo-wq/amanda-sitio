@@ -449,17 +449,30 @@ export async function getFreeBusy(startDate: string, endDate: string): Promise<B
 
 // ── Send Email ──────────────────────────────────────────────────────────────
 
-export async function sendEmail(to: string, subject: string, htmlBody: string): Promise<void> {
+export type MailboxAlias = 'asistente@papeleo.legal' | 'contador@papeleo.legal' | 'amanda@papeleo.legal';
+
+export async function sendMail(params: {
+  from: MailboxAlias;
+  to: string;
+  subject: string;
+  htmlBody: string;
+}): Promise<void> {
   const client = await getGraphClient();
 
-  await client.api('/me/sendMail').post({
+  // Uses /users/{from}/sendMail (Mail.Send.Shared permission)
+  await client.api(`/users/${params.from}/sendMail`).post({
     message: {
-      subject,
-      body: { contentType: 'HTML', content: htmlBody },
-      toRecipients: [{ emailAddress: { address: to } }],
+      subject: params.subject,
+      body: { contentType: 'HTML', content: params.htmlBody },
+      toRecipients: [{ emailAddress: { address: params.to } }],
     },
     saveToSentItems: true,
   });
 
-  console.log(`[Outlook] Email enviado a: ${to}, asunto: ${subject}`);
+  console.log(`[Outlook] Email enviado desde: ${params.from}, a: ${params.to}, asunto: ${params.subject}`);
+}
+
+/** @deprecated Use sendMail() with explicit `from` parameter instead */
+export async function sendEmail(to: string, subject: string, htmlBody: string): Promise<void> {
+  return sendMail({ from: 'asistente@papeleo.legal', to, subject, htmlBody });
 }
