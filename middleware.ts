@@ -13,6 +13,8 @@ const isPublicRoute = createRouteMatcher([
   '/servicios(.*)',
   '/api/webhooks(.*)',    // Webhooks de Clerk, Megaprint, etc.
   '/api/portal(.*)',      // Portal API usa Supabase Auth, no Clerk
+  '/api/cron(.*)',        // Cron jobs (protegidos por CRON_SECRET)
+  '/api/pagos(.*)',       // Stripe webhooks/checkout
   '/portal(.*)',          // Portal de clientes usa su propia auth
   '/sign-in(.*)',
   '/sign-up(.*)',

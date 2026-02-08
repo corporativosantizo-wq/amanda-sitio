@@ -9,3 +9,4 @@ export * from './configuracion';
 export * from './clientes';
 export * from './contabilidad';
 export * from './notariado';
+export * from './citas';

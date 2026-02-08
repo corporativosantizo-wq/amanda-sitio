@@ -38,6 +38,11 @@ export interface Configuracion {
 
   nit_empresa: string | null;
 
+  // Outlook Calendar
+  outlook_access_token_encrypted: string | null;
+  outlook_refresh_token_encrypted: string | null;
+  outlook_token_expires_at: string | null;
+
   created_at: string;
   updated_at: string;
 }
