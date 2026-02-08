@@ -1,6 +1,6 @@
 // ============================================================================
 // app/admin/documentos/upload/page.tsx
-// Subida masiva de PDFs con clasificación IA
+// Subida masiva de documentos con clasificación IA
 // Sube directo a Supabase Storage (bypasses Vercel 4.5MB body limit)
 // Requiere seleccionar cliente antes de subir
 // ============================================================================
@@ -12,6 +12,25 @@ import Link from 'next/link';
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_FILES = 100;
 const BATCH_SIZE = 5; // Concurrent uploads/classifications per batch
+const ALLOWED_TYPES: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.ms-excel': '.xls',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+};
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
+
+function getFileIcon(name: string): string {
+  const ext = name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+  if (ext === '.pdf') return '\u{1F4C4}';
+  if (ext === '.docx' || ext === '.doc') return '\u{1F4DD}';
+  if (ext === '.xlsx' || ext === '.xls') return '\u{1F4CA}';
+  if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') return '\u{1F5BC}';
+  return '\u{1F4C4}';
+}
 
 interface FileEntry {
   id: string;
@@ -131,8 +150,9 @@ export default function UploadDocumentos() {
     const rejected: string[] = [];
 
     for (const f of Array.from(fileList)) {
-      if (f.type !== 'application/pdf') {
-        rejected.push(`${f.name}: no es un PDF.`);
+      const ext = f.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+      if (!ALLOWED_TYPES[f.type] && !ALLOWED_EXTENSIONS.includes(ext)) {
+        rejected.push(`${f.name}: formato no permitido. Aceptados: PDF, DOCX, XLSX, JPG, PNG.`);
         continue;
       }
       if (f.size > MAX_FILE_SIZE) {
@@ -197,7 +217,7 @@ export default function UploadDocumentos() {
 
       const uploadRes = await fetch(urlData.signed_url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/pdf' },
+        headers: { 'Content-Type': f.file.type || 'application/octet-stream' },
         body: f.file,
       });
 
@@ -265,7 +285,7 @@ export default function UploadDocumentos() {
     setUploading(true);
     setGlobalError(null);
 
-    // Paso 1: Subir PDFs a Storage en lotes de BATCH_SIZE concurrentes
+    // Paso 1: Subir archivos a Storage en lotes de BATCH_SIZE concurrentes
     setCurrentIdx(0);
     const uploadResults = await processBatches(files, uploadSingleFile);
     const uploaded = uploadResults.filter((r: any): r is NonNullable<typeof r> => r !== null);
@@ -357,7 +377,7 @@ export default function UploadDocumentos() {
         </Link>
         <h1 className="text-xl font-bold text-slate-900 mt-2">Subir documentos</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Arrastre archivos PDF para clasificarlos automáticamente con IA. Si no selecciona cliente, la IA intentará detectarlo.
+          Arrastre archivos (PDF, DOCX, XLSX, JPG, PNG) para clasificarlos automáticamente con IA.
         </p>
       </div>
 
@@ -454,7 +474,7 @@ export default function UploadDocumentos() {
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png"
               multiple
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 if (e.target.files) addFiles(e.target.files);
@@ -465,10 +485,10 @@ export default function UploadDocumentos() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <p className="text-base font-semibold text-slate-700">
-              {dragOver ? 'Suelte los archivos aquí' : 'Arrastre sus PDFs aquí'}
+              {dragOver ? 'Suelte los archivos aquí' : 'Arrastre sus archivos aquí'}
             </p>
             <p className="text-sm text-slate-400 mt-1">
-              o haga clic para seleccionar (máx. 100 archivos, 50MB c/u)
+              o haga clic para seleccionar — PDF, DOCX, XLSX, JPG, PNG (máx. 100, 50MB c/u)
             </p>
           </div>
 
@@ -478,9 +498,7 @@ export default function UploadDocumentos() {
               {files.map((f: FileEntry) => (
                 <div key={f.id} className="flex items-center justify-between px-5 py-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <svg width="20" height="20" fill="none" stroke="#dc2626" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
+                    <span className="text-lg">{getFileIcon(f.nombre)}</span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-900 truncate">{f.nombre}</p>
                       <p className="text-xs text-slate-400">{f.tamano}</p>

@@ -21,6 +21,15 @@ const TIPOS: Record<string, string> = {
   otro: 'Otro',
 };
 
+function getFileIcon(name: string): string {
+  const ext = name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+  if (ext === '.pdf') return '\u{1F4C4}';
+  if (ext === '.docx' || ext === '.doc') return '\u{1F4DD}';
+  if (ext === '.xlsx' || ext === '.xls') return '\u{1F4CA}';
+  if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') return '\u{1F5BC}';
+  return '\u{1F4C4}';
+}
+
 const ESTADO_COLORS: Record<string, { bg: string; text: string }> = {
   pendiente: { bg: 'bg-slate-100', text: 'text-slate-600' },
   clasificado: { bg: 'bg-purple-50', text: 'text-purple-700' },
@@ -366,6 +375,7 @@ export default function DocumentosPage() {
                           )}
                         </div>
                         <h3 className="text-sm font-semibold text-slate-900 truncate">
+                          <span className="mr-1.5">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
                           {doc.titulo ?? doc.nombre_archivo}
                         </h3>
                         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
@@ -401,7 +411,7 @@ export default function DocumentosPage() {
                           onClick={() => verPDF(doc.id)}
                           className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                         >
-                          Ver PDF
+                          Ver archivo
                         </button>
                       </div>
                     </div>
@@ -425,6 +435,7 @@ export default function DocumentosPage() {
                         </span>
                       </div>
                       <h3 className="text-sm font-semibold text-slate-900 truncate">
+                        <span className="mr-1.5">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
                         {doc.titulo ?? doc.nombre_archivo}
                       </h3>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
@@ -523,6 +534,7 @@ export default function DocumentosPage() {
                                 {doc.codigo_documento ?? '—'}
                               </td>
                               <td className="py-3 px-4 text-sm text-slate-500 max-w-[200px] truncate">
+                                <span className="mr-1">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
                                 {doc.nombre_original ?? doc.nombre_archivo}
                               </td>
                               <td className="py-3 px-4 text-xs text-slate-500">
@@ -540,6 +552,7 @@ export default function DocumentosPage() {
                           ) : (
                             <>
                               <td className="py-3 px-4 pl-5 text-sm text-slate-900 max-w-[200px] truncate">
+                                <span className="mr-1">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
                                 {doc.codigo_documento ?? doc.nombre_archivo}
                               </td>
                               <td className="py-3 px-4 text-xs text-slate-500">

@@ -1,11 +1,12 @@
 // ============================================================================
 // POST /api/admin/documentos/classify
-// Clasificar un documento con Claude IA
+// Clasificar un documento con Claude IA (PDF, DOCX, imágenes)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
+import mammoth from 'mammoth';
 import {
   descargarPDF,
   clasificarDocumento,
@@ -15,7 +16,11 @@ import {
 } from '@/lib/services/documentos.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo — Despacho Jurídico). Analiza el documento legal PDF y extrae información estructurada.
+function getFileExtension(filename: string): string {
+  return (filename.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '');
+}
+
+const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo — Despacho Jurídico). Analiza el documento legal y extrae información estructurada.
 
 Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
 
@@ -37,6 +42,33 @@ Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto
 
 Reglas:
 - Si el documento está escaneado y es difícil de leer, haz tu mejor esfuerzo y baja la confianza
+- "partes" incluye todos los nombres de personas o empresas mencionadas
+- "cliente_probable" es quien más probablemente contrató al bufete
+- Si no puedes determinar algo, usa null
+- La confianza va de 0.0 a 1.0`;
+
+const IMAGE_CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo — Despacho Jurídico). Analiza esta imagen de un documento legal y extrae información estructurada.
+
+Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
+
+{
+  "tipo": "contrato_comercial|escritura_publica|testimonio|acta_notarial|poder|contrato_laboral|demanda_memorial|resolucion_judicial|otro",
+  "titulo": "título descriptivo del documento",
+  "descripcion": "resumen de 1-2 oraciones",
+  "fecha_documento": "YYYY-MM-DD o null",
+  "numero_documento": "número de escritura/acta/expediente o null",
+  "partes": [{"nombre": "nombre completo", "rol": "rol en el documento"}],
+  "cliente_probable": "nombre de la persona o empresa que probablemente es cliente del bufete",
+  "confianza": 0.85,
+  "datos_adicionales": {
+    "notario": "nombre del notario si aplica o null",
+    "juzgado": "nombre del juzgado si aplica o null",
+    "monto": "monto involucrado si aplica o null"
+  }
+}
+
+Reglas:
+- Si la imagen es difícil de leer, haz tu mejor esfuerzo y baja la confianza
 - "partes" incluye todos los nombres de personas o empresas mencionadas
 - "cliente_probable" es quien más probablemente contrató al bufete
 - Si no puedes determinar algo, usa null
@@ -110,106 +142,135 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Paso 2: Descargar PDF de Storage y extraer primeras 3 páginas
-    console.log(`[Classify] Paso 2: Descargando PDF de Storage: ${doc.archivo_url}`);
-    let base64: string;
-    try {
-      const fullBuffer = await descargarPDF(doc.archivo_url);
-      console.log(`[Classify] PDF descargado OK: ${(fullBuffer.length / 1024).toFixed(0)} KB`);
+    // Paso 2: Descargar archivo de Storage y preparar contenido para Claude
+    const ext = getFileExtension(doc.nombre_archivo);
+    console.log(`[Classify] Paso 2: Descargando archivo de Storage: ${doc.archivo_url} (ext: ${ext})`);
 
-      // Extract only first 3 pages to reduce payload for Claude
-      const MAX_PAGES = 3;
-      const srcDoc = await PDFDocument.load(fullBuffer);
-      const totalPages = srcDoc.getPageCount();
-      console.log(`[Classify] PDF tiene ${totalPages} página(s)`);
-
-      if (totalPages > MAX_PAGES) {
-        const trimmedDoc = await PDFDocument.create();
-        const pages = await trimmedDoc.copyPages(srcDoc, [0, 1, 2].filter((i: number) => i < totalPages));
-        for (const page of pages) trimmedDoc.addPage(page);
-        const trimmedBytes = await trimmedDoc.save();
-        base64 = Buffer.from(trimmedBytes).toString('base64');
-        console.log(`[Classify] PDF recortado a ${MAX_PAGES} páginas: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
-      } else {
-        base64 = fullBuffer.toString('base64');
-      }
-    } catch (dlErr: any) {
-      const detail = dlErr instanceof DocumentoError
-        ? `${dlErr.message} — ${JSON.stringify(dlErr.details)}`
-        : (dlErr.message ?? 'desconocido');
-      console.error(`[Classify] Error al descargar/procesar PDF:`, detail, dlErr);
-      return NextResponse.json(
-        { error: `No se pudo descargar el PDF de Storage: ${detail}` },
-        { status: 500 }
-      );
-    }
-
-    // Paso 3: Llamar a Claude
-    console.log(`[Classify] Paso 3: Enviando a Claude API...`);
     let clasificacion: any;
     let rawResponse = '';
-    try {
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2048,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'document',
-                source: {
-                  type: 'base64',
-                  media_type: 'application/pdf',
-                  data: base64,
-                },
-              },
-              {
-                type: 'text',
-                text: CLASSIFY_PROMPT,
-              },
-            ],
-          },
-        ],
-      });
+    const isImage = ['.jpg', '.jpeg', '.png'].includes(ext);
+    const isDocx = ['.docx'].includes(ext);
+    const isPdf = ext === '.pdf';
+    const isSkipAI = ['.doc', '.xlsx', '.xls'].includes(ext);
 
-      console.log(`[Classify] Claude respondió. stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
-
-      const textBlock = response.content.find((b: any) => b.type === 'text') as any;
-      rawResponse = textBlock?.text ?? '';
-      console.log(`[Classify] Respuesta raw (primeros 500 chars): ${rawResponse.slice(0, 500)}`);
-
-      // Limpiar markdown si Claude lo envuelve en backticks
-      const cleaned = rawResponse
-        .replace(/^```json?\s*/i, '')
-        .replace(/```\s*$/, '')
-        .trim();
-
-      clasificacion = JSON.parse(cleaned);
-      console.log(`[Classify] JSON parseado OK: tipo=${clasificacion.tipo}, confianza=${clasificacion.confianza}`);
-    } catch (parseErr: any) {
-      console.error(`[Classify] Error en Claude API o JSON parse:`, parseErr.message);
-      console.error(`[Classify] Respuesta raw que falló el parse: ${rawResponse.slice(0, 1000)}`);
-
-      // Si es un error de la API (no un parse error), retornar inmediatamente
-      if (parseErr.status || parseErr.error) {
-        const apiMsg = parseErr.error?.message ?? parseErr.message ?? 'Error de API';
+    if (isSkipAI) {
+      // DOC, XLSX, XLS: classify by filename only (no AI content analysis)
+      console.log(`[Classify] Formato ${ext} — clasificación por nombre de archivo sin IA`);
+      clasificacion = {
+        tipo: 'otro',
+        titulo: doc.nombre_archivo.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
+        descripcion: `Archivo ${ext.toUpperCase().slice(1)} subido sin análisis de contenido.`,
+        confianza: 0.3,
+        partes: [],
+        cliente_probable: null,
+      };
+    } else {
+      // PDF, DOCX, Images: download and analyze with Claude
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = await descargarPDF(doc.archivo_url);
+        console.log(`[Classify] Archivo descargado OK: ${(fileBuffer.length / 1024).toFixed(0)} KB`);
+      } catch (dlErr: any) {
+        const detail = dlErr instanceof DocumentoError
+          ? `${dlErr.message} — ${JSON.stringify(dlErr.details)}`
+          : (dlErr.message ?? 'desconocido');
+        console.error(`[Classify] Error al descargar archivo:`, detail);
         return NextResponse.json(
-          { error: `Error de Claude API: ${apiMsg} (status: ${parseErr.status ?? 'N/A'})` },
+          { error: `No se pudo descargar el archivo de Storage: ${detail}` },
           { status: 500 }
         );
       }
 
-      // Si falla el parsing, guardar como 'otro' con baja confianza
-      console.warn(`[Classify] Usando clasificación fallback (tipo=otro, confianza=0)`);
-      clasificacion = {
-        tipo: 'otro',
-        titulo: doc.nombre_archivo,
-        descripcion: 'No se pudo analizar automáticamente.',
-        confianza: 0,
-        partes: [],
-        cliente_probable: null,
-      };
+      // Paso 3: Build Claude message content based on file type
+      console.log(`[Classify] Paso 3: Enviando a Claude API (tipo: ${ext})...`);
+      let messageContent: any[];
+
+      if (isPdf) {
+        // PDF: extract first 3 pages, send as document
+        const MAX_PAGES = 3;
+        const srcDoc = await PDFDocument.load(fileBuffer);
+        const totalPages = srcDoc.getPageCount();
+        console.log(`[Classify] PDF tiene ${totalPages} página(s)`);
+
+        let base64: string;
+        if (totalPages > MAX_PAGES) {
+          const trimmedDoc = await PDFDocument.create();
+          const pages = await trimmedDoc.copyPages(srcDoc, [0, 1, 2].filter((i: number) => i < totalPages));
+          for (const page of pages) trimmedDoc.addPage(page);
+          const trimmedBytes = await trimmedDoc.save();
+          base64 = Buffer.from(trimmedBytes).toString('base64');
+          console.log(`[Classify] PDF recortado a ${MAX_PAGES} páginas: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
+        } else {
+          base64 = fileBuffer.toString('base64');
+        }
+
+        messageContent = [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: CLASSIFY_PROMPT },
+        ];
+      } else if (isDocx) {
+        // DOCX: extract text with mammoth, send as text
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        const text = result.value.slice(0, 15000); // Limit to ~15k chars
+        console.log(`[Classify] DOCX texto extraído: ${text.length} chars`);
+
+        messageContent = [
+          { type: 'text', text: `Contenido del documento DOCX "${doc.nombre_archivo}":\n\n${text}\n\n---\n\n${CLASSIFY_PROMPT}` },
+        ];
+      } else {
+        // Image: send as image to Claude vision
+        const mediaType = ext === '.png' ? 'image/png' : 'image/jpeg';
+        const base64 = fileBuffer.toString('base64');
+        console.log(`[Classify] Imagen ${mediaType}: ${(fileBuffer.length / 1024).toFixed(0)} KB`);
+
+        messageContent = [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: IMAGE_CLASSIFY_PROMPT },
+        ];
+      }
+
+      try {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2048,
+          messages: [{ role: 'user', content: messageContent }],
+        });
+
+        console.log(`[Classify] Claude respondió. stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+
+        const textBlock = response.content.find((b: any) => b.type === 'text') as any;
+        rawResponse = textBlock?.text ?? '';
+        console.log(`[Classify] Respuesta raw (primeros 500 chars): ${rawResponse.slice(0, 500)}`);
+
+        const cleaned = rawResponse
+          .replace(/^```json?\s*/i, '')
+          .replace(/```\s*$/, '')
+          .trim();
+
+        clasificacion = JSON.parse(cleaned);
+        console.log(`[Classify] JSON parseado OK: tipo=${clasificacion.tipo}, confianza=${clasificacion.confianza}`);
+      } catch (parseErr: any) {
+        console.error(`[Classify] Error en Claude API o JSON parse:`, parseErr.message);
+        console.error(`[Classify] Respuesta raw que falló el parse: ${rawResponse.slice(0, 1000)}`);
+
+        if (parseErr.status || parseErr.error) {
+          const apiMsg = parseErr.error?.message ?? parseErr.message ?? 'Error de API';
+          return NextResponse.json(
+            { error: `Error de Claude API: ${apiMsg} (status: ${parseErr.status ?? 'N/A'})` },
+            { status: 500 }
+          );
+        }
+
+        console.warn(`[Classify] Usando clasificación fallback (tipo=otro, confianza=0)`);
+        clasificacion = {
+          tipo: 'otro',
+          titulo: doc.nombre_archivo,
+          descripcion: 'No se pudo analizar automáticamente.',
+          confianza: 0,
+          partes: [],
+          cliente_probable: null,
+        };
+      }
     }
 
     // Paso 4: Buscar cliente — intenta múltiples fuentes

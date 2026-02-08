@@ -1,7 +1,7 @@
 // ============================================================================
 // POST /api/admin/documentos/upload-url
-// Genera una URL firmada para subir un PDF directo a Supabase Storage
-// (Bypasses Vercel's 4.5MB body limit)
+// Genera una URL firmada para subir archivos directo a Supabase Storage
+// Soporta: PDF, DOCX, DOC, XLSX, XLS, JPG, JPEG, PNG
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,9 +22,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!filename.toLowerCase().endsWith('.pdf')) {
+    const ext = filename.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
       return NextResponse.json(
-        { error: 'Solo se permiten archivos PDF.' },
+        { error: `Formato no permitido. Formatos aceptados: ${ALLOWED_EXTENSIONS.join(', ')}` },
         { status: 400 }
       );
     }
