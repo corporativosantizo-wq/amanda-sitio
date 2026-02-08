@@ -140,11 +140,12 @@ export async function GET(req: NextRequest) {
 
         // Send email
         await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html });
-        console.log(`[Cron Tareas] Email enviado: ${accion.template} a ${destinatarioEmail} desde ${from}`);
+        const maskedEmail = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
+        console.log(`[Cron Tareas] Email enviado: ${accion.template} a ${maskedEmail} desde ${from}`);
 
         // Mark as executed
-        await marcarTareaEjecutada(tarea.id, `Email ${accion.template} enviado a ${destinatarioEmail}`);
-        resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: true, detalle: `Email enviado a ${destinatarioEmail}` });
+        await marcarTareaEjecutada(tarea.id, `Email ${accion.template} enviado a ${maskedEmail}`);
+        resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: true, detalle: `Email enviado a ${maskedEmail}` });
 
       } catch (err: any) {
         console.error(`[Cron Tareas] Error procesando tarea ${tarea.id}:`, err.message);

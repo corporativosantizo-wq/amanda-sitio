@@ -99,14 +99,15 @@ export async function GET(req: NextRequest) {
           await db.from('cobros').update({ estado: 'vencido' }).eq('id', cobro.id);
         }
 
+        const maskedEmail = (cobro.cliente.email as string).replace(/(.{2}).+(@.+)/, '$1***$2');
         resultados.push({
           cobro_id: cobro.id,
           tipo,
           ok: true,
-          detalle: `${tipo} enviado a ${cobro.cliente.email}`,
+          detalle: `${tipo} enviado a ${maskedEmail}`,
         });
 
-        console.log(`[Cron Cobros] ${tipo} enviado: COB-${cobro.numero_cobro} → ${cobro.cliente.email}`);
+        console.log(`[Cron Cobros] ${tipo} enviado: COB-${cobro.numero_cobro} → ${maskedEmail}`);
       } catch (err: any) {
         await registrarRecordatorio(cobro.id, tipo, false, err.message);
         resultados.push({ cobro_id: cobro.id, tipo, ok: false, detalle: err.message });

@@ -91,7 +91,7 @@ export async function crearCliente(input: ClienteInsert): Promise<Cliente> {
   const { data: numData, error: numError } = await db()
     // @ts-ignore
     .schema('public').rpc('next_sequence', { p_tipo: 'CLI' });
-  if (numError) { console.error('RPC ERROR:', JSON.stringify(numError)); throw new ClienteError('Error al generar código', numError); }
+  if (numError) { console.error('RPC ERROR:', numError.message ?? numError.code); throw new ClienteError('Error al generar código', numError); }
   const codigo = numData as string;
 
   // Validar NIT único si no es CF
@@ -127,7 +127,7 @@ export async function crearCliente(input: ClienteInsert): Promise<Cliente> {
     .select()
     .single();
 
-  if (error) { console.error('INSERT ERROR:', JSON.stringify(error)); throw new ClienteError('Error al crear cliente', error); }
+  if (error) { console.error('INSERT ERROR:', error.message ?? error.code); throw new ClienteError('Error al crear cliente', error); }
   return data as Cliente;
 }
 

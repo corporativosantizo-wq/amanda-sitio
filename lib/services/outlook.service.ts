@@ -60,7 +60,7 @@ export function getOutlookAuthUrl(): string {
 export async function exchangeCodeForTokens(code: string): Promise<void> {
   const redirectUri = getRedirectUri();
   console.log('[Outlook] ── exchangeCodeForTokens ──');
-  console.log('[Outlook] Code recibido:', code.substring(0, 20) + '...');
+  console.log('[Outlook] Code recibido: [REDACTED]');
   console.log('[Outlook] Redirect URI:', redirectUri);
 
   // Exchange code for tokens via direct token endpoint
@@ -90,13 +90,16 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
   console.log('[Outlook] Token response status:', tokenResponse.status);
 
   if (!tokenResponse.ok) {
-    console.error('[Outlook] ERROR token exchange:', responseText);
-    throw new OutlookError('Error al intercambiar code por tokens', responseText);
+    // Parse error safely — don't log full response which may contain tokens/secrets
+    let errorDesc = 'unknown';
+    try { errorDesc = JSON.parse(responseText).error_description ?? JSON.parse(responseText).error ?? 'unknown'; } catch {}
+    console.error('[Outlook] ERROR token exchange:', errorDesc);
+    throw new OutlookError('Error al intercambiar code por tokens', errorDesc);
   }
 
   const tokens = JSON.parse(responseText);
-  console.log('[Outlook] access_token recibido:', tokens.access_token ? `${tokens.access_token.substring(0, 20)}... (${tokens.access_token.length} chars)` : 'NULL');
-  console.log('[Outlook] refresh_token recibido:', tokens.refresh_token ? `${tokens.refresh_token.substring(0, 20)}... (${tokens.refresh_token.length} chars)` : 'NULL');
+  console.log('[Outlook] access_token recibido:', tokens.access_token ? `[REDACTED] (${tokens.access_token.length} chars)` : 'NULL');
+  console.log('[Outlook] refresh_token recibido:', tokens.refresh_token ? `[REDACTED] (${tokens.refresh_token.length} chars)` : 'NULL');
   console.log('[Outlook] expires_in:', tokens.expires_in);
 
   if (!tokens.access_token) {

@@ -47,7 +47,7 @@ export async function GET() {
     console.error(`[EmailTest] message: ${err.message}`);
     console.error(`[EmailTest] statusCode: ${err.statusCode ?? 'N/A'}`);
     console.error(`[EmailTest] code: ${err.code ?? 'N/A'}`);
-    console.error(`[EmailTest] body: ${JSON.stringify(err.body ?? err).substring(0, 1000)}`);
+    console.error(`[EmailTest] body: [REDACTED — check Vercel logs for details]`);
 
     return NextResponse.json({
       success: false,

@@ -102,7 +102,7 @@ export async function crearTarea(input: TareaInsert): Promise<Tarea> {
     accion_automatica: input.accion_automatica ?? null,
     ejecutada: false,
   };
-  console.log(`[Tareas] crearTarea payload: ${JSON.stringify(payload)}`);
+  console.log(`[Tareas] crearTarea: titulo=${payload.titulo}, tipo=${payload.tipo}, prioridad=${payload.prioridad}`);
 
   const { data, error } = await db()
     .from('tareas')
@@ -146,7 +146,7 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
 
   payload.updated_at = new Date().toISOString();
 
-  console.log(`[Tareas] actualizarTarea id=${id}, payload: ${JSON.stringify(payload)}`);
+  console.log(`[Tareas] actualizarTarea id=${id}, keys=${Object.keys(payload).join(',')}`);
 
   const { data, error } = await db()
     .from('tareas')

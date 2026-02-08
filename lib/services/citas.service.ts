@@ -318,7 +318,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       };
-      console.log(`[crearCita] createCalendarEvent payload: ${JSON.stringify(calendarPayload)}`);
+      console.log(`[crearCita] createCalendarEvent: subject=${calendarPayload.subject}, start=${calendarPayload.startDateTime}, attendees=${calendarPayload.attendees.length}`);
 
       const { eventId, teamsLink } = await createCalendarEvent(calendarPayload);
       console.log(`[crearCita] ✓ Evento Outlook creado: eventId=${eventId}`);
