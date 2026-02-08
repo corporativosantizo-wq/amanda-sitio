@@ -11,13 +11,15 @@ export async function GET(req: NextRequest) {
   const error = req.nextUrl.searchParams.get('error');
   const errorDesc = req.nextUrl.searchParams.get('error_description');
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    || 'http://localhost:3000';
 
   console.log('[Outlook Callback] ── Request recibido ──');
   console.log('[Outlook Callback] URL completa:', req.nextUrl.pathname + '?' + req.nextUrl.searchParams.toString().substring(0, 200));
   console.log('[Outlook Callback] Code presente:', !!code);
   console.log('[Outlook Callback] Error presente:', !!error, error ?? '');
-  console.log('[Outlook Callback] NEXT_PUBLIC_SITE_URL:', baseUrl);
+  console.log('[Outlook Callback] baseUrl:', baseUrl);
 
   if (error) {
     console.error('[Outlook Callback] OAuth error:', error, errorDesc);
