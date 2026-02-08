@@ -196,7 +196,7 @@ Puedes generar los siguientes documentos en formato Word (.docx) usando la herra
 - Después de generar, presenta el enlace de descarga con formato: [Descargar documento](url)
 
 ## ENVÍO DE EMAILS
-Puedes enviar emails a clientes usando la herramienta enviar_email. Los templates disponibles son:
+Puedes enviar emails a CUALQUIER persona usando la herramienta enviar_email — tanto a clientes registrados como a personas externas. Los templates disponibles son:
 
 ### Desde asistente@papeleo.legal:
 - **documentos_disponibles** — Notifica que sus documentos están en el portal. Datos: (solo necesita cliente)
@@ -215,18 +215,26 @@ Puedes enviar emails a clientes usando la herramienta enviar_email. Los template
 - **estado_cuenta** — Envía estado de cuenta. Datos: movimientos (lista de {fecha, concepto, cargo, abono}), saldo
 - **factura** — Envía factura. Datos: nit, numero, conceptos (lista de {descripcion, monto}), total
 
-### Flujo:
-1. Si Amanda dice "mándale a Flor sus documentos" → busca el cliente, luego usa enviar_email
+### Flujo — cliente registrado:
+1. Si Amanda dice "mándale a Flor sus documentos" → busca el cliente, luego usa enviar_email con cliente_id
 2. Primero busca al cliente con consultar_base_datos (buscar_cliente:[nombre]) para obtener su ID y email
-3. Luego usa enviar_email con el cliente_id (UUID) y los datos
+3. Luego usa enviar_email con el cliente_id (UUID o nombre) y los datos
 4. El remitente se determina automáticamente según el tipo de email
 5. Confirma al chat: "Email enviado a [nombre] ([email]) desde [remitente] — Asunto: [asunto]"
 
+### Flujo — persona externa (no registrada):
+1. Si Amanda dice "mándale email a juan@gmail.com" → usa email_directo directamente, NO busques en BD
+2. Usa enviar_email con email_directo y nombre_destinatario (si lo sabes)
+3. NO se necesita cliente_id cuando se usa email_directo
+4. Si Amanda da el nombre y email en el mensaje, usa ambos
+
 ### Ejemplos:
-- "Mándale a Flor Coronado sus documentos" → tipo=documentos_disponibles
-- "Cobrale a Procapeli los Q5,000 de la constitución" → tipo=solicitud_pago, datos={monto:5000, concepto:"Constitución de sociedad"}
-- "Dile a Kristel que su audiencia es el 15 de febrero a las 9am en el Juzgado 5o Civil" → tipo=aviso_audiencia
-- "Mándale un email a Juan diciendo que ya tenemos resolución" → tipo=actualizacion_expediente O tipo=personalizado
+- "Mándale a Flor Coronado sus documentos" → tipo=documentos_disponibles, cliente_id="Flor Coronado"
+- "Cobrale a Procapeli los Q5,000 de la constitución" → tipo=solicitud_pago, cliente_id="Procapeli", datos={monto:5000, concepto:"Constitución de sociedad"}
+- "Dile a Kristel que su audiencia es el 15 de febrero a las 9am en el Juzgado 5o Civil" → tipo=aviso_audiencia, cliente_id="Kristel"
+- "Mándale un email a juan@gmail.com diciendo que ya tenemos resolución" → tipo=personalizado, email_directo="juan@gmail.com", nombre_destinatario="Juan"
+- "Envía cotización a maria@empresa.com por Q5,000 de asesoría" → tipo=cotizacion, email_directo="maria@empresa.com", nombre_destinatario="María"
+- "Mándale a Roberto López a roberto@test.com la bienvenida" → tipo=bienvenida_cliente, email_directo="roberto@test.com", nombre_destinatario="Roberto López"
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -420,25 +428,49 @@ async function generateCustomDocument(plantillaId: string, datos: any): Promise<
 
 // ── Envío de emails ───────────────────────────────────────────────────────
 
-async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: any): Promise<string> {
+async function handleEnviarEmail(
+  tipoEmail: string,
+  clienteId: string | undefined,
+  datos: any,
+  emailDirecto?: string,
+  nombreDestinatario?: string,
+): Promise<string> {
   const db = createAdminClient();
 
-  // 1. Buscar cliente por UUID o por nombre
-  let cliente: any;
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+  // 1. Resolve destination: email_directo OR cliente lookup
+  let destinatarioEmail: string;
+  let destinatarioNombre: string;
+  let clienteNit = 'CF';
 
-  if (isUUID) {
-    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
-    if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
-    cliente = data;
+  if (emailDirecto?.trim()) {
+    // Direct email — no DB lookup needed
+    destinatarioEmail = emailDirecto.trim();
+    destinatarioNombre = nombreDestinatario?.trim() || destinatarioEmail;
+    console.log(`[AI] Email directo a: ${destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2')} (${destinatarioNombre})`);
+  } else if (clienteId) {
+    // Lookup by UUID or name
+    let cliente: any;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+
+    if (isUUID) {
+      const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
+      if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
+      cliente = data;
+    } else {
+      const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
+      if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
+      cliente = data[0];
+    }
+
+    if (!cliente.email) {
+      throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+    }
+
+    destinatarioEmail = cliente.email;
+    destinatarioNombre = cliente.nombre;
+    clienteNit = cliente.nit ?? 'CF';
   } else {
-    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
-    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
-    cliente = data[0];
-  }
-
-  if (!cliente.email) {
-    throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+    throw new Error('Se requiere cliente_id o email_directo para enviar un email.');
   }
 
   // 2. Build email from template
@@ -448,13 +480,13 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
 
   switch (tipoEmail) {
     case 'documentos_disponibles': {
-      const t = emailDocumentosDisponibles({ clienteNombre: cliente.nombre });
+      const t = emailDocumentosDisponibles({ clienteNombre: destinatarioNombre });
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
     case 'actualizacion_expediente': {
       const t = emailActualizacionExpediente({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         expediente: datos?.expediente ?? 'N/A',
         novedad: datos?.novedad ?? 'Sin detalle',
       });
@@ -462,13 +494,13 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
       break;
     }
     case 'bienvenida_cliente': {
-      const t = emailBienvenidaCliente({ clienteNombre: cliente.nombre });
+      const t = emailBienvenidaCliente({ clienteNombre: destinatarioNombre });
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
     case 'solicitud_documentos': {
       const t = emailSolicitudDocumentos({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         documentos: datos?.documentos ?? ['Documentos pendientes'],
         plazo: datos?.plazo,
       });
@@ -477,7 +509,7 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'aviso_audiencia': {
       const t = emailAvisoAudiencia({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         fecha: datos?.fecha ?? new Date().toISOString().split('T')[0],
         hora: datos?.hora ?? '09:00',
         juzgado: datos?.juzgado ?? 'Por confirmar',
@@ -515,7 +547,7 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'solicitud_pago': {
       const t = emailSolicitudPago({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         concepto: datos?.concepto ?? 'Servicios legales',
         monto: datos?.monto ?? 0,
         fechaLimite: datos?.fecha_limite,
@@ -525,7 +557,7 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'comprobante_pago': {
       const t = emailPagoRecibido({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         concepto: datos?.concepto ?? 'Servicios legales',
         monto: datos?.monto ?? 0,
         fechaPago: datos?.fecha_pago ?? new Date().toISOString().split('T')[0],
@@ -535,7 +567,7 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'cotizacion': {
       const t = emailCotizacion({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         servicios: datos?.servicios ?? [],
         vigencia: datos?.vigencia,
       });
@@ -544,7 +576,7 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'estado_cuenta': {
       const t = emailEstadoCuenta({
-        clienteNombre: cliente.nombre,
+        clienteNombre: destinatarioNombre,
         movimientos: datos?.movimientos ?? [],
         saldo: datos?.saldo ?? 0,
       });
@@ -553,8 +585,8 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
     }
     case 'factura': {
       const t = emailFactura({
-        clienteNombre: cliente.nombre,
-        nit: datos?.nit ?? cliente.nit ?? 'CF',
+        clienteNombre: destinatarioNombre,
+        nit: datos?.nit ?? clienteNit,
         numero: datos?.numero ?? 'S/N',
         conceptos: datos?.conceptos ?? [],
         total: datos?.total ?? 0,
@@ -573,11 +605,11 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
   }
 
   // 3. Send
-  await sendMail({ from, to: cliente.email, subject, htmlBody: html });
+  await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html });
 
-  const emailMask = cliente.email.replace(/(.{2}).+(@.+)/, '$1***$2');
+  const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${emailMask}, asunto=${subject}`);
-  return `Email enviado a ${cliente.nombre} (${cliente.email}) desde ${from} — Asunto: ${subject}`;
+  return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}`;
 }
 
 // ── API route ─────────────────────────────────────────────────────────────
@@ -633,7 +665,7 @@ export async function POST(req: Request) {
       },
       {
         name: 'enviar_email',
-        description: 'Envía un email a un cliente usando los templates del despacho. Busca al cliente por UUID o nombre. El remitente se determina automáticamente según el tipo.',
+        description: 'Envía un email usando los templates del despacho. Puede enviar a un cliente registrado (cliente_id) O a cualquier email (email_directo). El remitente se determina automáticamente según el tipo.',
         input_schema: {
           type: 'object' as const,
           properties: {
@@ -658,14 +690,22 @@ export async function POST(req: Request) {
             },
             cliente_id: {
               type: 'string',
-              description: 'UUID del cliente o nombre para buscar en la BD',
+              description: 'UUID del cliente o nombre para buscar en la BD. Opcional si se usa email_directo.',
+            },
+            email_directo: {
+              type: 'string',
+              description: 'Email del destinatario (para personas no registradas como clientes). Opcional si se usa cliente_id.',
+            },
+            nombre_destinatario: {
+              type: 'string',
+              description: 'Nombre del destinatario (usado cuando se envía por email_directo). Opcional.',
             },
             datos: {
               type: 'object',
               description: 'Datos dinámicos según el tipo: monto, concepto, documentos, fecha, etc.',
             },
           },
-          required: ['tipo_email', 'cliente_id'],
+          required: ['tipo_email'],
         },
       },
     ];
@@ -724,7 +764,7 @@ export async function POST(req: Request) {
               }
             } else if (block.name === 'enviar_email') {
               const input = block.input as any;
-              result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos);
+              result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos, input.email_directo, input.nombre_destinatario);
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
