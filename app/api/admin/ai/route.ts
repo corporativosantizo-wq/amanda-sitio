@@ -7,14 +7,32 @@ import type { TipoDocumentoGenerable } from '@/lib/templates';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 import { listarPlantillasActivas, obtenerPlantilla, generarDesdeCustomPlantilla } from '@/lib/services/plantillas.service';
 import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-utils';
+import { sendMail } from '@/lib/services/outlook.service';
+import type { MailboxAlias } from '@/lib/services/outlook.service';
+import {
+  emailConfirmacionCita,
+  emailRecordatorio24h,
+  emailCancelacionCita,
+  emailSolicitudPago,
+  emailPagoRecibido,
+  emailCotizacion,
+  emailEstadoCuenta,
+  emailFactura,
+  emailDocumentosDisponibles,
+  emailActualizacionExpediente,
+  emailBienvenidaCliente,
+  emailSolicitudDocumentos,
+  emailAvisoAudiencia,
+  emailWrapper,
+} from '@/lib/templates/emails';
 
-const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo & Asociados, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
+const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo — Despacho Jurídico, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
 
 ## TU PERSONALIDAD
 Eres un asistente eficiente y proactivo. Tuteas a Amanda porque es tu jefa. Eres directo, no das vueltas. Si Amanda pide algo, lo haces sin preguntar demasiado. Si necesitas datos que no tienes, preguntas solo lo esencial.
 
 ## DATOS DEL BUFETE
-- Firma: Amanda Santizo & Asociados
+- Firma: Amanda Santizo — Despacho Jurídico
 - Especialidad: Derecho internacional, litigios, procedimientos comerciales
 - Equipo: 5 abogados
 - Casos activos: ~200
@@ -177,11 +195,38 @@ Puedes generar los siguientes documentos en formato Word (.docx) usando la herra
 - Usa la herramienta generar_documento con tipo y datos completos
 - Después de generar, presenta el enlace de descarga con formato: [Descargar documento](url)
 
-## CÓMO REDACTAR EMAILS
-Cuando Amanda pida un email:
-1. Pregunta a quién va dirigido (o busca el cliente en BD)
-2. Genera el email con tono profesional pero cálido
-3. Formatos comunes: seguimiento, cobranza, confirmación de cita, envío de documentos
+## ENVÍO DE EMAILS
+Puedes enviar emails a clientes usando la herramienta enviar_email. Los templates disponibles son:
+
+### Desde asistente@papeleo.legal:
+- **documentos_disponibles** — Notifica que sus documentos están en el portal. Datos: (solo necesita cliente)
+- **actualizacion_expediente** — Informa novedad en su caso. Datos: expediente (número), novedad (texto libre)
+- **bienvenida_cliente** — Da la bienvenida y acceso al portal. Datos: (solo necesita cliente)
+- **solicitud_documentos** — Pide documentos al cliente. Datos: documentos (lista de strings), plazo (texto, ej: "5 días hábiles")
+- **aviso_audiencia** — Avisa de audiencia programada. Datos: fecha (YYYY-MM-DD), hora (HH:mm), juzgado, direccion, presencia_requerida (bool), instrucciones, documentos_llevar (lista)
+- **confirmacion_cita** — Confirma una cita agendada. Datos: cita_id
+- **recordatorio_cita** — Recuerda una cita próxima. Datos: cita_id
+- **personalizado** — Email libre redactado por ti. Datos: asunto, contenido (HTML)
+
+### Desde contador@papeleo.legal:
+- **solicitud_pago** — Cobra al cliente. Datos: concepto, monto, fecha_limite (YYYY-MM-DD, opcional)
+- **comprobante_pago** — Confirma recepción de pago. Datos: concepto, monto, fecha_pago (YYYY-MM-DD)
+- **cotizacion** — Envía cotización. Datos: servicios (lista de {descripcion, monto}), vigencia (YYYY-MM-DD, opcional)
+- **estado_cuenta** — Envía estado de cuenta. Datos: movimientos (lista de {fecha, concepto, cargo, abono}), saldo
+- **factura** — Envía factura. Datos: nit, numero, conceptos (lista de {descripcion, monto}), total
+
+### Flujo:
+1. Si Amanda dice "mándale a Flor sus documentos" → busca el cliente, luego usa enviar_email
+2. Primero busca al cliente con consultar_base_datos (buscar_cliente:[nombre]) para obtener su ID y email
+3. Luego usa enviar_email con el cliente_id (UUID) y los datos
+4. El remitente se determina automáticamente según el tipo de email
+5. Confirma al chat: "Email enviado a [nombre] ([email]) desde [remitente] — Asunto: [asunto]"
+
+### Ejemplos:
+- "Mándale a Flor Coronado sus documentos" → tipo=documentos_disponibles
+- "Cobrale a Procapeli los Q5,000 de la constitución" → tipo=solicitud_pago, datos={monto:5000, concepto:"Constitución de sociedad"}
+- "Dile a Kristel que su audiencia es el 15 de febrero a las 9am en el Juzgado 5o Civil" → tipo=aviso_audiencia
+- "Mándale un email a Juan diciendo que ya tenemos resolución" → tipo=actualizacion_expediente O tipo=personalizado
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -373,6 +418,167 @@ async function generateCustomDocument(plantillaId: string, datos: any): Promise<
   return `Documento "${plantilla.nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
 
+// ── Envío de emails ───────────────────────────────────────────────────────
+
+async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: any): Promise<string> {
+  const db = createAdminClient();
+
+  // 1. Buscar cliente por UUID o por nombre
+  let cliente: any;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+
+  if (isUUID) {
+    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
+    if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
+    cliente = data;
+  } else {
+    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
+    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
+    cliente = data[0];
+  }
+
+  if (!cliente.email) {
+    throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+  }
+
+  // 2. Build email from template
+  let from: MailboxAlias;
+  let subject: string;
+  let html: string;
+
+  switch (tipoEmail) {
+    case 'documentos_disponibles': {
+      const t = emailDocumentosDisponibles({ clienteNombre: cliente.nombre });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'actualizacion_expediente': {
+      const t = emailActualizacionExpediente({
+        clienteNombre: cliente.nombre,
+        expediente: datos?.expediente ?? 'N/A',
+        novedad: datos?.novedad ?? 'Sin detalle',
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'bienvenida_cliente': {
+      const t = emailBienvenidaCliente({ clienteNombre: cliente.nombre });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'solicitud_documentos': {
+      const t = emailSolicitudDocumentos({
+        clienteNombre: cliente.nombre,
+        documentos: datos?.documentos ?? ['Documentos pendientes'],
+        plazo: datos?.plazo,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'aviso_audiencia': {
+      const t = emailAvisoAudiencia({
+        clienteNombre: cliente.nombre,
+        fecha: datos?.fecha ?? new Date().toISOString().split('T')[0],
+        hora: datos?.hora ?? '09:00',
+        juzgado: datos?.juzgado ?? 'Por confirmar',
+        direccion: datos?.direccion,
+        presenciaRequerida: datos?.presencia_requerida ?? true,
+        instrucciones: datos?.instrucciones,
+        documentosLlevar: datos?.documentos_llevar,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'confirmacion_cita': {
+      if (!datos?.cita_id) throw new Error('Se requiere cita_id para confirmación de cita');
+      const { data: cita, error } = await db
+        .from('citas')
+        .select('*, cliente:clientes(id, nombre, email)')
+        .eq('id', datos.cita_id)
+        .single();
+      if (error || !cita) throw new Error(`Cita no encontrada: ${datos.cita_id}`);
+      const t = emailConfirmacionCita(cita);
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'recordatorio_cita': {
+      if (!datos?.cita_id) throw new Error('Se requiere cita_id para recordatorio de cita');
+      const { data: cita, error } = await db
+        .from('citas')
+        .select('*, cliente:clientes(id, nombre, email)')
+        .eq('id', datos.cita_id)
+        .single();
+      if (error || !cita) throw new Error(`Cita no encontrada: ${datos.cita_id}`);
+      const t = emailRecordatorio24h(cita);
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'solicitud_pago': {
+      const t = emailSolicitudPago({
+        clienteNombre: cliente.nombre,
+        concepto: datos?.concepto ?? 'Servicios legales',
+        monto: datos?.monto ?? 0,
+        fechaLimite: datos?.fecha_limite,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'comprobante_pago': {
+      const t = emailPagoRecibido({
+        clienteNombre: cliente.nombre,
+        concepto: datos?.concepto ?? 'Servicios legales',
+        monto: datos?.monto ?? 0,
+        fechaPago: datos?.fecha_pago ?? new Date().toISOString().split('T')[0],
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'cotizacion': {
+      const t = emailCotizacion({
+        clienteNombre: cliente.nombre,
+        servicios: datos?.servicios ?? [],
+        vigencia: datos?.vigencia,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'estado_cuenta': {
+      const t = emailEstadoCuenta({
+        clienteNombre: cliente.nombre,
+        movimientos: datos?.movimientos ?? [],
+        saldo: datos?.saldo ?? 0,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'factura': {
+      const t = emailFactura({
+        clienteNombre: cliente.nombre,
+        nit: datos?.nit ?? cliente.nit ?? 'CF',
+        numero: datos?.numero ?? 'S/N',
+        conceptos: datos?.conceptos ?? [],
+        total: datos?.total ?? 0,
+      });
+      from = t.from; subject = t.subject; html = t.html;
+      break;
+    }
+    case 'personalizado': {
+      from = 'asistente@papeleo.legal';
+      subject = datos?.asunto ?? 'Mensaje de Amanda Santizo — Despacho Jurídico';
+      html = emailWrapper(datos?.contenido ?? '');
+      break;
+    }
+    default:
+      throw new Error(`Tipo de email no reconocido: ${tipoEmail}`);
+  }
+
+  // 3. Send
+  await sendMail({ from, to: cliente.email, subject, htmlBody: html });
+
+  console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${cliente.email}, asunto=${subject}`);
+  return `Email enviado a ${cliente.nombre} (${cliente.email}) desde ${from} — Asunto: ${subject}`;
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -423,7 +629,44 @@ export async function POST(req: Request) {
           },
           required: ['datos']
         }
-      }
+      },
+      {
+        name: 'enviar_email',
+        description: 'Envía un email a un cliente usando los templates del despacho. Busca al cliente por UUID o nombre. El remitente se determina automáticamente según el tipo.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            tipo_email: {
+              type: 'string',
+              enum: [
+                'confirmacion_cita',
+                'recordatorio_cita',
+                'solicitud_pago',
+                'comprobante_pago',
+                'cotizacion',
+                'estado_cuenta',
+                'factura',
+                'documentos_disponibles',
+                'actualizacion_expediente',
+                'bienvenida_cliente',
+                'solicitud_documentos',
+                'aviso_audiencia',
+                'personalizado',
+              ],
+              description: 'Tipo de email a enviar',
+            },
+            cliente_id: {
+              type: 'string',
+              description: 'UUID del cliente o nombre para buscar en la BD',
+            },
+            datos: {
+              type: 'object',
+              description: 'Datos dinámicos según el tipo: monto, concepto, documentos, fecha, etc.',
+            },
+          },
+          required: ['tipo_email', 'cliente_id'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -478,6 +721,9 @@ export async function POST(req: Request) {
               } else {
                 result = await generateDocument(input.tipo, input.datos);
               }
+            } else if (block.name === 'enviar_email') {
+              const input = block.input as any;
+              result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos);
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
