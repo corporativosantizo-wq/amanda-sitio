@@ -93,10 +93,13 @@ export default function SobreMiPage() {
             Hoy
           </h2>
           <p className="text-lg text-slate leading-relaxed mb-6">
-            Hoy dirijo Amanda Santizo y Asociados, un bufete con cinco abogados que maneja aproximadamente doscientos casos activos. Nos especializamos en derecho empresarial, contratos, derecho corporativo, litigios comerciales y procedimientos legales para emprendedores y empresas guatemaltecas.
+            Hoy dirijo mi despacho como un estudio juridico boutique. No trabajamos en masa. Cada caso recibe atencion personalizada porque ante la ley, los abogados y notarios cargamos con una responsabilidad enorme cuando cometemos errores. Esa responsabilidad la tomo en serio.
+          </p>
+          <p className="text-lg text-slate leading-relaxed mb-6">
+            Contamos con un equipo de trabajo especializado en derecho empresarial, contratos, derecho corporativo, litigios comerciales y procedimientos legales para emprendedores y empresas guatemaltecas. Nuestro enfoque es la calidad, no la cantidad.
           </p>
           <p className="text-lg text-slate leading-relaxed">
-            Mi enfoque siempre ha sido el mismo: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparacion que merece. Si algo aprendi en mas de una decada de litigio es que no hay atajos. La diferencia esta en el trabajo, el estudio y la conviccion de que cada cliente merece una defensa seria.
+            Mi forma de trabajar siempre ha sido la misma: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparacion que merece. Si algo aprendi en mas de una decada de litigio es que no hay atajos. La diferencia esta en el trabajo, el estudio y la conviccion de que cada cliente merece una defensa seria.
           </p>
         </div>
       </section>
