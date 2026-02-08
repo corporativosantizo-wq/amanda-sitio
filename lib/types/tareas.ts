@@ -35,6 +35,15 @@ export enum AsignadoTarea {
 
 // --- Interfaces ---
 
+export interface AccionAutomatica {
+  tipo: 'enviar_email';
+  template: string;
+  cliente_id?: string;
+  email_directo?: string;
+  nombre_destinatario?: string;
+  datos?: Record<string, any>;
+}
+
 export interface Tarea {
   id: string;
   titulo: string;
@@ -51,6 +60,9 @@ export interface Tarea {
   recurrente: boolean;
   recurrencia_tipo: string | null;
   notas: string | null;
+  accion_automatica: AccionAutomatica | null;
+  ejecutada: boolean;
+  ejecutada_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -73,6 +85,7 @@ export interface TareaInsert {
   recurrente?: boolean;
   recurrencia_tipo?: string | null;
   notas?: string | null;
+  accion_automatica?: AccionAutomatica | null;
 }
 
 // --- Labels ---

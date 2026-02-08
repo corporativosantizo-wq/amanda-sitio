@@ -277,11 +277,32 @@ Puedes gestionar la agenda del despacho usando la herramienta gestionar_tareas. 
 - "¿Qué tareas tiene el contador?" → listar con asignado_a=contador
 - "Migra las tareas vencidas a mañana" → listar vencidas, luego migrar cada una
 
-### Ejecución automática:
-Cuando sea posible, ejecuta las tareas automáticamente:
+### Ejecución inmediata:
+Cuando Amanda pide algo para AHORA, ejecútalo directamente:
 - Tarea de cobro → usa enviar_email con tipo=solicitud_pago
 - Tarea de enviar documentos → usa enviar_email con tipo=documentos_disponibles
 - Tarea de recordatorio → usa enviar_email con el tipo apropiado
+
+### Tareas PROGRAMADAS (para fecha futura):
+Cuando Amanda dice "el martes envíale..." o "mañana cobra..." o "el 15 mándale...":
+1. Crea la tarea con gestionar_tareas accion=crear
+2. Incluye accion_automatica en los datos con la acción a ejecutar automáticamente
+3. El cron ejecutará la acción cuando llegue la fecha_limite
+
+Formato de accion_automatica:
+{
+  "tipo": "enviar_email",
+  "template": "solicitud_pago|documentos_disponibles|aviso_audiencia|solicitud_documentos|personalizado",
+  "cliente_id": "UUID del cliente (opcional si se incluye email en datos)",
+  "datos": { ... datos del template ... }
+}
+
+Ejemplos:
+- "Mándale recordatorio de pago a Procapeli el lunes" → crear tarea con fecha_limite=lunes, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"solicitud_pago","cliente_id":"[UUID]","datos":{"concepto":"...","monto":...}}
+- "El miércoles envíale a Roberto sus documentos" → crear tarea con fecha_limite=miércoles, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"documentos_disponibles","cliente_id":"[UUID]"}
+- "Recuérdame el viernes revisar el contrato de Juan" → crear tarea normal para Amanda SIN accion_automatica (es solo recordatorio)
+
+IMPORTANTE: Solo usa accion_automatica cuando la tarea es para el asistente y requiere una acción automática (como enviar email). Para recordatorios personales de Amanda, crea la tarea sin accion_automatica.
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -749,9 +770,11 @@ async function handleGestionarTareas(
         asignado_a: datos.asignado_a ?? 'amanda',
         categoria: datos.categoria ?? 'tramites',
         notas: datos.notas,
+        accion_automatica: datos.accion_automatica ?? null,
       });
 
-      return `Tarea creada: "${tarea.titulo}" (${tarea.prioridad}, ${tarea.categoria}${tarea.fecha_limite ? ', vence: ' + tarea.fecha_limite : ''})`;
+      const programada = tarea.accion_automatica ? ' ⏰ PROGRAMADA' : '';
+      return `Tarea creada${programada}: "${tarea.titulo}" (${tarea.prioridad}, ${tarea.categoria}${tarea.fecha_limite ? ', fecha: ' + tarea.fecha_limite : ''})`;
     }
 
     case 'listar': {
@@ -948,7 +971,7 @@ export async function POST(req: Request) {
             },
             datos: {
               type: 'object',
-              description: 'Datos según la acción. Crear: titulo, descripcion, tipo, prioridad, fecha_limite, cliente_id, categoria, asignado_a, notas. Listar: estado, prioridad, categoria, asignado_a, fecha (\"hoy\"), busqueda. Completar: tarea_id. Migrar: tarea_id, nueva_fecha.',
+              description: 'Datos según la acción. Crear: titulo, descripcion, tipo, prioridad, fecha_limite, cliente_id, categoria, asignado_a, notas, accion_automatica (JSON para tareas programadas: {tipo:"enviar_email", template:"...", cliente_id:"...", datos:{...}}). Listar: estado, prioridad, categoria, asignado_a, fecha ("hoy"), busqueda. Completar: tarea_id. Migrar: tarea_id, nueva_fecha.',
             },
           },
           required: ['accion', 'datos'],

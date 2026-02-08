@@ -702,9 +702,12 @@ function BulletItem({
 }) {
   const isOverdue = tarea.fecha_limite && tarea.fecha_limite < hoy();
   const isInProgress = tarea.estado === 'en_progreso';
-  const bullet = isInProgress
-    ? BULLET.en_progreso
-    : BULLET[tarea.estado] ?? BULLET.pendiente;
+  const isScheduled = !!(tarea as any).accion_automatica && !(tarea as any).ejecutada;
+  const bullet = isScheduled
+    ? { symbol: '⏰', className: 'text-amber-500' }
+    : isInProgress
+      ? BULLET.en_progreso
+      : BULLET[tarea.estado] ?? BULLET.pendiente;
 
   const prioColor = tarea.prioridad === 'alta'
     ? 'bg-red-50'
@@ -716,24 +719,29 @@ function BulletItem({
     <div
       className={`flex items-start gap-2 px-2 py-1.5 rounded-md group transition-all duration-300 ${
         isCompleting ? 'opacity-30 line-through' : ''
-      } ${isOverdue ? 'bg-red-50/60' : prioColor} hover:bg-slate-50`}
+      } ${isOverdue && !isScheduled ? 'bg-red-50/60' : isScheduled ? 'bg-amber-50/40' : prioColor} hover:bg-slate-50`}
     >
       <button
         onClick={() => onComplete(tarea.id)}
         className={`font-mono text-sm leading-5 w-4 text-center shrink-0 transition-colors cursor-pointer ${
           bullet.className
         } hover:text-teal-600`}
-        title="Completar"
+        title={isScheduled ? 'Programada — click para completar' : 'Completar'}
       >
         {bullet.symbol}
       </button>
       <div className="min-w-0 flex-1">
         <p className={`text-xs leading-snug ${
-          isInProgress ? 'text-blue-700 font-medium' : 'text-slate-700'
-        } ${isOverdue ? 'text-red-700' : ''}`}>
+          isScheduled ? 'text-amber-800' : isInProgress ? 'text-blue-700 font-medium' : 'text-slate-700'
+        } ${isOverdue && !isScheduled ? 'text-red-700' : ''}`}>
           {tarea.titulo}
         </p>
         <div className="flex items-center gap-1.5 flex-wrap">
+          {isScheduled && tarea.fecha_limite && (
+            <span className="text-[9px] text-amber-600 font-medium">
+              {new Date(tarea.fecha_limite + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric' })}
+            </span>
+          )}
           {showCategory && (
             <span className={`px-1.5 py-0.5 text-[9px] font-medium rounded-full ${
               CATEGORIA_TAREA_COLOR[tarea.categoria as CategoriaTarea] ?? 'bg-gray-100 text-gray-600'
@@ -741,18 +749,18 @@ function BulletItem({
               {CATEGORIA_TAREA_LABEL[tarea.categoria as CategoriaTarea] ?? tarea.categoria}
             </span>
           )}
-          {isInProgress && (
+          {isInProgress && !isScheduled && (
             <span className="text-[9px] text-blue-500 font-medium">en progreso</span>
           )}
           {tarea.cliente && (
             <span className="text-[9px] text-slate-400">{tarea.cliente.nombre}</span>
           )}
-          {showDate && tarea.fecha_limite && (
+          {showDate && !isScheduled && tarea.fecha_limite && (
             <span className={`text-[9px] ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
               {new Date(tarea.fecha_limite + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           )}
-          {!showDate && isOverdue && (
+          {!showDate && !isScheduled && isOverdue && (
             <span className="text-[9px] text-red-500 font-medium">vencida</span>
           )}
         </div>

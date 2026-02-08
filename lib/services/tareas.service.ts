@@ -99,6 +99,8 @@ export async function crearTarea(input: TareaInsert): Promise<Tarea> {
     recurrente: input.recurrente ?? false,
     recurrencia_tipo: input.recurrencia_tipo ?? null,
     notas: input.notas ?? null,
+    accion_automatica: input.accion_automatica ?? null,
+    ejecutada: false,
   };
   console.log(`[Tareas] crearTarea payload: ${JSON.stringify(payload)}`);
 
@@ -131,6 +133,9 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
   if (updates.recurrente !== undefined) payload.recurrente = updates.recurrente;
   if (updates.recurrencia_tipo !== undefined) payload.recurrencia_tipo = updates.recurrencia_tipo;
   if (updates.notas !== undefined) payload.notas = updates.notas;
+  if ((updates as any).accion_automatica !== undefined) payload.accion_automatica = (updates as any).accion_automatica;
+  if ((updates as any).ejecutada !== undefined) payload.ejecutada = (updates as any).ejecutada;
+  if ((updates as any).ejecutada_at !== undefined) payload.ejecutada_at = (updates as any).ejecutada_at;
 
   // Auto-set fecha_completada
   if (updates.estado === EstadoTarea.COMPLETADA) {
@@ -201,6 +206,47 @@ export async function resumenTareas() {
     completadas_hoy: completadasHoy.count ?? 0,
     vencidas: vencidas.count ?? 0,
   };
+}
+
+// --- Tareas programadas ---
+
+export async function obtenerTareasProgramadasPendientes() {
+  const ahora = new Date().toISOString();
+
+  const { data, error } = await db()
+    .from('tareas')
+    .select(`
+      *,
+      cliente:clientes!cliente_id (id, nombre, email)
+    `)
+    .eq('estado', 'pendiente')
+    .eq('asignado_a', 'asistente')
+    .eq('ejecutada', false)
+    .not('accion_automatica', 'is', null)
+    .lte('fecha_limite', ahora.split('T')[0])
+    .order('fecha_limite', { ascending: true })
+    .limit(20);
+
+  if (error) throw new TareaError('Error al obtener tareas programadas', error);
+  return (data ?? []) as any[];
+}
+
+export async function marcarTareaEjecutada(id: string, resultado?: string): Promise<void> {
+  const payload: any = {
+    ejecutada: true,
+    ejecutada_at: new Date().toISOString(),
+    estado: EstadoTarea.COMPLETADA,
+    fecha_completada: new Date().toISOString(),
+    notas: resultado ? `[Auto] ${resultado}` : '[Auto] Ejecutada por cron',
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await db()
+    .from('tareas')
+    .update(payload)
+    .eq('id', id);
+
+  if (error) throw new TareaError('Error al marcar tarea como ejecutada', error);
 }
 
 // --- Error ---
