@@ -54,11 +54,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar API key
+    // Verificar env vars
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error('[Classify] FALTA variable ANTHROPIC_API_KEY');
       return NextResponse.json(
         { error: 'Configuración incompleta: falta ANTHROPIC_API_KEY en el servidor.' },
+        { status: 500 }
+      );
+    }
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('[Classify] FALTAN variables de Supabase');
+      return NextResponse.json(
+        { error: 'Configuración incompleta: faltan variables de entorno de Supabase.' },
         { status: 500 }
       );
     }

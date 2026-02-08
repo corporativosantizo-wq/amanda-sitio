@@ -85,13 +85,14 @@ export default function UploadDocumentos() {
         body: formData,
       });
 
+      // Leer body como texto primero (evita bug de body-consumed)
+      const rawText = await res.text();
       let data: any;
       try {
-        data = await res.json();
+        data = JSON.parse(rawText);
       } catch {
-        const text = await res.text();
-        setGlobalError(`Error del servidor (HTTP ${res.status}): respuesta no es JSON — ${text.slice(0, 200)}`);
-        for (const f of files) updateFile(f.id, { status: 'error', error: `HTTP ${res.status}` });
+        setGlobalError(`Error del servidor (HTTP ${res.status}): respuesta no es JSON — ${rawText.slice(0, 300)}`);
+        for (const f of files) updateFile(f.id, { status: 'error', error: `HTTP ${res.status}: respuesta inválida` });
         setUploading(false);
         return;
       }
@@ -146,11 +147,16 @@ export default function UploadDocumentos() {
           body: JSON.stringify({ documento_id: doc.id }),
         });
 
+        // Leer body como texto primero (evita bug de body-consumed)
+        const rawClassify = await res.text();
         let result: any;
         try {
-          result = await res.json();
+          result = JSON.parse(rawClassify);
         } catch {
-          updateFile(match.id, { status: 'error', error: `Respuesta inválida del servidor (HTTP ${res.status})` });
+          updateFile(match.id, {
+            status: 'error',
+            error: `Respuesta inválida del clasificador (HTTP ${res.status}): ${rawClassify.slice(0, 200)}`,
+          });
           continue;
         }
 

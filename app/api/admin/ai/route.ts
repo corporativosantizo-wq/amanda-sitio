@@ -249,10 +249,26 @@ async function queryDatabase(query: string): Promise<string> {
 // ── Generación de documentos ──────────────────────────────────────────────
 
 async function generateDocument(tipo: string, datos: any): Promise<string> {
-  console.log(`[AI] Generando documento: tipo=${tipo}`);
+  console.log(`[AI] Generando documento: tipo=${tipo}, datos keys:`, Object.keys(datos || {}));
 
-  const buffer = await generarDocumento(tipo as TipoDocumentoGenerable, datos);
+  // Validar env vars
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Faltan variables de entorno de Supabase (NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY)');
+  }
 
+  // Paso 1: Generar buffer .docx
+  console.log(`[AI] Paso 1: Generando buffer docx...`);
+  let buffer: Buffer;
+  try {
+    buffer = await generarDocumento(tipo as TipoDocumentoGenerable, datos);
+    console.log(`[AI] Buffer generado OK: ${(buffer.length / 1024).toFixed(0)} KB`);
+  } catch (err: any) {
+    console.error(`[AI] Error generando docx:`, err.message, err.stack);
+    throw new Error(`Error al generar el documento .docx (tipo: ${tipo}): ${err.message}`);
+  }
+
+  // Paso 2: Subir a Storage
+  console.log(`[AI] Paso 2: Subiendo a Storage...`);
   const storage = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -268,16 +284,25 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
       upsert: false,
     });
 
-  if (uploadError) throw new Error(`Error al subir a Storage: ${uploadError.message}`);
+  if (uploadError) {
+    console.error(`[AI] Error upload Storage:`, uploadError);
+    throw new Error(`Error al subir a Storage: ${uploadError.message}`);
+  }
+  console.log(`[AI] Subido OK: ${storagePath}`);
 
+  // Paso 3: Generar URL firmada
+  console.log(`[AI] Paso 3: Generando URL firmada...`);
   const { data: signedData, error: signError } = await storage.storage
     .from('documentos')
     .createSignedUrl(storagePath, 600);
 
-  if (signError || !signedData) throw new Error(`Error al generar URL: ${signError?.message}`);
+  if (signError || !signedData) {
+    console.error(`[AI] Error signed URL:`, signError);
+    throw new Error(`Error al generar URL de descarga: ${signError?.message}`);
+  }
 
   const nombre = PLANTILLAS_DISPONIBLES[tipo as TipoDocumentoGenerable] ?? tipo;
-  console.log(`[AI] Documento generado: ${nombre}`);
+  console.log(`[AI] Documento generado exitosamente: ${nombre}`);
 
   return `Documento "${nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
@@ -287,14 +312,32 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
 async function generateCustomDocument(plantillaId: string, datos: any): Promise<string> {
   console.log(`[AI] Generando documento custom: plantilla_id=${plantillaId}`);
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Faltan variables de entorno de Supabase');
+  }
+
+  // Paso 1: Obtener plantilla
+  console.log(`[AI] Custom paso 1: Obteniendo plantilla...`);
   const plantilla = await obtenerPlantilla(plantillaId);
   if (!plantilla.activa) throw new Error('La plantilla está inactiva');
+  console.log(`[AI] Plantilla: "${plantilla.nombre}", ${(plantilla.campos as any[]).length} campos`);
 
-  const textoFinal = generarDesdeCustomPlantilla(plantilla, datos);
-  const paragraphs = convertirTextoAParagraphs(textoFinal);
-  const doc = buildDocument(paragraphs);
-  const buffer = Buffer.from(await Packer.toBuffer(doc));
+  // Paso 2: Reemplazar campos y generar docx
+  console.log(`[AI] Custom paso 2: Generando docx...`);
+  let buffer: Buffer;
+  try {
+    const textoFinal = generarDesdeCustomPlantilla(plantilla, datos);
+    const paragraphs = convertirTextoAParagraphs(textoFinal);
+    const doc = buildDocument(paragraphs);
+    buffer = Buffer.from(await Packer.toBuffer(doc));
+    console.log(`[AI] Buffer custom generado: ${(buffer.length / 1024).toFixed(0)} KB`);
+  } catch (err: any) {
+    console.error(`[AI] Error generando docx custom:`, err.message, err.stack);
+    throw new Error(`Error al generar .docx custom: ${err.message}`);
+  }
 
+  // Paso 3: Subir a Storage
+  console.log(`[AI] Custom paso 3: Subiendo a Storage...`);
   const storage = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -310,15 +353,23 @@ async function generateCustomDocument(plantillaId: string, datos: any): Promise<
       upsert: false,
     });
 
-  if (uploadError) throw new Error(`Error al subir a Storage: ${uploadError.message}`);
+  if (uploadError) {
+    console.error(`[AI] Error upload custom:`, uploadError);
+    throw new Error(`Error al subir a Storage: ${uploadError.message}`);
+  }
 
+  // Paso 4: URL firmada
+  console.log(`[AI] Custom paso 4: Generando URL firmada...`);
   const { data: signedData, error: signError } = await storage.storage
     .from('documentos')
     .createSignedUrl(storagePath, 600);
 
-  if (signError || !signedData) throw new Error(`Error al generar URL: ${signError?.message}`);
+  if (signError || !signedData) {
+    console.error(`[AI] Error signed URL custom:`, signError);
+    throw new Error(`Error al generar URL: ${signError?.message}`);
+  }
 
-  console.log(`[AI] Documento custom generado: ${plantilla.nombre}`);
+  console.log(`[AI] Documento custom generado exitosamente: ${plantilla.nombre}`);
   return `Documento "${plantilla.nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
 
@@ -431,8 +482,9 @@ export async function POST(req: Request) {
               result = `Herramienta desconocida: ${block.name}`;
             }
           } catch (err: any) {
-            console.error(`[AI] Tool error:`, err.message);
-            result = `Error: ${err.message}`;
+            console.error(`[AI] Tool error (${block.name}):`, err.message);
+            console.error(`[AI] Stack:`, err.stack);
+            result = `Error al ejecutar ${block.name}: ${err.message}. Muestra este error exacto al usuario para que pueda reportarlo.`;
           }
           toolResults.push({
             type: 'tool_result',
