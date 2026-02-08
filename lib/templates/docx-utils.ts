@@ -183,3 +183,72 @@ export function buildDocument(children: Paragraph[], opts?: { notarial?: boolean
     }],
   });
 }
+
+// ── Texto plano → Paragraphs (para plantillas custom) ───────────────────────
+
+/** Parsea inline formatting: **bold** → boldRun, resto → normalRun */
+function parseInlineFormatting(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.startsWith('**') && part.endsWith('**')) {
+      runs.push(boldRun(part.slice(2, -2)));
+    } else {
+      runs.push(normalRun(part));
+    }
+  }
+  return runs.length > 0 ? runs : [normalRun(text)];
+}
+
+/**
+ * Convierte texto plano (con formato simple) a un array de Paragraph[].
+ * - Doble newline → separador de párrafos
+ * - Líneas ALL CAPS cortas → titleParagraph
+ * - Líneas que empiezan con "PRIMERO:", "SEGUNDO:", etc. → sectionTitle
+ * - **texto** → bold inline
+ * - Líneas vacías → emptyLine
+ */
+export function convertirTextoAParagraphs(texto: string): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  // Normalizar line endings y split por doble newline
+  const blocks = texto.replace(/\r\n/g, '\n').split(/\n{2,}/);
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) {
+      paragraphs.push(emptyLine());
+      continue;
+    }
+
+    // Líneas dentro del bloque (single newlines)
+    const lines = trimmed.split('\n');
+
+    for (const line of lines) {
+      const l = line.trim();
+      if (!l) {
+        paragraphs.push(emptyLine());
+        continue;
+      }
+
+      // Detectar títulos: ALL CAPS, menos de 80 chars, sin marcadores
+      if (l === l.toUpperCase() && l.length < 80 && !l.includes('{{') && /[A-ZÁÉÍÓÚÑ]/.test(l)) {
+        paragraphs.push(titleParagraph(l));
+        continue;
+      }
+
+      // Detectar secciones numeradas: "PRIMERO:", "I.", "1.", etc.
+      if (/^(PRIMER[OA]|SEGUND[OA]|TERCER[OA]|CUART[OA]|QUINT[OA]|SEXT[OA]|SÉPTIM[OA]|OCTAV[OA]|NOVEN[OA]|DÉCIM[OA]|[IVXLC]+\.|[0-9]+\.)\s/i.test(l)) {
+        const runs = parseInlineFormatting(l);
+        paragraphs.push(mixedParagraph(runs));
+        continue;
+      }
+
+      // Default: párrafo justificado con inline formatting
+      const runs = parseInlineFormatting(l);
+      paragraphs.push(mixedParagraph(runs));
+    }
+  }
+
+  return paragraphs;
+}

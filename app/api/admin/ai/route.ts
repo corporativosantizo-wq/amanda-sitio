@@ -1,9 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
+import { Packer } from 'docx';
 import { generarDocumento, PLANTILLAS_DISPONIBLES } from '@/lib/templates';
 import type { TipoDocumentoGenerable } from '@/lib/templates';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
+import { listarPlantillasActivas, obtenerPlantilla, generarDesdeCustomPlantilla } from '@/lib/services/plantillas.service';
+import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-utils';
 
 const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo & Asociados, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
 
@@ -279,6 +282,46 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
   return `Documento "${nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
 
+// ── Generación desde plantilla custom ────────────────────────────────────
+
+async function generateCustomDocument(plantillaId: string, datos: any): Promise<string> {
+  console.log(`[AI] Generando documento custom: plantilla_id=${plantillaId}`);
+
+  const plantilla = await obtenerPlantilla(plantillaId);
+  if (!plantilla.activa) throw new Error('La plantilla está inactiva');
+
+  const textoFinal = generarDesdeCustomPlantilla(plantilla, datos);
+  const paragraphs = convertirTextoAParagraphs(textoFinal);
+  const doc = buildDocument(paragraphs);
+  const buffer = Buffer.from(await Packer.toBuffer(doc));
+
+  const storage = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const dateStr = new Date().toISOString().split('T')[0];
+  const storagePath = `generados/${dateStr}_custom_${sanitizarNombre(plantilla.nombre)}_${Date.now()}.docx`;
+
+  const { error: uploadError } = await storage.storage
+    .from('documentos')
+    .upload(storagePath, buffer, {
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      upsert: false,
+    });
+
+  if (uploadError) throw new Error(`Error al subir a Storage: ${uploadError.message}`);
+
+  const { data: signedData, error: signError } = await storage.storage
+    .from('documentos')
+    .createSignedUrl(storagePath, 600);
+
+  if (signError || !signedData) throw new Error(`Error al generar URL: ${signError?.message}`);
+
+  console.log(`[AI] Documento custom generado: ${plantilla.nombre}`);
+  return `Documento "${plantilla.nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -309,24 +352,43 @@ export async function POST(req: Request) {
       },
       {
         name: 'generar_documento',
-        description: 'Genera un documento legal en formato Word (.docx). Tipos: arrendamiento, laboral, agot, acta_notarial_certificacion, amparo, rendicion_cuentas, sumario_nulidad, oposicion_desestimacion',
+        description: 'Genera un documento legal en formato Word (.docx). Usa "tipo" para plantillas integradas o "plantilla_id" para plantillas personalizadas.',
         input_schema: {
           type: 'object' as const,
           properties: {
             tipo: {
               type: 'string',
               enum: ['arrendamiento', 'laboral', 'agot', 'acta_notarial_certificacion', 'amparo', 'rendicion_cuentas', 'sumario_nulidad', 'oposicion_desestimacion'],
-              description: 'Tipo de documento a generar'
+              description: 'Tipo de documento integrado (omitir si se usa plantilla_id)'
+            },
+            plantilla_id: {
+              type: 'string',
+              description: 'UUID de una plantilla personalizada (omitir si se usa tipo)'
             },
             datos: {
               type: 'object',
-              description: 'Datos específicos para el documento. Los campos varían según el tipo de documento.'
+              description: 'Datos específicos para el documento. Los campos varían según el tipo o plantilla.'
             }
           },
-          required: ['tipo', 'datos']
+          required: ['datos']
         }
       }
     ];
+
+    // ── Inyectar plantillas custom al system prompt ─────────────────────
+    let dynamicPrompt = SYSTEM_PROMPT;
+    try {
+      const customPlantillas = await listarPlantillasActivas();
+      if (customPlantillas.length > 0) {
+        dynamicPrompt += '\n\n## PLANTILLAS PERSONALIZADAS\nAdemás de las plantillas integradas, puedes generar documentos con estas plantillas personalizadas usando generar_documento con plantilla_id (en vez de tipo):\n\n';
+        for (const p of customPlantillas) {
+          const camposList = (p.campos as any[]).map((c: any) => c.label || c.id).join(', ');
+          dynamicPrompt += `- **${p.nombre}** (plantilla_id: "${p.id}") — ${p.descripcion || 'Sin descripción'}. Campos: ${camposList}\n`;
+        }
+      }
+    } catch (err: any) {
+      console.error('[AI] Error cargando plantillas custom:', err.message);
+    }
 
     // ── Tool use loop ───────────────────────────────────────────────────
     let conversationMessages = messages.map((m: any) => ({
@@ -337,7 +399,7 @@ export async function POST(req: Request) {
     let response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: dynamicPrompt,
       tools,
       messages: conversationMessages,
     });
@@ -360,7 +422,11 @@ export async function POST(req: Request) {
               result = await queryDatabase((block.input as any).query);
             } else if (block.name === 'generar_documento') {
               const input = block.input as any;
-              result = await generateDocument(input.tipo, input.datos);
+              if (input.plantilla_id) {
+                result = await generateCustomDocument(input.plantilla_id, input.datos);
+              } else {
+                result = await generateDocument(input.tipo, input.datos);
+              }
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
@@ -386,7 +452,7 @@ export async function POST(req: Request) {
       response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: dynamicPrompt,
         tools,
         messages: conversationMessages,
       });
