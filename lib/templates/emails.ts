@@ -677,3 +677,69 @@ export function emailAvisoAudiencia(params: {
     html,
   };
 }
+
+// ── Recordatorios de Cobro (desde contador@) ────────────────────────────────
+
+export function emailRecordatorioCobro(params: {
+  clienteNombre: string;
+  concepto: string;
+  monto: number;
+  saldoPendiente: number;
+  fechaVencimiento?: string;
+  tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
+  numeroCobro: number;
+}): EmailTemplate {
+  const montoFmt = `Q${params.saldoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  const vencimiento = params.fechaVencimiento ? formatearFechaGT(params.fechaVencimiento) : 'por confirmar';
+
+  let titulo: string;
+  let intro: string;
+  let tono: string;
+
+  switch (params.tipo) {
+    case 'primer_aviso':
+      titulo = 'Recordatorio de pago';
+      intro = `Le recordamos amablemente que tiene un saldo pendiente por el concepto indicado a continuaci\u00f3n.`;
+      tono = 'Agradecemos su pronta atenci\u00f3n.';
+      break;
+    case 'segundo_aviso':
+      titulo = 'Segundo aviso de pago';
+      intro = `Le notificamos por segunda vez que a\u00fan se encuentra pendiente el siguiente pago. Le solicitamos regularizar su situaci\u00f3n a la brevedad.`;
+      tono = 'Su pago oportuno nos permite continuar brind\u00e1ndole un servicio de calidad.';
+      break;
+    case 'tercer_aviso':
+    case 'urgente':
+      titulo = 'Aviso de pago vencido';
+      intro = `Le comunicamos que el siguiente cobro se encuentra <strong>vencido</strong>. Le instamos a realizar el pago de forma inmediata para evitar acciones adicionales.`;
+      tono = 'De no recibir su pago en los pr\u00f3ximos d\u00edas, nos veremos en la necesidad de tomar medidas correspondientes.';
+      break;
+  }
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">${titulo}</h2>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre},</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">${intro}</p>
+    <table width="100%" style="margin:16px 0;background:${params.tipo === 'tercer_aviso' || params.tipo === 'urgente' ? '#fef2f2' : '#f0fdfa'};border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>Cobro:</strong> COB-${String(params.numeroCobro).padStart(3, '0')}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Concepto:</strong> ${params.concepto}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Saldo pendiente:</strong> <span style="font-size:18px;font-weight:700;color:#0f172a;">${montoFmt}</span></p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Vencimiento:</strong> ${vencimiento}</p>
+      </td></tr>
+    </table>
+    <table width="100%" style="margin:16px 0;background:#eff6ff;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:14px;font-weight:600;">Cuentas para dep\u00f3sito:</p>
+        ${cuentasBancariasHTML()}
+      </td></tr>
+    </table>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">${tono}</p>
+    <p style="color:#64748b;font-size:13px;margin-top:16px;">Por favor env\u00ede comprobante de pago a este correo.</p>
+  `);
+
+  return {
+    from: 'contador@papeleo.legal',
+    subject: `${titulo} \u2014 COB-${String(params.numeroCobro).padStart(3, '0')} \u2014 ${montoFmt}`,
+    html,
+  };
+}

@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/tareas-programadas",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/recordatorios-cobro",
+      "schedule": "0 14 * * 1-5"
     }
   ]
 }

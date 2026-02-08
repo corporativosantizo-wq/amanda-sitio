@@ -177,6 +177,7 @@ export interface Pago {
   numero: string;
   factura_id: string | null;
   cotizacion_id: string | null;
+  cobro_id: string | null;
   cliente_id: string;
 
   fecha_pago: string;
@@ -201,6 +202,7 @@ export interface Pago {
 export interface PagoInsert {
   factura_id?: string | null;
   cotizacion_id?: string | null;
+  cobro_id?: string | null;
   cliente_id: string;
   fecha_pago?: string;
   monto: number;
@@ -271,6 +273,52 @@ export interface GastoInsert {
 
 export interface GastoConCategoria extends Gasto {
   categoria: CategoriaGasto;
+}
+
+// --- Cobros ---
+
+export interface Cobro {
+  id: string;
+  numero_cobro: number;
+  cliente_id: string;
+  expediente_id: string | null;
+  concepto: string;
+  descripcion: string | null;
+  monto: number;
+  monto_pagado: number;
+  saldo_pendiente: number;
+  moneda: string;
+  estado: 'borrador' | 'pendiente' | 'parcial' | 'pagado' | 'vencido' | 'cancelado';
+  fecha_emision: string;
+  fecha_vencimiento: string | null;
+  dias_credito: number;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CobroConCliente extends Cobro {
+  cliente: { id: string; nombre: string; email: string | null };
+}
+
+export interface CobroInsert {
+  cliente_id: string;
+  expediente_id?: string | null;
+  concepto: string;
+  descripcion?: string | null;
+  monto: number;
+  dias_credito?: number;
+  notas?: string | null;
+}
+
+export interface RecordatorioCobro {
+  id: string;
+  cobro_id: string;
+  tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
+  fecha_envio: string;
+  email_enviado: boolean;
+  resultado: string | null;
+  created_at: string;
 }
 
 // --- Dashboard Contable ---

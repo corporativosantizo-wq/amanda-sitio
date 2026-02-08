@@ -12,6 +12,14 @@ import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { registrarYConfirmar } from '@/lib/services/pagos.service';
 import { listarTareas, crearTarea, completarTarea, migrarTarea } from '@/lib/services/tareas.service';
 import {
+  listarCobros,
+  crearCobro,
+  registrarPagoCobro,
+  enviarSolicitudPago,
+  resumenCobros,
+  CobroError,
+} from '@/lib/services/cobros.service';
+import {
   emailConfirmacionCita,
   emailRecordatorio24h,
   emailCancelacionCita,
@@ -303,6 +311,40 @@ Ejemplos:
 - "Recuérdame el viernes revisar el contrato de Juan" → crear tarea normal para Amanda SIN accion_automatica (es solo recordatorio)
 
 IMPORTANTE: Solo usa accion_automatica cuando la tarea es para el asistente y requiere una acción automática (como enviar email). Para recordatorios personales de Amanda, crea la tarea sin accion_automatica.
+
+## GESTIÓN DE COBROS
+Puedes gestionar las cuentas por cobrar del despacho usando la herramienta gestionar_cobros. Acciones disponibles:
+
+### Acciones:
+- **crear_cobro**: Crea un nuevo cobro (cuenta por cobrar) y envía solicitud de pago al cliente
+- **listar_cobros**: Lista cobros con filtros (estado, cliente)
+- **registrar_pago**: Registra un pago contra un cobro existente
+- **enviar_recordatorio**: Envía recordatorio de pago al cliente
+- **resumen_cobros**: Dashboard con totales (pendiente, vencido, por vencer, cobrado este mes)
+
+### Parámetros para crear_cobro:
+- cliente_id (UUID o nombre), concepto, monto, descripcion (opcional), dias_credito (default 15), expediente_id (opcional)
+
+### Parámetros para listar_cobros:
+- estado (pendiente/parcial/vencido/pagado/cancelado/vencidos), cliente_id, busqueda
+
+### Parámetros para registrar_pago:
+- cobro_id (requerido), monto, metodo (transferencia_gyt/deposito_gyt/transferencia_bi/deposito_bi/efectivo/cheque), referencia_bancaria, fecha_pago
+
+### Parámetros para enviar_recordatorio:
+- cobro_id (requerido)
+
+### Ejemplos:
+- "Cóbrale Q5,000 a Procapeli por la constitución de sociedad" → crear_cobro(cliente_id="Procapeli", concepto="Constitución de sociedad", monto=5000)
+- "¿Quién me debe?" → resumen_cobros o listar_cobros con estado=vencidos
+- "Registra el pago de Q2,500 del cobro COB-15" → registrar_pago(cobro_id=[UUID], monto=2500)
+- "Mándale recordatorio de cobro a Procapeli" → primero listar_cobros para encontrar el cobro, luego enviar_recordatorio
+- "¿Cuánto he cobrado este mes?" → resumen_cobros
+- "Lista los cobros vencidos" → listar_cobros(estado="vencidos")
+
+### IMPORTANTE:
+- Cuando Amanda dice "cóbrale a..." SIEMPRE usa gestionar_cobros con crear_cobro (NO enviar_email). Esto crea el cobro en el sistema Y envía la solicitud de pago automáticamente.
+- Para registrar pagos contra cobros existentes, usa registrar_pago (NO confirmar_pago). confirmar_pago es para pagos sueltos sin cobro asociado.
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -827,6 +869,106 @@ async function handleGestionarTareas(
   }
 }
 
+// ── Gestionar cobros ─────────────────────────────────────────────────────
+
+async function handleGestionarCobros(
+  accion: string,
+  datos: any,
+): Promise<string> {
+  const db = createAdminClient();
+
+  switch (accion) {
+    case 'crear_cobro': {
+      // Resolve client name → ID
+      let clienteId = datos.cliente_id;
+      if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
+        const { data: clientes } = await db.from('clientes').select('id, nombre').ilike('nombre', `%${clienteId}%`).limit(1);
+        if (clientes?.length) {
+          clienteId = clientes[0].id;
+        } else {
+          throw new CobroError(`Cliente no encontrado: "${datos.cliente_id}"`);
+        }
+      }
+
+      const cobro = await crearCobro({
+        cliente_id: clienteId,
+        concepto: datos.concepto,
+        monto: datos.monto,
+        descripcion: datos.descripcion,
+        dias_credito: datos.dias_credito,
+        expediente_id: datos.expediente_id,
+        notas: datos.notas,
+      });
+
+      // Auto-send solicitud de pago
+      let emailResult = '';
+      try {
+        emailResult = await enviarSolicitudPago(cobro.id);
+        emailResult = ` ${emailResult}`;
+      } catch (_) {
+        emailResult = ' (No se pudo enviar email — cliente sin email o error de envío)';
+      }
+
+      return `Cobro creado: COB-${cobro.numero_cobro} — Q${cobro.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} — ${datos.concepto}.${emailResult}`;
+    }
+
+    case 'listar_cobros': {
+      const result = await listarCobros({
+        estado: datos.estado,
+        cliente_id: datos.cliente_id,
+        busqueda: datos.busqueda,
+        limit: 20,
+      });
+
+      if (result.data.length === 0) {
+        return 'No se encontraron cobros con esos filtros.';
+      }
+
+      const lines = result.data.map((c: any) => {
+        const cliente = c.cliente?.nombre ?? 'Sin cliente';
+        const venc = c.fecha_vencimiento ?? 'sin vencimiento';
+        return `- **COB-${c.numero_cobro}** ${cliente} — ${c.concepto} — Q${c.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (pagado: Q${c.monto_pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}, saldo: Q${c.saldo_pendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}) — ${c.estado} — vence: ${venc} (id: ${c.id})`;
+      });
+
+      return `${result.total} cobro(s) encontrado(s):\n${lines.join('\n')}`;
+    }
+
+    case 'registrar_pago': {
+      if (!datos.cobro_id) throw new CobroError('Se requiere cobro_id para registrar pago');
+      if (!datos.monto || datos.monto <= 0) throw new CobroError('Se requiere monto mayor a 0');
+
+      const { pago, cobro } = await registrarPagoCobro({
+        cobro_id: datos.cobro_id,
+        monto: datos.monto,
+        metodo: datos.metodo ?? 'transferencia_gyt',
+        referencia_bancaria: datos.referencia_bancaria,
+        fecha_pago: datos.fecha_pago,
+        notas: datos.notas,
+      });
+
+      return `Pago registrado: Q${datos.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} en COB-${cobro.numero_cobro}. Nuevo saldo: Q${cobro.saldo_pendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}. Estado: ${cobro.estado}.`;
+    }
+
+    case 'enviar_recordatorio': {
+      if (!datos.cobro_id) throw new CobroError('Se requiere cobro_id para enviar recordatorio');
+      const result = await enviarSolicitudPago(datos.cobro_id);
+      return result;
+    }
+
+    case 'resumen_cobros': {
+      const r = await resumenCobros();
+      return `Resumen de cobros:
+- **Total pendiente**: Q${r.total_pendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${r.count_pendientes} cobros)
+- **Vencidos**: Q${r.total_vencido.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${r.count_vencidos} cobros)
+- **Por vencer (7 días)**: Q${r.por_vencer_7d.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${r.count_por_vencer} cobros)
+- **Cobrado este mes**: Q${r.cobrado_mes.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+    }
+
+    default:
+      throw new CobroError(`Acción no reconocida: ${accion}. Acciones válidas: crear_cobro, listar_cobros, registrar_pago, enviar_recordatorio, resumen_cobros`);
+  }
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -977,6 +1119,25 @@ export async function POST(req: Request) {
           required: ['accion', 'datos'],
         },
       },
+      {
+        name: 'gestionar_cobros',
+        description: 'Gestiona cuentas por cobrar del despacho. Acciones: crear_cobro, listar_cobros, registrar_pago, enviar_recordatorio, resumen_cobros.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            accion: {
+              type: 'string',
+              enum: ['crear_cobro', 'listar_cobros', 'registrar_pago', 'enviar_recordatorio', 'resumen_cobros'],
+              description: 'Acción a realizar.',
+            },
+            datos: {
+              type: 'object',
+              description: 'Datos según la acción. crear_cobro: cliente_id, concepto, monto, descripcion, dias_credito, expediente_id. listar_cobros: estado, cliente_id, busqueda. registrar_pago: cobro_id, monto, metodo, referencia_bancaria, fecha_pago. enviar_recordatorio: cobro_id. resumen_cobros: sin datos.',
+            },
+          },
+          required: ['accion'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -1040,6 +1201,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'gestionar_tareas') {
               const input = block.input as any;
               result = await handleGestionarTareas(input.accion, input.datos ?? {});
+            } else if (block.name === 'gestionar_cobros') {
+              const input = block.input as any;
+              result = await handleGestionarCobros(input.accion, input.datos ?? {});
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
