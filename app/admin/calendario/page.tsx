@@ -58,14 +58,20 @@ const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   outlook: { label: 'Outlook', color: 'bg-purple-100 text-purple-700' },
 };
 
-const HORAS = Array.from({ length: 29 }, (_, i) => {
+// Grid: 06:00 – 21:00 (31 half-hour slots)
+const HORAS = Array.from({ length: 31 }, (_, i) => {
   const h = Math.floor(i / 2) + 6;
   const m = i % 2 === 0 ? '00' : '30';
   return `${String(h).padStart(2, '0')}:${m}`;
 });
 
+// IMPORTANT: Use LOCAL date parts, NOT toISOString() which converts to UTC
+// and shifts the date forward by 1 day after 6pm in Guatemala (UTC-6).
 function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function addDays(d: Date, n: number): Date {
@@ -126,12 +132,21 @@ function CalendarioPage() {
     const lunes = vista === 'semana' ? getMonday(fechaBase) : fechaBase;
     const fin = vista === 'semana' ? addDays(lunes, 6) : fechaBase;
 
+    const startStr = formatDate(lunes);
+    const endStr = formatDate(fin);
+    console.log(`[Calendario UI] Fetch rango: ${startStr} → ${endStr} (vista=${vista})`);
+
     try {
       const res = await fetch(
-        `/api/admin/calendario/eventos?fecha_inicio=${formatDate(lunes)}&fecha_fin=${formatDate(fin)}&limit=200`
+        `/api/admin/calendario/eventos?fecha_inicio=${startStr}&fecha_fin=${endStr}&limit=200`
       );
       const json = await res.json();
-      setCitas(json.data ?? []);
+      const data: CitaItem[] = json.data ?? [];
+      console.log(`[Calendario UI] Recibidos: ${data.length} eventos, outlook_connected=${json.outlook_connected}`);
+      data.forEach((c: CitaItem) => {
+        console.log(`[Calendario UI]   • "${c.titulo}" fecha=${c.fecha} hora=${c.hora_inicio}-${c.hora_fin} allDay=${c.isAllDay} src=${c._source ?? 'local'}`);
+      });
+      setCitas(data);
       setOutlookConnected(json.outlook_connected ?? false);
     } catch {
       setCitas([]);
@@ -362,9 +377,16 @@ function WeekView({
               const dateStr = formatDate(d);
               const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
                 if (c.isAllDay) return false; // shown in the bar above
-                // Snap to nearest 30-min slot for matching
+                // Snap to nearest 30-min slot, clamped to grid range
                 const [ch, cm] = c.hora_inicio.split(':').map(Number);
-                const snapped = `${String(ch).padStart(2, '0')}:${cm < 30 ? '00' : '30'}`;
+                const totalMin = ch * 60 + cm;
+                const gridStart = 6 * 60;  // 06:00
+                const gridEnd = 21 * 60;   // 21:00
+                // Clamp to grid range
+                const clamped = Math.max(gridStart, Math.min(gridEnd, totalMin));
+                const clampedH = Math.floor(clamped / 60);
+                const clampedM = (clamped % 60) < 30 ? '00' : '30';
+                const snapped = `${String(clampedH).padStart(2, '0')}:${clampedM}`;
                 return snapped === hora;
               });
 
