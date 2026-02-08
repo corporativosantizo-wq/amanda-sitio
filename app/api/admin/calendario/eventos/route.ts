@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
         );
 
         // Convert Outlook events that don't have a local cita into display items
+        // IMPORTANT: The Prefer: outlook.timezone="America/Guatemala" header ensures
+        // Graph returns datetimes in Guatemala time. We parse the string directly
+        // (NO new Date() conversion) to avoid UTC reinterpretation.
         for (const ev of graphEvents) {
           if (linkedIds.has(ev.id)) continue; // already in local citas
 
@@ -62,10 +65,12 @@ export async function GET(req: NextRequest) {
           const endDT = ev.end?.dateTime ?? '';
           const isAllDay = ev.isAllDay ?? false;
 
-          // Extract date and time from ISO string (Graph returns "2026-02-07T14:00:00.0000000")
+          // Extract date and time directly from the string — already in America/Guatemala
           const fecha = startDT.substring(0, 10);
           const horaInicio = isAllDay ? '00:00' : startDT.substring(11, 16);
           const horaFin = isAllDay ? '23:59' : endDT.substring(11, 16);
+
+          console.log(`[Calendario] Evento: "${ev.subject}" → fecha=${fecha} hora=${horaInicio}-${horaFin} tz=${ev.start?.timeZone} allDay=${isAllDay}`);
 
           // Calculate duration
           const [sh, sm] = horaInicio.split(':').map(Number);

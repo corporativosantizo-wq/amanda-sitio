@@ -271,60 +271,79 @@ export interface CreateEventParams {
 }
 
 export async function getCalendarEvents(startDate: string, endDate: string): Promise<OutlookEvent[]> {
-  const client = await getGraphClient();
+  // Use direct fetch (NOT the Graph SDK) to ensure the Prefer timezone header
+  // is sent correctly and calendar IDs are properly URL-encoded.
+  const accessToken = await getValidAccessToken();
+  const GRAPH = 'https://graph.microsoft.com/v1.0';
   const SELECT_FIELDS = 'id,subject,start,end,isAllDay,isOnlineMeeting,onlineMeeting,categories,bodyPreview';
+
+  const authHeaders = { Authorization: `Bearer ${accessToken}` };
+  const calViewHeaders = {
+    Authorization: `Bearer ${accessToken}`,
+    Prefer: 'outlook.timezone="America/Guatemala"',
+  };
 
   console.log(`[Outlook] ── getCalendarEvents ──`);
   console.log(`[Outlook] Rango: ${startDate} → ${endDate}`);
 
-  // 1. List all calendars
+  // 1. List ALL calendars via direct fetch
   let calendars: { id: string; name: string }[] = [];
   try {
-    const calendarsResult = await client
-      .api('/me/calendars')
-      .select('id,name')
-      .top(50)
-      .get();
+    const calRes = await fetch(`${GRAPH}/me/calendars?$select=id,name&$top=50`, {
+      headers: authHeaders,
+    });
 
-    calendars = (calendarsResult.value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
+    if (!calRes.ok) {
+      const errText = await calRes.text();
+      console.error(`[Outlook] ERROR listando calendarios: ${calRes.status} ${errText.substring(0, 300)}`);
+    } else {
+      const calData = await calRes.json();
+      calendars = (calData.value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
+    }
+
     console.log(`[Outlook] Calendarios encontrados: ${calendars.length}`);
     calendars.forEach((c: { id: string; name: string }, i: number) => {
-      console.log(`[Outlook]   ${i + 1}. "${c.name}" (${c.id.substring(0, 20)}...)`);
+      console.log(`[Outlook]   ${i + 1}. "${c.name}"`);
     });
   } catch (err: any) {
     console.error(`[Outlook] ERROR al listar calendarios: ${err.message ?? err}`);
-    console.error(`[Outlook] Detalle:`, err.statusCode ?? '', err.code ?? '', err.body ?? '');
-    console.log(`[Outlook] Fallback: usando calendario principal`);
   }
 
-  // 2. Fetch events from each calendar (or default if listing failed)
+  // 2. Fetch calendarView from EACH calendar (or default if listing failed)
   const allEvents: OutlookEvent[] = [];
   const seenIds = new Set<string>();
 
   const calendarTargets = calendars.length > 0
-    ? calendars.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
+    ? calendars
     : [{ id: '__default__', name: 'Principal (fallback)' }];
+
+  const queryParams = new URLSearchParams({
+    startDateTime: startDate,
+    endDateTime: endDate,
+    $select: SELECT_FIELDS,
+    $orderby: 'start/dateTime',
+    $top: '100',
+  });
 
   for (const cal of calendarTargets) {
     try {
-      const apiPath = cal.id === '__default__'
-        ? '/me/calendarView'
-        : `/me/calendars/${cal.id}/calendarView`;
+      const basePath = cal.id === '__default__'
+        ? `${GRAPH}/me/calendarView`
+        : `${GRAPH}/me/calendars/${encodeURIComponent(cal.id)}/calendarView`;
 
-      const result = await client
-        .api(apiPath)
-        .header('Prefer', 'outlook.timezone="America/Guatemala"')
-        .query({
-          startDateTime: startDate,
-          endDateTime: endDate,
-        })
-        .select(SELECT_FIELDS)
-        .orderby('start/dateTime')
-        .top(100)
-        .get();
+      const url = `${basePath}?${queryParams}`;
+      const res = await fetch(url, { headers: calViewHeaders });
 
-      const events = result.value ?? [];
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Outlook] ERROR en calendario "${cal.name}": ${res.status} ${errText.substring(0, 300)}`);
+        continue;
+      }
+
+      const data = await res.json();
+      const events: any[] = data.value ?? [];
       let newCount = 0;
+
       for (const ev of events) {
         if (!seenIds.has(ev.id)) {
           seenIds.add(ev.id);
@@ -335,23 +354,17 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 
       console.log(`[Outlook] Calendario "${cal.name}": ${events.length} eventos (${newCount} nuevos, ${events.length - newCount} duplicados)`);
       if (events.length > 0) {
+        // Log timezone from first event to verify Prefer header works
+        const first = events[0];
+        console.log(`[Outlook]   Timezone retornado: "${first.start?.timeZone}"`);
         events.forEach((ev: any) => {
           const allDay = ev.isAllDay ? ' [TODO EL DÍA]' : '';
-          const start = ev.start?.dateTime?.substring(0, 16) ?? '?';
-          console.log(`[Outlook]     • "${ev.subject}" ${start}${allDay}`);
+          const startDT = ev.start?.dateTime ?? '?';
+          console.log(`[Outlook]     • "${ev.subject}" start=${startDT.substring(0, 19)} tz=${ev.start?.timeZone}${allDay}`);
         });
       }
     } catch (err: any) {
       console.error(`[Outlook] ERROR en calendario "${cal.name}": ${err.message ?? err}`);
-      console.error(`[Outlook]   Status: ${err.statusCode ?? 'N/A'}, Code: ${err.code ?? 'N/A'}`);
-      if (err.body) {
-        try {
-          const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
-          console.error(`[Outlook]   Graph error:`, body?.error?.message ?? err.body);
-        } catch {
-          console.error(`[Outlook]   Body:`, String(err.body).substring(0, 300));
-        }
-      }
     }
   }
 
