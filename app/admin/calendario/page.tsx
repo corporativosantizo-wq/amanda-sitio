@@ -325,7 +325,7 @@ function WeekView({
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="grid grid-cols-[80px_repeat(7,1fr)] border-b border-gray-200">
+      <div className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
         <div className="p-2" />
         {weekDays.map((d: Date, i: number) => {
           const dateStr = formatDate(d);
@@ -346,13 +346,13 @@ function WeekView({
 
       {/* All-day events bar */}
       {hasAllDay && (
-        <div className="grid grid-cols-[80px_repeat(7,1fr)] border-b border-gray-300 bg-gray-50">
+        <div className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-300 bg-gray-50">
           <div className="p-1 pr-2 text-right text-[10px] text-gray-400 pt-1.5">Todo el día</div>
           {weekDays.map((d: Date, di: number) => {
             const dateStr = formatDate(d);
             const allDayEvents = citasForDate(dateStr).filter((c: CitaItem) => c.isAllDay);
             return (
-              <div key={di} className="border-l border-gray-200 px-0.5 py-1 space-y-0.5 min-h-[28px]">
+              <div key={di} className="border-l border-gray-200 px-0.5 py-1 space-y-0.5 min-h-[28px] min-w-0 overflow-hidden">
                 {allDayEvents.map((cita: CitaItem) => (
                   <div
                     key={cita.id}
@@ -371,7 +371,7 @@ function WeekView({
       {/* Time Grid */}
       <div className="max-h-[600px] overflow-y-auto">
         {HORAS.map((hora: string) => (
-          <div key={hora} className="grid grid-cols-[80px_repeat(7,1fr)] border-b border-gray-100">
+          <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100">
             <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
             {weekDays.map((d: Date, di: number) => {
               const dateStr = formatDate(d);
@@ -393,7 +393,7 @@ function WeekView({
               return (
                 <div
                   key={di}
-                  className="border-l border-gray-100 min-h-[32px] relative cursor-pointer hover:bg-gray-50 transition"
+                  className="border-l border-gray-100 min-h-[32px] min-w-0 overflow-hidden relative cursor-pointer hover:bg-gray-50 transition"
                   onClick={() => onClickSlot(dateStr)}
                 >
                   {citasEnSlot.map((cita: CitaItem) => {
