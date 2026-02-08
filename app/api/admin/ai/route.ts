@@ -10,6 +10,7 @@ import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-u
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { registrarYConfirmar } from '@/lib/services/pagos.service';
+import { listarTareas, crearTarea, completarTarea, migrarTarea } from '@/lib/services/tareas.service';
 import {
   emailConfirmacionCita,
   emailRecordatorio24h,
@@ -254,6 +255,33 @@ Puedes registrar y confirmar pagos usando la herramienta confirmar_pago. Esto:
 ### Ejemplos:
 - "Registra el pago de Q5,000 de Procapeli por la constitución de sociedad" → confirmar_pago(cliente_id="Procapeli", monto=5000, concepto="Constitución de sociedad")
 - "Flor pagó Q500 de su consulta, referencia 123456" → confirmar_pago(cliente_id="Flor", monto=500, concepto="Consulta legal", referencia_bancaria="123456")
+
+## GESTIÓN DE TAREAS (Bullet Journal)
+Puedes gestionar la agenda del despacho usando la herramienta gestionar_tareas. Acciones disponibles:
+
+### Acciones:
+- **crear**: Crea una nueva tarea/evento/nota
+- **listar**: Lista tareas con filtros (estado, prioridad, categoria, fecha, cliente)
+- **completar**: Marca una tarea como completada
+- **migrar**: Mueve una tarea a una nueva fecha
+
+### Parámetros para crear:
+- titulo (requerido), descripcion, tipo (tarea/evento/nota), prioridad (alta/media/baja)
+- fecha_limite (YYYY-MM-DD), cliente_id (UUID o nombre), categoria (cobros/documentos/audiencias/tramites/personal/seguimiento)
+- asignado_a (amanda/asistente/contador/asesora)
+
+### Ejemplos:
+- "¿Qué tengo pendiente hoy?" → listar con estado=pendiente, fecha=hoy
+- "Agrégale a mi agenda cobrarle a Flor los Q500" → crear tarea, categoria=cobros, buscar cliente "Flor"
+- "Marca como completada la tarea de entregar protocolo" → listar para encontrar, luego completar
+- "¿Qué tareas tiene el contador?" → listar con asignado_a=contador
+- "Migra las tareas vencidas a mañana" → listar vencidas, luego migrar cada una
+
+### Ejecución automática:
+Cuando sea posible, ejecuta las tareas automáticamente:
+- Tarea de cobro → usa enviar_email con tipo=solicitud_pago
+- Tarea de enviar documentos → usa enviar_email con tipo=documentos_disponibles
+- Tarea de recordatorio → usa enviar_email con el tipo apropiado
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -690,6 +718,92 @@ async function handleConfirmarPago(
   return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. El cliente no tiene email registrado, no se envió comprobante.`;
 }
 
+// ── Gestionar tareas ──────────────────────────────────────────────────────
+
+async function handleGestionarTareas(
+  accion: string,
+  datos: any,
+): Promise<string> {
+  const db = createAdminClient();
+
+  switch (accion) {
+    case 'crear': {
+      // Resolve client name → ID if provided as text
+      let clienteId = datos.cliente_id ?? null;
+      if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
+        const { data: clientes } = await db.from('clientes').select('id, nombre').ilike('nombre', `%${clienteId}%`).limit(1);
+        if (clientes?.length) {
+          clienteId = clientes[0].id;
+        } else {
+          clienteId = null;
+        }
+      }
+
+      const tarea = await crearTarea({
+        titulo: datos.titulo,
+        descripcion: datos.descripcion,
+        tipo: datos.tipo ?? 'tarea',
+        prioridad: datos.prioridad ?? 'media',
+        fecha_limite: datos.fecha_limite ?? new Date().toISOString().split('T')[0],
+        cliente_id: clienteId,
+        asignado_a: datos.asignado_a ?? 'amanda',
+        categoria: datos.categoria ?? 'tramites',
+        notas: datos.notas,
+      });
+
+      return `Tarea creada: "${tarea.titulo}" (${tarea.prioridad}, ${tarea.categoria}${tarea.fecha_limite ? ', vence: ' + tarea.fecha_limite : ''})`;
+    }
+
+    case 'listar': {
+      const hoy = new Date().toISOString().split('T')[0];
+      const result = await listarTareas({
+        estado: datos.estado,
+        prioridad: datos.prioridad,
+        categoria: datos.categoria,
+        asignado_a: datos.asignado_a,
+        cliente_id: datos.cliente_id,
+        fecha_desde: datos.fecha === 'hoy' ? hoy : datos.fecha_desde,
+        fecha_hasta: datos.fecha === 'hoy' ? hoy : datos.fecha_hasta,
+        busqueda: datos.busqueda,
+        limit: 20,
+      });
+
+      if (result.data.length === 0) {
+        return 'No se encontraron tareas con esos filtros.';
+      }
+
+      const lines = result.data.map((t: any) => {
+        const cliente = t.cliente?.nombre ? ` [${t.cliente.nombre}]` : '';
+        const fecha = t.fecha_limite ? ` (${t.fecha_limite})` : '';
+        const symbol = t.tipo === 'tarea' ? '\u2022' : t.tipo === 'evento' ? '\u25CB' : '\u2014';
+        return `${symbol} **${t.titulo}**${cliente}${fecha} — ${t.estado}, ${t.prioridad}, ${t.categoria} (id: ${t.id})`;
+      });
+
+      return `${result.total} tarea(s) encontrada(s):\n${lines.join('\n')}`;
+    }
+
+    case 'completar': {
+      if (!datos.tarea_id) throw new Error('Se requiere tarea_id para completar');
+      const tarea = await completarTarea(datos.tarea_id);
+      return `Tarea completada: "${tarea.titulo}"`;
+    }
+
+    case 'migrar': {
+      if (!datos.tarea_id) throw new Error('Se requiere tarea_id para migrar');
+      const nuevaFecha = datos.nueva_fecha ?? (() => {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split('T')[0];
+      })();
+      const tarea = await migrarTarea(datos.tarea_id, nuevaFecha);
+      return `Tarea migrada: "${tarea.titulo}" → ${nuevaFecha}`;
+    }
+
+    default:
+      throw new Error(`Acción no reconocida: ${accion}. Acciones válidas: crear, listar, completar, migrar`);
+  }
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -821,6 +935,25 @@ export async function POST(req: Request) {
           required: ['cliente_id', 'monto', 'concepto'],
         },
       },
+      {
+        name: 'gestionar_tareas',
+        description: 'Gestiona la agenda/tareas del despacho (Bullet Journal). Acciones: crear, listar, completar, migrar.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            accion: {
+              type: 'string',
+              enum: ['crear', 'listar', 'completar', 'migrar'],
+              description: 'Acción a realizar.',
+            },
+            datos: {
+              type: 'object',
+              description: 'Datos según la acción. Crear: titulo, descripcion, tipo, prioridad, fecha_limite, cliente_id, categoria, asignado_a, notas. Listar: estado, prioridad, categoria, asignado_a, fecha (\"hoy\"), busqueda. Completar: tarea_id. Migrar: tarea_id, nueva_fecha.',
+            },
+          },
+          required: ['accion', 'datos'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -881,6 +1014,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'confirmar_pago') {
               const input = block.input as any;
               result = await handleConfirmarPago(input.cliente_id, input.monto, input.concepto, input.metodo_pago, input.referencia_bancaria, input.fecha_pago);
+            } else if (block.name === 'gestionar_tareas') {
+              const input = block.input as any;
+              result = await handleGestionarTareas(input.accion, input.datos ?? {});
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
