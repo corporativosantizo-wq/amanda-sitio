@@ -295,14 +295,17 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   if (error) throw new CitaError('Error al crear cita', error);
 
   // Crear evento en Outlook (si conectado)
+  let clienteEmail: string | null = null;
+  if (cita.cliente) {
+    clienteEmail = cita.cliente.email;
+  }
+  console.log(`[crearCita] clienteEmail: ${clienteEmail ? clienteEmail.replace(/(.{2}).+(@.+)/, '$1***$2') : 'NULL'}`);
+
   try {
     const connected = await isOutlookConnected();
-    if (connected) {
-      let clienteEmail: string | null = null;
-      if (cita.cliente) {
-        clienteEmail = cita.cliente.email;
-      }
+    console.log(`[crearCita] Outlook conectado: ${connected}`);
 
+    if (connected) {
       const { eventId, teamsLink } = await createCalendarEvent({
         subject: cita.titulo,
         startDateTime: `${cita.fecha}T${cita.hora_inicio}:00`,
@@ -312,6 +315,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       });
+      console.log(`[crearCita] Evento Outlook creado: eventId=${eventId}, teamsLink=${teamsLink ? 'sí' : 'no'}`);
 
       await db()
         .from('citas')
@@ -324,23 +328,31 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
 
       cita.outlook_event_id = eventId;
       cita.teams_link = teamsLink;
-
-      // Enviar email de confirmación
-      if (clienteEmail) {
-        try {
-          const email = emailConfirmacionCita(cita);
-          await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
-          await db()
-            .from('citas')
-            .update({ email_confirmacion_enviado: true })
-            .eq('id', cita.id);
-        } catch (emailErr) {
-          console.warn('[Citas] Error al enviar email de confirmación:', emailErr);
-        }
-      }
     }
   } catch (outlookErr) {
-    console.warn('[Citas] No se pudo crear evento en Outlook:', outlookErr);
+    console.warn('[crearCita] Error al crear evento en Outlook:', outlookErr);
+  }
+
+  // Enviar email de confirmación (independiente de Outlook calendar)
+  if (clienteEmail) {
+    console.log(`[crearCita] ── Enviando email de confirmación ──`);
+    try {
+      const email = emailConfirmacionCita(cita);
+      console.log(`[crearCita] Template generado: from=${email.from}, subject=${email.subject}, html=${email.html.length} chars`);
+      await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
+      console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);
+      await db()
+        .from('citas')
+        .update({ email_confirmacion_enviado: true })
+        .eq('id', cita.id);
+    } catch (emailErr: any) {
+      console.error(`[crearCita] ── ERROR al enviar email de confirmación ──`);
+      console.error(`[crearCita] Error: ${emailErr.message ?? emailErr}`);
+      console.error(`[crearCita] statusCode: ${emailErr.statusCode ?? 'N/A'}`);
+      console.error(`[crearCita] code: ${emailErr.code ?? 'N/A'}`);
+    }
+  } else {
+    console.log(`[crearCita] No se envía email — clienteEmail es null`);
   }
 
   return cita;

@@ -457,20 +457,39 @@ export async function sendMail(params: {
   subject: string;
   htmlBody: string;
 }): Promise<void> {
-  const client = await getGraphClient();
+  const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
+  console.log(`[sendMail] ── INICIO ──`);
+  console.log(`[sendMail] from: ${params.from}`);
+  console.log(`[sendMail] to: ${toMask}`);
+  console.log(`[sendMail] subject: ${params.subject}`);
+  console.log(`[sendMail] htmlBody length: ${params.htmlBody.length} chars`);
 
-  // Uses /users/{from}/sendMail (Mail.Send.Shared permission)
-  await client.api(`/users/${params.from}/sendMail`).post({
+  const client = await getGraphClient();
+  console.log(`[sendMail] Graph client obtenido OK`);
+
+  const endpoint = `/users/${params.from}/sendMail`;
+  console.log(`[sendMail] Endpoint: POST ${endpoint}`);
+
+  const payload = {
     message: {
       subject: params.subject,
       body: { contentType: 'HTML', content: params.htmlBody },
       toRecipients: [{ emailAddress: { address: params.to } }],
     },
     saveToSentItems: true,
-  });
+  };
 
-  const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
-  console.log(`[Outlook] Email enviado desde: ${params.from}, a: ${toMask}, asunto: ${params.subject}`);
+  try {
+    await client.api(endpoint).post(payload);
+    console.log(`[sendMail] ── ÉXITO — email enviado ──`);
+  } catch (err: any) {
+    console.error(`[sendMail] ── ERROR ──`);
+    console.error(`[sendMail] statusCode: ${err.statusCode ?? 'N/A'}`);
+    console.error(`[sendMail] code: ${err.code ?? 'N/A'}`);
+    console.error(`[sendMail] message: ${err.message ?? 'N/A'}`);
+    console.error(`[sendMail] body: ${JSON.stringify(err.body ?? err).substring(0, 500)}`);
+    throw err;
+  }
 }
 
 /** @deprecated Use sendMail() with explicit `from` parameter instead */
