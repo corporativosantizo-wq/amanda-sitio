@@ -58,11 +58,12 @@ export async function GET(req: NextRequest) {
 
           const startDT = ev.start?.dateTime ?? '';
           const endDT = ev.end?.dateTime ?? '';
+          const isAllDay = ev.isAllDay ?? false;
 
           // Extract date and time from ISO string (Graph returns "2026-02-07T14:00:00.0000000")
           const fecha = startDT.substring(0, 10);
-          const horaInicio = startDT.substring(11, 16);
-          const horaFin = endDT.substring(11, 16);
+          const horaInicio = isAllDay ? '00:00' : startDT.substring(11, 16);
+          const horaFin = isAllDay ? '23:59' : endDT.substring(11, 16);
 
           // Calculate duration
           const [sh, sm] = horaInicio.split(':').map(Number);
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest) {
             notas: null,
             cliente: null,
             _source: 'outlook',
+            isAllDay,
           });
         }
 

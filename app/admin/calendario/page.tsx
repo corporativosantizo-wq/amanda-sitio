@@ -25,6 +25,7 @@ interface CitaItem {
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
   _source?: 'outlook';
+  isAllDay?: boolean;
 }
 
 interface SlotItem {
@@ -57,8 +58,8 @@ const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   outlook: { label: 'Outlook', color: 'bg-purple-100 text-purple-700' },
 };
 
-const HORAS = Array.from({ length: 23 }, (_, i) => {
-  const h = Math.floor(i / 2) + 7;
+const HORAS = Array.from({ length: 29 }, (_, i) => {
+  const h = Math.floor(i / 2) + 6;
   const m = i % 2 === 0 ? '00' : '30';
   return `${String(h).padStart(2, '0')}:${m}`;
 });
@@ -308,6 +309,12 @@ function WeekView({
 }) {
   const todayStr = formatDate(new Date());
 
+  // Separate all-day events from timed events
+  const hasAllDay = weekDays.some((d: Date) => {
+    const dateStr = formatDate(d);
+    return citasForDate(dateStr).some((c: CitaItem) => c.isAllDay);
+  });
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
@@ -330,6 +337,30 @@ function WeekView({
         })}
       </div>
 
+      {/* All-day events bar */}
+      {hasAllDay && (
+        <div className="grid grid-cols-[80px_repeat(7,1fr)] border-b border-gray-300 bg-gray-50">
+          <div className="p-1 pr-2 text-right text-[10px] text-gray-400 pt-1.5">Todo el día</div>
+          {weekDays.map((d: Date, di: number) => {
+            const dateStr = formatDate(d);
+            const allDayEvents = citasForDate(dateStr).filter((c: CitaItem) => c.isAllDay);
+            return (
+              <div key={di} className="border-l border-gray-200 px-0.5 py-1 space-y-0.5 min-h-[28px]">
+                {allDayEvents.map((cita: CitaItem) => (
+                  <div
+                    key={cita.id}
+                    onClick={() => onClickCita(cita)}
+                    className="bg-amber-100 text-amber-900 border-l-2 border-amber-500 rounded px-1.5 py-0.5 text-[10px] font-medium truncate cursor-pointer hover:bg-amber-200 transition"
+                  >
+                    {cita.titulo}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Time Grid */}
       <div className="max-h-[600px] overflow-y-auto">
         {HORAS.map((hora: string) => (
@@ -338,6 +369,7 @@ function WeekView({
             {weekDays.map((d: Date, di: number) => {
               const dateStr = formatDate(d);
               const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
+                if (c.isAllDay) return false; // shown in the bar above
                 // Snap to nearest 30-min slot for matching
                 const [ch, cm] = c.hora_inicio.split(':').map(Number);
                 const snapped = `${String(ch).padStart(2, '0')}:${cm < 30 ? '00' : '30'}`;
@@ -387,6 +419,9 @@ function DayView({
   citas: CitaItem[];
   onClickCita: (c: CitaItem) => void;
 }) {
+  const allDay = citas.filter((c: CitaItem) => c.isAllDay);
+  const timed = citas.filter((c: CitaItem) => !c.isAllDay);
+
   if (citas.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -400,7 +435,25 @@ function DayView({
 
   return (
     <div className="space-y-3">
-      {citas.map((cita: CitaItem) => {
+      {/* All-day events */}
+      {allDay.length > 0 && (
+        <div className="bg-amber-50 rounded-xl border border-amber-200 p-3 space-y-2">
+          <p className="text-xs font-medium text-amber-700 uppercase">Todo el día</p>
+          {allDay.map((cita: CitaItem) => (
+            <div
+              key={cita.id}
+              onClick={() => onClickCita(cita)}
+              className="bg-white rounded-lg border border-amber-200 px-3 py-2 cursor-pointer hover:shadow-md transition"
+            >
+              <h3 className="font-semibold text-gray-900 text-sm">{cita.titulo}</h3>
+              {cita.descripcion && <p className="text-xs text-gray-500 mt-0.5 truncate">{cita.descripcion}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Timed events */}
+      {timed.map((cita: CitaItem) => {
         const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
         const estado = ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente;
 
@@ -494,7 +547,7 @@ function DetailModal({
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Horario</span>
-              <p className="font-medium">{formatHora12(cita.hora_inicio)} — {formatHora12(cita.hora_fin)}</p>
+              <p className="font-medium">{cita.isAllDay ? 'Todo el día' : `${formatHora12(cita.hora_inicio)} — ${formatHora12(cita.hora_fin)}`}</p>
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Cliente</span>

@@ -233,6 +233,7 @@ export interface OutlookEvent {
   subject: string;
   start: { dateTime: string; timeZone: string };
   end: { dateTime: string; timeZone: string };
+  isAllDay: boolean;
   isOnlineMeeting: boolean;
   onlineMeeting?: { joinUrl: string } | null;
   categories: string[];
@@ -251,20 +252,64 @@ export interface CreateEventParams {
 
 export async function getCalendarEvents(startDate: string, endDate: string): Promise<OutlookEvent[]> {
   const client = await getGraphClient();
+  const SELECT_FIELDS = 'id,subject,start,end,isAllDay,isOnlineMeeting,onlineMeeting,categories,bodyPreview';
 
-  const result = await client
-    .api('/me/calendarView')
-    .header('Prefer', 'outlook.timezone="America/Guatemala"')
-    .query({
-      startDateTime: startDate,
-      endDateTime: endDate,
-    })
-    .select('id,subject,start,end,isOnlineMeeting,onlineMeeting,categories,bodyPreview')
-    .orderby('start/dateTime')
-    .top(100)
-    .get();
+  // 1. List all calendars
+  let calendarIds: string[] = [];
+  try {
+    const calendarsResult = await client
+      .api('/me/calendars')
+      .select('id,name')
+      .top(50)
+      .get();
 
-  return result.value ?? [];
+    const calendars = calendarsResult.value ?? [];
+    calendarIds = calendars.map((c: any) => c.id);
+    console.log(`[Outlook] Found ${calendars.length} calendars:`, calendars.map((c: any) => c.name));
+  } catch (err) {
+    console.warn('[Outlook] Could not list calendars, falling back to default:', err);
+  }
+
+  // 2. Fetch events from each calendar (or default if listing failed)
+  const allEvents: OutlookEvent[] = [];
+  const seenIds = new Set<string>();
+
+  if (calendarIds.length === 0) {
+    // Fallback: default calendar only
+    calendarIds = ['__default__'];
+  }
+
+  for (const calId of calendarIds) {
+    try {
+      const apiPath = calId === '__default__'
+        ? '/me/calendarView'
+        : `/me/calendars/${calId}/calendarView`;
+
+      const result = await client
+        .api(apiPath)
+        .header('Prefer', 'outlook.timezone="America/Guatemala"')
+        .query({
+          startDateTime: startDate,
+          endDateTime: endDate,
+        })
+        .select(SELECT_FIELDS)
+        .orderby('start/dateTime')
+        .top(100)
+        .get();
+
+      for (const ev of result.value ?? []) {
+        if (!seenIds.has(ev.id)) {
+          seenIds.add(ev.id);
+          allEvents.push(ev);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Outlook] Error fetching calendar ${calId}:`, err);
+    }
+  }
+
+  console.log(`[Outlook] Total events across all calendars: ${allEvents.length}`);
+  return allEvents;
 }
 
 export async function createCalendarEvent(params: CreateEventParams): Promise<{ eventId: string; teamsLink: string | null }> {
