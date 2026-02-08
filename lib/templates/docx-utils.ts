@@ -175,7 +175,7 @@ export function personaTexto(p: { nombre: string; edad?: string; estado_civil?: 
 
 export function buildDocument(children: Paragraph[], opts?: { notarial?: boolean }): Document {
   return new Document({
-    creator: 'Amanda Santizo & Asociados — IURISLEX',
+    creator: 'Amanda Santizo — Despacho Jurídico — IURISLEX',
     description: 'Documento legal generado por IURISLEX',
     sections: [{
       properties: SECTION_PROPS,

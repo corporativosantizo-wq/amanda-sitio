@@ -97,7 +97,7 @@ export default function PortalLoginPage() {
               margin: '0 0 4px',
             }}
           >
-            Amanda Santizo & Asociados
+            Amanda Santizo — Despacho Jurídico
           </h1>
           <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
             Portal de Clientes

@@ -211,7 +211,7 @@ export default function AgendarPage() {
             </span>
             <div className="hidden sm:block">
               <p className="text-white font-semibold text-sm">Amanda Santizo</p>
-              <p className="text-white/70 text-xs">& Asociados</p>
+              <p className="text-white/70 text-xs">Despacho Jurídico</p>
             </div>
           </Link>
           <Link
@@ -374,7 +374,7 @@ export default function AgendarPage() {
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-white mt-12">
         <div className="max-w-4xl mx-auto px-4 py-6 text-center text-sm text-gray-400">
-          Amanda Santizo & Asociados — amandasantizo.com
+          Amanda Santizo — Despacho Jurídico — amandasantizo.com
         </div>
       </footer>
     </div>

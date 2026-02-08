@@ -86,7 +86,7 @@ export function generarActaNotarialCertificacion(datos: DatosActaNotarialCertifi
 
   // Usar sección con spacing notarial para toda el acta
   return new Document({
-    creator: 'Amanda Santizo & Asociados — IURISLEX',
+    creator: 'Amanda Santizo — Despacho Jurídico — IURISLEX',
     description: 'Acta Notarial de Certificación',
     sections: [{
       properties: SECTION_PROPS,

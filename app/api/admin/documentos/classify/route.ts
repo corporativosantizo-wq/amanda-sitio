@@ -13,7 +13,7 @@ import {
 } from '@/lib/services/documentos.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo & Asociados). Analiza el documento legal PDF y extrae información estructurada.
+const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo — Despacho Jurídico). Analiza el documento legal PDF y extrae información estructurada.
 
 Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
 

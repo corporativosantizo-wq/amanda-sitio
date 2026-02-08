@@ -1,5 +1,5 @@
 -- ============================================================================
--- Schema Portal de Clientes — Amanda Santizo & Asociados
+-- Schema Portal de Clientes — Amanda Santizo — Despacho Jurídico
 -- Ejecutar manualmente en Supabase SQL Editor
 -- ============================================================================
 
