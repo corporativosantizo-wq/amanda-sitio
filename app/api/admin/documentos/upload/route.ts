@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (files.length > 20) {
+    if (files.length > 100) {
       return NextResponse.json(
-        { error: 'Máximo 20 archivos por carga.' },
+        { error: 'Máximo 100 archivos por carga.' },
         { status: 400 }
       );
     }

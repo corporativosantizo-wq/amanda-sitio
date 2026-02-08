@@ -9,7 +9,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILES = 100;
+const BATCH_SIZE = 5; // Concurrent uploads/classifications per batch
 
 interface FileEntry {
   id: string;
@@ -134,7 +136,7 @@ export default function UploadDocumentos() {
         continue;
       }
       if (f.size > MAX_FILE_SIZE) {
-        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 20MB.`);
+        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 50MB.`);
         continue;
       }
       newFiles.push({
@@ -151,7 +153,7 @@ export default function UploadDocumentos() {
     }
 
     if (newFiles.length > 0) {
-      setFiles((prev: FileEntry[]) => [...prev, ...newFiles].slice(0, 20));
+      setFiles((prev: FileEntry[]) => [...prev, ...newFiles].slice(0, MAX_FILES));
     }
   }, []);
 
@@ -174,58 +176,99 @@ export default function UploadDocumentos() {
     );
   };
 
+  // Upload a single file to Storage and return metadata
+  const uploadSingleFile = async (f: FileEntry): Promise<{
+    id: string; storage_path: string; filename: string; filesize: number;
+  } | null> => {
+    updateFile(f.id, { status: 'subiendo' });
+
+    try {
+      const urlRes = await fetch('/api/admin/documentos/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: f.file.name, filesize: f.file.size }),
+      });
+
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) {
+        updateFile(f.id, { status: 'error', error: urlData.error ?? `Error HTTP ${urlRes.status}` });
+        return null;
+      }
+
+      const uploadRes = await fetch(urlData.signed_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: f.file,
+      });
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => '');
+        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${errText.slice(0, 200)}` });
+        return null;
+      }
+
+      updateFile(f.id, { storagePath: urlData.storage_path });
+      return { id: f.id, storage_path: urlData.storage_path, filename: f.file.name, filesize: f.file.size };
+    } catch (err: any) {
+      updateFile(f.id, { status: 'error', error: `Error de conexión: ${err.message ?? 'desconocido'}` });
+      return null;
+    }
+  };
+
+  // Classify a single document
+  const classifySingleDoc = async (u: { id: string; docId: string }) => {
+    updateFile(u.id, { status: 'analizando' });
+    try {
+      const res = await fetch('/api/admin/documentos/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documento_id: u.docId }),
+      });
+
+      const rawClassify = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(rawClassify);
+      } catch {
+        updateFile(u.id, {
+          status: 'error',
+          error: `Respuesta inválida del clasificador (HTTP ${res.status}): ${rawClassify.slice(0, 200)}`,
+        });
+        return;
+      }
+
+      if (res.ok) {
+        updateFile(u.id, { status: 'clasificado', resultado: result.documento });
+      } else {
+        updateFile(u.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
+      }
+    } catch (classErr: any) {
+      updateFile(u.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
+    }
+  };
+
+  // Process items in batches of BATCH_SIZE concurrently
+  async function processBatches<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(fn));
+      results.push(...batchResults);
+      setCurrentIdx(Math.min(i + BATCH_SIZE, items.length) - 1);
+    }
+    return results;
+  }
+
   const startUpload = async () => {
     if (files.length === 0 || !selectedCliente) return;
     setStep('processing');
     setUploading(true);
     setGlobalError(null);
 
-    // Paso 1: Subir cada PDF directo a Supabase Storage via signed URL
-    const uploaded: { id: string; storage_path: string; filename: string; filesize: number; docId?: string }[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      setCurrentIdx(i);
-      updateFile(f.id, { status: 'subiendo' });
-
-      try {
-        // 1a. Get signed upload URL from API
-        const urlRes = await fetch('/api/admin/documentos/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: f.file.name, filesize: f.file.size }),
-        });
-
-        const urlData = await urlRes.json();
-        if (!urlRes.ok) {
-          updateFile(f.id, { status: 'error', error: urlData.error ?? `Error HTTP ${urlRes.status}` });
-          continue;
-        }
-
-        // 1b. Upload directly to Supabase Storage (no Vercel body limit)
-        const uploadRes = await fetch(urlData.signed_url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/pdf' },
-          body: f.file,
-        });
-
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text().catch(() => '');
-          updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${errText.slice(0, 200)}` });
-          continue;
-        }
-
-        uploaded.push({
-          id: f.id,
-          storage_path: urlData.storage_path,
-          filename: f.file.name,
-          filesize: f.file.size,
-        });
-        updateFile(f.id, { storagePath: urlData.storage_path });
-      } catch (err: any) {
-        updateFile(f.id, { status: 'error', error: `Error de conexión: ${err.message ?? 'desconocido'}` });
-      }
-    }
+    // Paso 1: Subir PDFs a Storage en lotes de BATCH_SIZE concurrentes
+    setCurrentIdx(0);
+    const uploadResults = await processBatches(files, uploadSingleFile);
+    const uploaded = uploadResults.filter((r: any): r is NonNullable<typeof r> => r !== null);
 
     if (uploaded.length === 0) {
       setGlobalError('Ningún archivo se subió correctamente.');
@@ -234,96 +277,59 @@ export default function UploadDocumentos() {
       return;
     }
 
-    // Paso 2: Registrar documentos en BD (metadata only — tiny JSON payload)
-    let registeredDocs: any[] = [];
-    try {
-      const regRes = await fetch('/api/admin/documentos/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: uploaded.map((u: any) => ({
-            storage_path: u.storage_path,
-            filename: u.filename,
-            filesize: u.filesize,
-            cliente_id: selectedCliente.id,
-          })),
-        }),
-      });
+    // Paso 2: Registrar documentos en BD en lotes de 20 (metadata JSON — tiny payloads)
+    const allRegistered: { id: string; docId: string }[] = [];
 
-      const regData = await regRes.json();
-      if (!regRes.ok) {
-        setGlobalError(`Error al registrar: ${regData.error ?? 'desconocido'}`);
-        for (const u of uploaded) updateFile(u.id, { status: 'error', error: 'Error al registrar en BD' });
-        setUploading(false);
-        setStep('done');
-        return;
-      }
+    for (let i = 0; i < uploaded.length; i += 20) {
+      const batch = uploaded.slice(i, i + 20);
+      try {
+        const regRes = await fetch('/api/admin/documentos/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: batch.map((u: any) => ({
+              storage_path: u.storage_path,
+              filename: u.filename,
+              filesize: u.filesize,
+              cliente_id: selectedCliente.id,
+            })),
+          }),
+        });
 
-      registeredDocs = regData.documentos ?? [];
-
-      // Match registered docs back to files
-      for (const doc of registeredDocs) {
-        const match = uploaded.find((u: any) => u.filename === doc.nombre_archivo);
-        if (match) {
-          match.docId = doc.id;
-          updateFile(match.id, { resultado: doc, status: 'analizando' });
+        const regData = await regRes.json();
+        if (!regRes.ok) {
+          for (const u of batch) updateFile(u.id, { status: 'error', error: regData.error ?? 'Error al registrar en BD' });
+          continue;
         }
-      }
 
-      for (const err of regData.errores ?? []) {
-        const fileName = err.split(':')[0]?.trim();
-        const match = files.find((f: FileEntry) => f.nombre === fileName);
-        if (match) updateFile(match.id, { status: 'error', error: err });
+        for (const doc of regData.documentos ?? []) {
+          const match = batch.find((u: any) => u.filename === doc.nombre_archivo);
+          if (match) {
+            allRegistered.push({ id: match.id, docId: doc.id });
+            updateFile(match.id, { resultado: doc, status: 'analizando' });
+          }
+        }
+
+        for (const err of regData.errores ?? []) {
+          const fileName = err.split(':')[0]?.trim();
+          const match = files.find((f: FileEntry) => f.nombre === fileName);
+          if (match) updateFile(match.id, { status: 'error', error: err });
+        }
+      } catch (connErr: any) {
+        for (const u of batch) updateFile(u.id, { status: 'error', error: 'Error de conexión' });
       }
-    } catch (connErr: any) {
-      setGlobalError(`Error de conexión: ${connErr.message ?? 'desconocido'}`);
-      for (const u of uploaded) updateFile(u.id, { status: 'error', error: 'Error de conexión' });
+    }
+
+    if (allRegistered.length === 0) {
+      setGlobalError('Ningún archivo se registró correctamente.');
       setUploading(false);
       setStep('done');
       return;
     }
 
-    // Paso 3: Clasificar uno por uno
-    for (let i = 0; i < uploaded.length; i++) {
-      const u = uploaded[i];
-      if (!u.docId) continue;
-
-      setCurrentIdx(i);
-      updateFile(u.id, { status: 'analizando' });
-
-      try {
-        const res = await fetch('/api/admin/documentos/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ documento_id: u.docId }),
-        });
-
-        const rawClassify = await res.text();
-        let result: any;
-        try {
-          result = JSON.parse(rawClassify);
-        } catch {
-          updateFile(u.id, {
-            status: 'error',
-            error: `Respuesta inválida del clasificador (HTTP ${res.status}): ${rawClassify.slice(0, 200)}`,
-          });
-          continue;
-        }
-
-        if (res.ok) {
-          updateFile(u.id, { status: 'clasificado', resultado: result.documento });
-        } else {
-          updateFile(u.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
-        }
-      } catch (classErr: any) {
-        updateFile(u.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
-      }
-
-      // Delay 1s entre documentos
-      if (i < uploaded.length - 1) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
+    // Paso 3: Clasificar en lotes de BATCH_SIZE concurrentes
+    setCurrentIdx(0);
+    await processBatches(allRegistered, classifySingleDoc);
 
     setUploading(false);
     setStep('done');
@@ -462,7 +468,7 @@ export default function UploadDocumentos() {
               {dragOver ? 'Suelte los archivos aquí' : 'Arrastre sus PDFs aquí'}
             </p>
             <p className="text-sm text-slate-400 mt-1">
-              o haga clic para seleccionar (máx. 20 archivos, 20MB c/u)
+              o haga clic para seleccionar (máx. 100 archivos, 50MB c/u)
             </p>
           </div>
 
