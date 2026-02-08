@@ -3,13 +3,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 
 export default function EditarPost() {
   const router = useRouter()
   const params = useParams()
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
+  const [error, setError] = useState('')
   const [form, setForm] = useState({
     title: '',
     slug: '',
@@ -20,14 +20,10 @@ export default function EditarPost() {
 
   useEffect(() => {
     const fetchPost = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('id', params.id)
-        .single()
-      
-      if (data) {
+      try {
+        const res = await fetch(`/api/admin/posts/${params.id}`)
+        if (!res.ok) throw new Error('No se pudo cargar el artículo')
+        const data = await res.json()
         setForm({
           title: data.title || '',
           slug: data.slug || '',
@@ -35,6 +31,8 @@ export default function EditarPost() {
           content: data.content || '',
           status: data.status || 'draft',
         })
+      } catch (err: any) {
+        setError(err.message)
       }
       setFetching(false)
     }
@@ -44,26 +42,25 @@ export default function EditarPost() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError('')
 
-    const supabase = createClient()
-    
-    const { error } = await supabase
-      .from('posts')
-      .update({
-        title: form.title,
-        slug: form.slug,
-        excerpt: form.excerpt,
-        content: form.content,
-        status: form.status,
-        published_at: form.status === 'published' ? new Date().toISOString() : null,
+    try {
+      const res = await fetch(`/api/admin/posts/${params.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       })
-      .eq('id', params.id)
 
-    if (error) {
-      alert('Error al actualizar: ' + error.message)
-      setLoading(false)
-    } else {
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al actualizar')
+      }
+
       router.push('/admin/posts')
+    } catch (err: any) {
+      setError(err.message)
+      setLoading(false)
     }
   }
 
@@ -136,6 +133,10 @@ export default function EditarPost() {
               <option value="published">Publicado</option>
             </select>
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+          )}
 
           <button
             type="submit"
