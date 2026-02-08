@@ -85,32 +85,52 @@ export async function crearTarea(input: TareaInsert): Promise<Tarea> {
     throw new TareaError('El título es obligatorio');
   }
 
+  const payload = {
+    titulo: input.titulo.trim(),
+    descripcion: input.descripcion ?? null,
+    tipo: input.tipo ?? 'tarea',
+    estado: input.estado ?? EstadoTarea.PENDIENTE,
+    prioridad: input.prioridad ?? 'media',
+    fecha_limite: input.fecha_limite ?? null,
+    cliente_id: input.cliente_id ?? null,
+    expediente_id: input.expediente_id ?? null,
+    asignado_a: input.asignado_a ?? 'amanda',
+    categoria: input.categoria ?? 'tramites',
+    recurrente: input.recurrente ?? false,
+    recurrencia_tipo: input.recurrencia_tipo ?? null,
+    notas: input.notas ?? null,
+  };
+  console.log(`[Tareas] crearTarea payload: ${JSON.stringify(payload)}`);
+
   const { data, error } = await db()
     .from('tareas')
-    .insert({
-      titulo: input.titulo.trim(),
-      descripcion: input.descripcion ?? null,
-      tipo: input.tipo ?? 'tarea',
-      estado: input.estado ?? EstadoTarea.PENDIENTE,
-      prioridad: input.prioridad ?? 'media',
-      fecha_limite: input.fecha_limite ?? null,
-      cliente_id: input.cliente_id ?? null,
-      expediente_id: input.expediente_id ?? null,
-      asignado_a: input.asignado_a ?? 'amanda',
-      categoria: input.categoria ?? 'tramites',
-      recurrente: input.recurrente ?? false,
-      recurrencia_tipo: input.recurrencia_tipo ?? null,
-      notas: input.notas ?? null,
-    })
+    .insert(payload)
     .select()
     .single();
 
-  if (error) throw new TareaError('Error al crear tarea', error);
+  if (error) {
+    console.error(`[Tareas] crearTarea ERROR: ${JSON.stringify(error)}`);
+    throw new TareaError(`Error al crear tarea: ${error.message ?? error.code ?? 'desconocido'}`, error);
+  }
   return data as Tarea;
 }
 
 export async function actualizarTarea(id: string, updates: Partial<TareaInsert> & { estado?: string }): Promise<Tarea> {
-  const payload: any = { ...updates };
+  // Only include known DB columns to avoid sending unknown fields
+  const payload: any = {};
+  if (updates.titulo !== undefined) payload.titulo = updates.titulo;
+  if (updates.descripcion !== undefined) payload.descripcion = updates.descripcion;
+  if (updates.tipo !== undefined) payload.tipo = updates.tipo;
+  if (updates.estado !== undefined) payload.estado = updates.estado;
+  if (updates.prioridad !== undefined) payload.prioridad = updates.prioridad;
+  if (updates.fecha_limite !== undefined) payload.fecha_limite = updates.fecha_limite;
+  if (updates.cliente_id !== undefined) payload.cliente_id = updates.cliente_id;
+  if (updates.expediente_id !== undefined) payload.expediente_id = updates.expediente_id;
+  if (updates.asignado_a !== undefined) payload.asignado_a = updates.asignado_a;
+  if (updates.categoria !== undefined) payload.categoria = updates.categoria;
+  if (updates.recurrente !== undefined) payload.recurrente = updates.recurrente;
+  if (updates.recurrencia_tipo !== undefined) payload.recurrencia_tipo = updates.recurrencia_tipo;
+  if (updates.notas !== undefined) payload.notas = updates.notas;
 
   // Auto-set fecha_completada
   if (updates.estado === EstadoTarea.COMPLETADA) {
@@ -119,6 +139,10 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
     payload.fecha_completada = null;
   }
 
+  payload.updated_at = new Date().toISOString();
+
+  console.log(`[Tareas] actualizarTarea id=${id}, payload: ${JSON.stringify(payload)}`);
+
   const { data, error } = await db()
     .from('tareas')
     .update(payload)
@@ -126,7 +150,10 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
     .select()
     .single();
 
-  if (error) throw new TareaError('Error al actualizar tarea', error);
+  if (error) {
+    console.error(`[Tareas] actualizarTarea ERROR: ${JSON.stringify(error)}`);
+    throw new TareaError(`Error al actualizar tarea: ${error.message ?? error.code ?? 'desconocido'}`, error);
+  }
   return data as Tarea;
 }
 
