@@ -30,6 +30,7 @@ const ESTADO_COLORS: Record<string, { bg: string; text: string }> = {
 
 const TABS = [
   { key: 'carpetas', label: 'Carpetas' },
+  { key: 'sin_cliente', label: 'Sin clasificar' },
   { key: 'clasificado', label: 'Pendientes de revisión' },
   { key: 'aprobado', label: 'Aprobados' },
   { key: '', label: 'Todos' },
@@ -84,6 +85,8 @@ export default function DocumentosPage() {
   const docParams = new URLSearchParams();
   if (tab === 'carpetas' && carpetaAbierta) {
     docParams.set('cliente_id', carpetaAbierta.cliente_id);
+  } else if (tab === 'sin_cliente') {
+    docParams.set('sin_cliente', 'true');
   } else if (tab !== 'carpetas') {
     if (tab) docParams.set('estado', tab);
   }
@@ -336,8 +339,75 @@ export default function DocumentosPage() {
               </svg>
               <p className="text-sm text-slate-500">
                 {carpetaAbierta ? 'Este cliente no tiene documentos.' :
+                 tab === 'sin_cliente' ? 'Todos los documentos tienen cliente asignado.' :
                  tab === 'clasificado' ? 'No hay documentos pendientes de revisión.' : 'No se encontraron documentos.'}
               </p>
+            </div>
+          ) : tab === 'sin_cliente' ? (
+            /* Card view for unassigned docs */
+            <div className="grid gap-4">
+              {docs.map((doc: DocItem) => {
+                const est = ESTADO_COLORS[doc.estado] ?? ESTADO_COLORS.pendiente;
+                return (
+                  <div key={doc.id} className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${est.bg} ${est.text}`}>
+                            {doc.estado}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">
+                            Sin cliente asignado
+                          </span>
+                          {doc.tipo && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
+                              {TIPOS[doc.tipo] ?? doc.tipo}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-semibold text-slate-900 truncate">
+                          {doc.titulo ?? doc.nombre_archivo}
+                        </h3>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
+                          <span>Archivo: {doc.nombre_original ?? doc.nombre_archivo}</span>
+                          <span>{(doc.archivo_tamano / 1024 / 1024).toFixed(1)} MB</span>
+                          {doc.cliente_nombre_detectado && (
+                            <span className="text-amber-600">IA detectó: &ldquo;{doc.cliente_nombre_detectado}&rdquo;</span>
+                          )}
+                        </div>
+                        {doc.partes && doc.partes.length > 0 && (
+                          <div className="mt-2 text-xs text-slate-500">
+                            Partes: {doc.partes.map((p: any) => `${p.nombre} (${p.rol})`).join(', ')}
+                          </div>
+                        )}
+                        <div className="mt-3 flex items-center gap-2">
+                          <span className="text-xs font-medium text-slate-600">Asignar cliente:</span>
+                          <select
+                            defaultValue=""
+                            onChange={(e: any) => {
+                              if (e.target.value) cambiarCliente(doc.id, e.target.value);
+                            }}
+                            className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 max-w-[250px] focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                          >
+                            <option value="">Seleccionar cliente...</option>
+                            {clientes.map((c: any) => (
+                              <option key={c.id} value={c.id}>{c.codigo} — {c.nombre}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 shrink-0">
+                        <button
+                          onClick={() => verPDF(doc.id)}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                        >
+                          Ver PDF
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : tab === 'clasificado' ? (
             /* Card view for review */

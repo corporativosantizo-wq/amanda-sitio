@@ -54,6 +54,7 @@ interface ListParams {
   estado?: string;
   tipo?: string;
   cliente_id?: string;
+  sin_cliente?: boolean;
   busqueda?: string;
   page?: number;
   limit?: number;
@@ -202,7 +203,7 @@ export async function rechazarDocumento(id: string, notas?: string) {
 }
 
 export async function listarDocumentos(params: ListParams = {}) {
-  const { estado, tipo, cliente_id, busqueda, page = 1, limit = 20 } = params;
+  const { estado, tipo, cliente_id, sin_cliente, busqueda, page = 1, limit = 20 } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
@@ -213,7 +214,8 @@ export async function listarDocumentos(params: ListParams = {}) {
 
   if (estado) query = query.eq('estado', estado);
   if (tipo) query = query.eq('tipo', tipo);
-  if (cliente_id) query = query.eq('cliente_id', cliente_id);
+  if (sin_cliente) query = query.is('cliente_id', null);
+  else if (cliente_id) query = query.eq('cliente_id', cliente_id);
   if (busqueda) {
     query = query.or(
       `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,cliente_nombre_detectado.ilike.%${busqueda}%`
@@ -326,6 +328,25 @@ export async function buscarClienteFuzzy(
   }
 
   return mejor;
+}
+
+export async function buscarClientePorNombreArchivo(
+  filename: string
+): Promise<{ id: string; nombre: string; codigo: string; confianza: number } | null> {
+  if (!filename?.trim()) return null;
+
+  // Extract potential name from filename: remove extension, replace separators with spaces
+  const sinExt = filename.replace(/\.[^.]+$/, '');
+  const humanized = sinExt
+    .replace(/[_\-\.]+/g, ' ')
+    .replace(/\d{6,}/g, '') // remove long numbers (dates, timestamps)
+    .replace(/\b(dpi|nit|contrato|factura|recibo|escritura|acta|poder|doc|pdf|scan|copia)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (humanized.length < 3) return null;
+
+  return buscarClienteFuzzy(humanized);
 }
 
 // ── Carpetas y nomenclatura ──────────────────────────────────────────────

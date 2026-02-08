@@ -260,7 +260,7 @@ export default function UploadDocumentos() {
   }
 
   const startUpload = async () => {
-    if (files.length === 0 || !selectedCliente) return;
+    if (files.length === 0) return;
     setStep('processing');
     setUploading(true);
     setGlobalError(null);
@@ -291,7 +291,7 @@ export default function UploadDocumentos() {
               storage_path: u.storage_path,
               filename: u.filename,
               filesize: u.filesize,
-              cliente_id: selectedCliente.id,
+              cliente_id: selectedCliente?.id ?? null,
             })),
           }),
         });
@@ -346,7 +346,7 @@ export default function UploadDocumentos() {
     error: { icon: '✗', color: '#dc2626', text: 'Error' },
   };
 
-  const canUpload = files.length > 0 && selectedCliente !== null;
+  const canUpload = files.length > 0;
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -357,7 +357,7 @@ export default function UploadDocumentos() {
         </Link>
         <h1 className="text-xl font-bold text-slate-900 mt-2">Subir documentos</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Seleccione el cliente, arrastre archivos PDF y clasifíquelos automáticamente con IA
+          Arrastre archivos PDF para clasificarlos automáticamente con IA. Si no selecciona cliente, la IA intentará detectarlo.
         </p>
       </div>
 
@@ -367,7 +367,7 @@ export default function UploadDocumentos() {
           {/* Client selector */}
           <div className="mb-6 bg-white rounded-xl border border-slate-200 p-5">
             <label className="block text-sm font-semibold text-slate-700 mb-2">
-              Cliente asociado <span className="text-red-500">*</span>
+              Cliente asociado <span className="text-xs font-normal text-slate-400">(opcional — la IA detectará automáticamente)</span>
             </label>
             <div className="relative" ref={dropdownRef}>
               {selectedCliente ? (
@@ -507,7 +507,7 @@ export default function UploadDocumentos() {
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
-                  {!selectedCliente ? 'Seleccione un cliente primero' : 'Subir y clasificar'}
+                  {selectedCliente ? 'Subir y clasificar' : 'Subir y clasificar con IA'}
                 </button>
               </div>
             </div>

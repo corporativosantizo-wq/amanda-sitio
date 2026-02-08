@@ -10,6 +10,7 @@ import {
   descargarPDF,
   clasificarDocumento,
   buscarClienteFuzzy,
+  buscarClientePorNombreArchivo,
   DocumentoError,
 } from '@/lib/services/documentos.service';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -211,19 +212,58 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Paso 4: Buscar cliente por nombre fuzzy
-    console.log(`[Classify] Paso 4: Fuzzy match — cliente_probable: "${clasificacion.cliente_probable}"`);
-    let clienteMatch = null;
-    if (clasificacion.cliente_probable) {
-      try {
-        clienteMatch = await buscarClienteFuzzy(clasificacion.cliente_probable);
-        if (clienteMatch) {
-          console.log(`[Classify] Match encontrado: ${clienteMatch.nombre} (${clienteMatch.codigo}), confianza: ${clienteMatch.confianza}`);
-        } else {
-          console.log(`[Classify] No se encontró match para "${clasificacion.cliente_probable}"`);
+    // Paso 4: Buscar cliente — intenta múltiples fuentes
+    console.log(`[Classify] Paso 4: Detectando cliente...`);
+    let clienteMatch: { id: string; nombre: string; codigo: string; confianza: number } | null = null;
+
+    // 4a. Si el documento ya tiene cliente_id asignado (subido con cliente), no buscar
+    const { data: docFull } = await db
+      .from('documentos')
+      .select('cliente_id')
+      .eq('id', documentoId)
+      .single();
+
+    if (docFull?.cliente_id) {
+      console.log(`[Classify] Documento ya tiene cliente_id asignado: ${docFull.cliente_id}`);
+    } else {
+      // 4b. Buscar por cliente_probable (del contenido del PDF)
+      if (clasificacion.cliente_probable) {
+        try {
+          clienteMatch = await buscarClienteFuzzy(clasificacion.cliente_probable);
+          if (clienteMatch) {
+            console.log(`[Classify] Match por contenido: ${clienteMatch.nombre} (${clienteMatch.codigo}), score: ${clienteMatch.confianza}`);
+          }
+        } catch (fuzzyErr: any) {
+          console.error(`[Classify] Error en fuzzy match (no fatal):`, fuzzyErr.message);
         }
-      } catch (fuzzyErr: any) {
-        console.error(`[Classify] Error en fuzzy match (no fatal):`, fuzzyErr.message);
+      }
+
+      // 4c. Si no hubo match por contenido, buscar en las partes del documento
+      if (!clienteMatch && clasificacion.partes?.length > 0) {
+        for (const parte of clasificacion.partes) {
+          if (!parte.nombre) continue;
+          try {
+            const match = await buscarClienteFuzzy(parte.nombre);
+            if (match && match.confianza > (clienteMatch?.confianza ?? 0)) {
+              clienteMatch = match;
+              console.log(`[Classify] Match por parte "${parte.nombre}": ${match.nombre} (${match.codigo}), score: ${match.confianza}`);
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      // 4d. Si aún no hay match, intentar por nombre del archivo
+      if (!clienteMatch) {
+        try {
+          clienteMatch = await buscarClientePorNombreArchivo(doc.nombre_archivo);
+          if (clienteMatch) {
+            console.log(`[Classify] Match por filename: ${clienteMatch.nombre} (${clienteMatch.codigo}), score: ${clienteMatch.confianza}`);
+          }
+        } catch { /* skip */ }
+      }
+
+      if (!clienteMatch) {
+        console.log(`[Classify] No se encontró match de cliente por ningún método`);
       }
     }
 
@@ -240,7 +280,7 @@ export async function POST(req: NextRequest) {
         cliente_nombre_detectado: clasificacion.cliente_probable ?? null,
         confianza_ia: clasificacion.confianza ?? 0,
         metadata: clasificacion.datos_adicionales ?? {},
-        cliente_id: clienteMatch?.id ?? null,
+        cliente_id: docFull?.cliente_id ?? clienteMatch?.id ?? null,
       });
 
       console.log(`[Classify] Clasificación guardada OK: id=${resultado.id}, tipo=${resultado.tipo}`);

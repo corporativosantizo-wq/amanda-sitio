@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
       estado: s.get('estado') ?? undefined,
       tipo: s.get('tipo') ?? undefined,
       cliente_id: s.get('cliente_id') ?? undefined,
+      sin_cliente: s.get('sin_cliente') === 'true',
       busqueda: s.get('q') ?? undefined,
       page: parseInt(s.get('page') ?? '1'),
       limit: parseInt(s.get('limit') ?? '20'),
