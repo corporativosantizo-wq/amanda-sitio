@@ -84,6 +84,13 @@ export default function DocumentosPage() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [editingCliente, setEditingCliente] = useState<string | null>(null);
 
+  // Transcription state
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [transcribing, setTranscribing] = useState(false);
+  const [transcribeProgress, setTranscribeProgress] = useState<{
+    current: number; total: number; docName: string; status: string; downloadUrl?: string;
+  } | null>(null);
+
   // Fetch folders
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
     tab === 'carpetas' && !carpetaAbierta ? '/api/admin/documentos?carpetas=true' : null
@@ -211,6 +218,100 @@ export default function DocumentosPage() {
   const altaConfianza = docs.filter(
     (d: DocItem) => d.estado === 'clasificado' && d.confianza_ia >= 0.8 && d.cliente_id
   );
+
+  const isPDF = (doc: DocItem) => {
+    const name = (doc.nombre_original ?? doc.nombre_archivo).toLowerCase();
+    return name.endsWith('.pdf');
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedDocs((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const pdfDocs = docs.filter(isPDF);
+    if (pdfDocs.length > 0 && selectedDocs.size === pdfDocs.length) {
+      setSelectedDocs(new Set());
+    } else {
+      setSelectedDocs(new Set(pdfDocs.map((d: DocItem) => d.id)));
+    }
+  };
+
+  const transcribirUno = async (docId: string) => {
+    const d = docs.find((x: DocItem) => x.id === docId);
+    setTranscribing(true);
+    setTranscribeProgress({
+      current: 1, total: 1,
+      docName: d?.titulo ?? d?.nombre_archivo ?? '',
+      status: 'Transcribiendo...',
+    });
+    try {
+      const res = await fetch('/api/admin/documentos/transcribir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documento_id: docId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTranscribeProgress((p: any) => p ? { ...p, status: `Error: ${data.error}` } : null);
+      } else {
+        setTranscribeProgress((p: any) => p ? {
+          ...p, status: 'completado',
+          docName: `${data.transcripcion.paginas} páginas transcritas`,
+          downloadUrl: data.transcripcion.download_url,
+        } : null);
+        refetch();
+      }
+    } catch (err: any) {
+      setTranscribeProgress((p: any) => p ? { ...p, status: `Error: ${err.message}` } : null);
+    }
+  };
+
+  const transcribirSeleccionados = async () => {
+    const ids = Array.from(selectedDocs);
+    if (ids.length === 0) return;
+    setTranscribing(true);
+
+    for (let i = 0; i < ids.length; i++) {
+      const d = docs.find((x: DocItem) => x.id === ids[i]);
+      setTranscribeProgress({
+        current: i + 1, total: ids.length,
+        docName: d?.titulo ?? d?.nombre_archivo ?? '',
+        status: 'Transcribiendo...',
+      });
+      try {
+        const res = await fetch('/api/admin/documentos/transcribir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documento_id: ids[i] }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setTranscribeProgress((p: any) => p ? { ...p, status: `Error: ${data.error}. Continuando...` } : null);
+          await new Promise((r: any) => setTimeout(r, 2000));
+        }
+      } catch {
+        await new Promise((r: any) => setTimeout(r, 2000));
+      }
+    }
+
+    setTranscribeProgress({
+      current: ids.length, total: ids.length,
+      status: 'completado',
+      docName: `${ids.length} documento(s) transcritos`,
+    });
+    setSelectedDocs(new Set());
+    refetch();
+  };
+
+  const cerrarProgreso = () => {
+    setTranscribing(false);
+    setTranscribeProgress(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -360,6 +461,14 @@ export default function DocumentosPage() {
                 return (
                   <div key={doc.id} className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
                     <div className="flex items-start justify-between gap-4">
+                      {isPDF(doc) && (
+                        <input
+                          type="checkbox"
+                          checked={selectedDocs.has(doc.id)}
+                          onChange={() => toggleSelect(doc.id)}
+                          className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${est.bg} ${est.text}`}>
@@ -413,6 +522,14 @@ export default function DocumentosPage() {
                         >
                           Ver archivo
                         </button>
+                        {isPDF(doc) && (
+                          <button
+                            onClick={() => transcribirUno(doc.id)}
+                            className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors"
+                          >
+                            Transcribir
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -425,6 +542,14 @@ export default function DocumentosPage() {
               {docs.map((doc: DocItem) => (
                 <div key={doc.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                   <div className="flex items-start justify-between gap-4">
+                    {isPDF(doc) && (
+                      <input
+                        type="checkbox"
+                        checked={selectedDocs.has(doc.id)}
+                        onChange={() => toggleSelect(doc.id)}
+                        className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLORS[doc.estado]?.bg ?? ''} ${ESTADO_COLORS[doc.estado]?.text ?? ''}`}>
@@ -484,8 +609,16 @@ export default function DocumentosPage() {
                         onClick={() => verPDF(doc.id)}
                         className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                       >
-                        Ver PDF
+                        Ver archivo
                       </button>
+                      {isPDF(doc) && (
+                        <button
+                          onClick={() => transcribirUno(doc.id)}
+                          className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors"
+                        >
+                          Transcribir
+                        </button>
+                      )}
                       <button
                         onClick={() => aprobar(doc.id)}
                         disabled={processing.has(doc.id)}
@@ -512,11 +645,20 @@ export default function DocumentosPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-200">
-                      {(carpetaAbierta ? ['Código', 'Archivo original', 'Tipo', 'Título', 'Estado'] : ['Archivo', 'Tipo', 'Título', 'Cliente', 'Fecha', 'Estado']).map((h: string) => (
-                        <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">
+                      <th className="w-10 py-3 pl-5 pr-1">
+                        <input
+                          type="checkbox"
+                          checked={docs.filter(isPDF).length > 0 && selectedDocs.size === docs.filter(isPDF).length}
+                          onChange={toggleSelectAll}
+                          className="rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]"
+                        />
+                      </th>
+                      {(carpetaAbierta ? ['Código', 'Archivo', 'Tipo', 'Título', 'Estado'] : ['Archivo', 'Tipo', 'Título', 'Cliente', 'Fecha', 'Estado']).map((h: string) => (
+                        <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">
                           {h}
                         </th>
                       ))}
+                      <th className="w-24 py-3 px-4 pr-5" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -528,9 +670,19 @@ export default function DocumentosPage() {
                           className="hover:bg-slate-50/50 cursor-pointer transition-colors"
                           onClick={() => verPDF(doc.id)}
                         >
+                          <td className="py-3 pl-5 pr-1" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                            {isPDF(doc) && (
+                              <input
+                                type="checkbox"
+                                checked={selectedDocs.has(doc.id)}
+                                onChange={() => toggleSelect(doc.id)}
+                                className="rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]"
+                              />
+                            )}
+                          </td>
                           {carpetaAbierta ? (
                             <>
-                              <td className="py-3 px-4 pl-5 text-sm font-mono text-slate-700">
+                              <td className="py-3 px-4 text-sm font-mono text-slate-700">
                                 {doc.codigo_documento ?? '—'}
                               </td>
                               <td className="py-3 px-4 text-sm text-slate-500 max-w-[200px] truncate">
@@ -543,7 +695,7 @@ export default function DocumentosPage() {
                               <td className="py-3 px-4 text-sm text-slate-700 max-w-[250px] truncate">
                                 {doc.titulo ?? '—'}
                               </td>
-                              <td className="py-3 px-4 pr-5">
+                              <td className="py-3 px-4">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${est.bg} ${est.text}`}>
                                   {doc.estado}
                                 </span>
@@ -551,7 +703,7 @@ export default function DocumentosPage() {
                             </>
                           ) : (
                             <>
-                              <td className="py-3 px-4 pl-5 text-sm text-slate-900 max-w-[200px] truncate">
+                              <td className="py-3 px-4 text-sm text-slate-900 max-w-[200px] truncate">
                                 <span className="mr-1">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
                                 {doc.codigo_documento ?? doc.nombre_archivo}
                               </td>
@@ -569,13 +721,23 @@ export default function DocumentosPage() {
                                   ? new Date(doc.fecha_documento).toLocaleDateString('es-GT')
                                   : '—'}
                               </td>
-                              <td className="py-3 px-4 pr-5">
+                              <td className="py-3 px-4">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${est.bg} ${est.text}`}>
                                   {doc.estado}
                                 </span>
                               </td>
                             </>
                           )}
+                          <td className="py-3 px-4 pr-5 text-right" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                            {isPDF(doc) && (
+                              <button
+                                onClick={() => transcribirUno(doc.id)}
+                                className="text-xs font-medium text-[#0891B2] hover:text-[#1E40AF] transition-colors"
+                              >
+                                Transcribir
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -607,6 +769,95 @@ export default function DocumentosPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Floating selection bar */}
+      {selectedDocs.size > 0 && !transcribing && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1E3A5F] text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-4">
+          <span className="text-sm font-medium">{selectedDocs.size} PDF(s) seleccionados</span>
+          <button
+            onClick={transcribirSeleccionados}
+            className="px-4 py-1.5 text-sm font-medium bg-[#0891B2] rounded-lg hover:bg-[#0891B2]/80 transition-colors"
+          >
+            Transcribir seleccionados
+          </button>
+          <button
+            onClick={() => setSelectedDocs(new Set())}
+            className="text-sm text-white/70 hover:text-white transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* Transcription progress modal */}
+      {transcribing && transcribeProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            {transcribeProgress.status === 'completado' ? (
+              <>
+                <div className="flex items-center justify-center mb-4">
+                  <svg width="48" height="48" fill="none" stroke="#16a34a" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 text-center mb-2">Transcripción completada</h3>
+                <p className="text-sm text-slate-500 text-center mb-6">{transcribeProgress.docName}</p>
+                <div className="flex gap-3 justify-center">
+                  {transcribeProgress.downloadUrl && (
+                    <a
+                      href={transcribeProgress.downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 text-sm font-medium text-white bg-[#0891B2] rounded-lg hover:bg-[#0891B2]/80"
+                    >
+                      Descargar DOCX
+                    </a>
+                  )}
+                  <button
+                    onClick={cerrarProgreso}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </>
+            ) : transcribeProgress.status.startsWith('Error') ? (
+              <>
+                <div className="flex items-center justify-center mb-4">
+                  <svg width="48" height="48" fill="none" stroke="#dc2626" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 text-center mb-2">Error en transcripción</h3>
+                <p className="text-sm text-red-600 text-center mb-6 break-words">{transcribeProgress.status}</p>
+                <button
+                  onClick={cerrarProgreso}
+                  className="w-full px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                >
+                  Cerrar
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-center mb-4">
+                  <div className="w-12 h-12 border-4 border-slate-200 border-t-[#0891B2] rounded-full animate-spin" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 text-center mb-1">
+                  Transcribiendo {transcribeProgress.current} de {transcribeProgress.total}
+                </h3>
+                <p className="text-sm text-slate-500 text-center mb-4 truncate">{transcribeProgress.docName}</p>
+                <div className="w-full bg-slate-200 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-[#1E40AF] to-[#0891B2] h-2 rounded-full transition-all"
+                    style={{ width: `${(transcribeProgress.current / transcribeProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-400 text-center mt-2">Esto puede tomar varios minutos por documento...</p>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

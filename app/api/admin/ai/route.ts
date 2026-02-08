@@ -1,3 +1,5 @@
+export const maxDuration = 300; // Allow 5 min for transcription tool
+
 import Anthropic from '@anthropic-ai/sdk';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
@@ -1266,6 +1268,34 @@ export async function POST(req: Request) {
           required: ['accion'],
         },
       },
+      {
+        name: 'transcribir_documento',
+        description: 'Transcribe un documento PDF a DOCX usando IA. Puede buscar el documento o transcribir por ID. Solo funciona con PDFs.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            accion: {
+              type: 'string',
+              enum: ['transcribir', 'buscar_pendientes'],
+              description: 'transcribir: transcribe un PDF específico a DOCX. buscar_pendientes: lista PDFs disponibles para transcribir.',
+            },
+            documento_id: {
+              type: 'string',
+              description: 'UUID del documento a transcribir (para accion=transcribir).',
+            },
+            busqueda: {
+              type: 'string',
+              description: 'Texto para buscar el documento por nombre o título (alternativa a documento_id).',
+            },
+            formato: {
+              type: 'string',
+              enum: ['exacta', 'corregida', 'profesional'],
+              description: 'exacta: palabra por palabra sin cambios. corregida: con corrección ortográfica. profesional: formateado profesionalmente. Default: exacta.',
+            },
+          },
+          required: ['accion'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -1335,6 +1365,52 @@ export async function POST(req: Request) {
             } else if (block.name === 'gestionar_clientes') {
               const input = block.input as any;
               result = await handleGestionarClientes(input.accion, input.cliente_id, input.busqueda, input.datos ?? {});
+            } else if (block.name === 'transcribir_documento') {
+              const input = block.input as any;
+              if (input.accion === 'buscar_pendientes') {
+                const dbq = createAdminClient();
+                const { data: pdfs } = await dbq
+                  .from('documentos')
+                  .select('id, nombre_archivo, titulo, estado, cliente:clientes!cliente_id(nombre, codigo)')
+                  .ilike('nombre_archivo', '%.pdf')
+                  .order('created_at', { ascending: false })
+                  .limit(20);
+                result = JSON.stringify({
+                  mensaje: `${pdfs?.length ?? 0} documentos PDF encontrados.`,
+                  documentos: (pdfs ?? []).map((d: any) => ({
+                    id: d.id, nombre: d.nombre_archivo, titulo: d.titulo,
+                    estado: d.estado, cliente: d.cliente?.nombre ?? 'Sin cliente',
+                  })),
+                });
+              } else if (input.accion === 'transcribir') {
+                let docId = input.documento_id;
+                if (!docId && input.busqueda) {
+                  const dbq = createAdminClient();
+                  const { data: found } = await dbq
+                    .from('documentos')
+                    .select('id, nombre_archivo')
+                    .or(`titulo.ilike.%${input.busqueda}%,nombre_archivo.ilike.%${input.busqueda}%`)
+                    .ilike('nombre_archivo', '%.pdf')
+                    .limit(1)
+                    .single();
+                  if (found) docId = found.id;
+                }
+                if (!docId) {
+                  result = JSON.stringify({ error: 'No encontré un documento PDF que coincida.' });
+                } else {
+                  const { transcribirDocumento } = await import('@/lib/services/transcripcion.service');
+                  const res = await transcribirDocumento(docId, input.formato ?? 'exacta');
+                  result = JSON.stringify({
+                    exito: true,
+                    mensaje: `Transcripción completada: ${res.transcripcion.paginas} páginas.`,
+                    documento_id: res.transcripcion.id,
+                    nombre_archivo: res.transcripcion.nombre_archivo,
+                    download_url: res.transcripcion.download_url,
+                  });
+                }
+              } else {
+                result = JSON.stringify({ error: 'Acción no reconocida. Use: transcribir o buscar_pendientes.' });
+              }
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
