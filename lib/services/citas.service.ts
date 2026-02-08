@@ -311,8 +311,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     } else {
       const calendarPayload = {
         subject: cita.titulo,
-        startDateTime: `${cita.fecha}T${cita.hora_inicio}:00`,
-        endDateTime: `${cita.fecha}T${cita.hora_fin}:00`,
+        startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
+        endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
         attendees: clienteEmail ? [clienteEmail] : [],
         isOnlineMeeting: true,
         categories: [config.categoria_outlook],
@@ -401,8 +401,8 @@ export async function actualizarCita(
     try {
       await updateCalendarEvent(citaActual.outlook_event_id, {
         subject: data.titulo,
-        startDateTime: `${data.fecha}T${data.hora_inicio}:00`,
-        endDateTime: `${data.fecha}T${data.hora_fin}:00`,
+        startDateTime: `${data.fecha}T${data.hora_inicio.substring(0, 5)}:00`,
+        endDateTime: `${data.fecha}T${data.hora_fin.substring(0, 5)}:00`,
         body: generarBodyEvento(data),
         attendees: [],
         isOnlineMeeting: true,
