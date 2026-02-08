@@ -54,7 +54,7 @@ export function useFetch<T>(url: string | null, options: UseFetchOptions = {}): 
 // ── Mutation helper ─────────────────────────────────────────────────────
 
 interface MutateOptions {
-  method?: 'POST' | 'PUT' | 'DELETE';
+  method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   onSuccess?: (data: unknown) => void;
   onError?: (error: string) => void;

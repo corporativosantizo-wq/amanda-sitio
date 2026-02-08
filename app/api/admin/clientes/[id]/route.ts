@@ -1,9 +1,10 @@
 // ============================================================================
 // app/api/admin/clientes/[id]/route.ts
-// GET: Detalle · PATCH: Actualizar · DELETE: Desactivar
+// GET: Detalle completo · PATCH: Actualizar · DELETE: Desactivar
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   obtenerCliente, actualizarCliente, desactivarCliente, ClienteError,
 } from '@/lib/services/clientes.service';
@@ -14,7 +15,34 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const cliente = await obtenerCliente(id);
-    return NextResponse.json(cliente);
+
+    const db = createAdminClient();
+
+    // Fetch related data in parallel
+    const [citasRes, docsRes, pagosRes] = await Promise.all([
+      db.from('citas')
+        .select('id, tipo, titulo, fecha, hora_inicio, hora_fin, estado, costo')
+        .eq('cliente_id', id)
+        .order('fecha', { ascending: false })
+        .limit(20),
+      db.from('documentos')
+        .select('id, nombre, tipo, estado, created_at')
+        .eq('cliente_id', id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      db.from('pagos')
+        .select('id, monto, estado, fecha, concepto, metodo')
+        .eq('cliente_id', id)
+        .order('fecha', { ascending: false })
+        .limit(20),
+    ]);
+
+    return NextResponse.json({
+      ...cliente,
+      citas: citasRes.data ?? [],
+      documentos: docsRes.data ?? [],
+      pagos: pagosRes.data ?? [],
+    });
   } catch (err) {
     const msg = err instanceof ClienteError ? err.message : 'Error interno';
     const status = msg.includes('no encontrado') ? 404 : 500;
