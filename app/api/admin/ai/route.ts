@@ -9,6 +9,7 @@ import { listarPlantillasActivas, obtenerPlantilla, generarDesdeCustomPlantilla 
 import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-utils';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { registrarYConfirmar } from '@/lib/services/pagos.service';
 import {
   emailConfirmacionCita,
   emailRecordatorio24h,
@@ -235,6 +236,24 @@ Puedes enviar emails a CUALQUIER persona usando la herramienta enviar_email — 
 - "Mándale un email a juan@gmail.com diciendo que ya tenemos resolución" → tipo=personalizado, email_directo="juan@gmail.com", nombre_destinatario="Juan"
 - "Envía cotización a maria@empresa.com por Q5,000 de asesoría" → tipo=cotizacion, email_directo="maria@empresa.com", nombre_destinatario="María"
 - "Mándale a Roberto López a roberto@test.com la bienvenida" → tipo=bienvenida_cliente, email_directo="roberto@test.com", nombre_destinatario="Roberto López"
+
+## CONFIRMAR PAGOS
+Puedes registrar y confirmar pagos usando la herramienta confirmar_pago. Esto:
+1. Registra el pago en la BD (estado: registrado → confirmado en un solo paso)
+2. Envía comprobante de pago al cliente por email desde contador@papeleo.legal
+3. Si el pago está asociado a una factura, el trigger de BD actualiza el estado de la factura
+
+### Parámetros:
+- **cliente_id** (requerido): UUID o nombre del cliente
+- **monto** (requerido): Monto en Quetzales
+- **concepto** (requerido): Descripción del pago
+- **metodo_pago**: transferencia (default), deposito, efectivo, cheque
+- **referencia_bancaria**: Número de boleta o referencia
+- **fecha_pago**: YYYY-MM-DD (default: hoy)
+
+### Ejemplos:
+- "Registra el pago de Q5,000 de Procapeli por la constitución de sociedad" → confirmar_pago(cliente_id="Procapeli", monto=5000, concepto="Constitución de sociedad")
+- "Flor pagó Q500 de su consulta, referencia 123456" → confirmar_pago(cliente_id="Flor", monto=500, concepto="Consulta legal", referencia_bancaria="123456")
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -612,6 +631,65 @@ async function handleEnviarEmail(
   return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}`;
 }
 
+// ── Confirmar pago ────────────────────────────────────────────────────────
+
+async function handleConfirmarPago(
+  clienteId: string,
+  monto: number,
+  concepto: string,
+  metodoPago?: string,
+  referenciaBancaria?: string,
+  fechaPago?: string,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // 1. Resolve client
+  let cliente: any;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+
+  if (isUUID) {
+    const { data, error } = await db.from('clientes').select('id, nombre, email').eq('id', clienteId).single();
+    if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
+    cliente = data;
+  } else {
+    const { data, error } = await db.from('clientes').select('id, nombre, email').ilike('nombre', `%${clienteId}%`).limit(1);
+    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
+    cliente = data[0];
+  }
+
+  // 2. Register + confirm payment in one step
+  const pago = await registrarYConfirmar({
+    cliente_id: cliente.id,
+    monto,
+    metodo: metodoPago ?? 'transferencia',
+    referencia_bancaria: referenciaBancaria ?? null,
+    fecha_pago: fechaPago ?? new Date().toISOString().split('T')[0],
+    notas: concepto,
+  });
+
+  console.log(`[AI] Pago registrado y confirmado: ${pago.numero} — Q${monto} — ${cliente.nombre}`);
+
+  // 3. Send comprobante email from contador@
+  if (cliente.email) {
+    try {
+      const t = emailPagoRecibido({
+        clienteNombre: cliente.nombre,
+        concepto,
+        monto,
+        fechaPago: pago.fecha_pago ?? new Date().toISOString().split('T')[0],
+      });
+      await sendMail({ from: t.from, to: cliente.email, subject: t.subject, htmlBody: t.html });
+      console.log(`[AI] Comprobante enviado a ${cliente.email} desde ${t.from}`);
+      return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. Comprobante enviado a ${cliente.email} desde contador@papeleo.legal.`;
+    } catch (emailErr: any) {
+      console.error(`[AI] Error enviando comprobante:`, emailErr.message);
+      return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. ADVERTENCIA: no se pudo enviar el comprobante por email (${emailErr.message}).`;
+    }
+  }
+
+  return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. El cliente no tiene email registrado, no se envió comprobante.`;
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -708,6 +786,41 @@ export async function POST(req: Request) {
           required: ['tipo_email'],
         },
       },
+      {
+        name: 'confirmar_pago',
+        description: 'Registra y confirma un pago de un cliente en la base de datos, y envía comprobante de pago por email desde contador@papeleo.legal.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cliente_id: {
+              type: 'string',
+              description: 'UUID del cliente o nombre para buscar en la BD.',
+            },
+            monto: {
+              type: 'number',
+              description: 'Monto del pago en Quetzales.',
+            },
+            concepto: {
+              type: 'string',
+              description: 'Concepto o descripción del pago (ej: "Consulta legal", "Anticipo constitución de sociedad").',
+            },
+            metodo_pago: {
+              type: 'string',
+              enum: ['transferencia', 'deposito', 'efectivo', 'cheque'],
+              description: 'Método de pago. Default: transferencia.',
+            },
+            referencia_bancaria: {
+              type: 'string',
+              description: 'Número de referencia o boleta del depósito/transferencia.',
+            },
+            fecha_pago: {
+              type: 'string',
+              description: 'Fecha del pago en formato YYYY-MM-DD. Default: hoy.',
+            },
+          },
+          required: ['cliente_id', 'monto', 'concepto'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -765,6 +878,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'enviar_email') {
               const input = block.input as any;
               result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos, input.email_directo, input.nombre_destinatario);
+            } else if (block.name === 'confirmar_pago') {
+              const input = block.input as any;
+              result = await handleConfirmarPago(input.cliente_id, input.monto, input.concepto, input.metodo_pago, input.referencia_bancaria, input.fecha_pago);
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }

@@ -396,11 +396,16 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
 
   const created = await client.api('/me/events').post(event);
 
+  // Log FULL response to diagnose Teams link issues
+  console.log(`[Outlook] ── createCalendarEvent FULL RESPONSE ──`);
+  console.log(`[Outlook] ${JSON.stringify(created, null, 2).substring(0, 3000)}`);
+  console.log(`[Outlook] ── END FULL RESPONSE ──`);
   console.log(`[Outlook] Evento creado: id=${created.id}`);
   console.log(`[Outlook] isOnlineMeeting response: ${created.isOnlineMeeting}`);
   console.log(`[Outlook] onlineMeetingProvider response: ${created.onlineMeetingProvider}`);
   console.log(`[Outlook] onlineMeeting object: ${JSON.stringify(created.onlineMeeting ?? null)}`);
   console.log(`[Outlook] onlineMeetingUrl: ${created.onlineMeetingUrl ?? 'null'}`);
+  console.log(`[Outlook] webLink: ${created.webLink ?? 'null'}`);
 
   // Graph API may return the join URL in different fields
   const teamsLink = created.onlineMeeting?.joinUrl

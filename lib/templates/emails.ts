@@ -153,7 +153,7 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
             A nombre de: ${c.titular}
           </p>
         `).join('')}
-        <p style="margin:8px 0 0;font-size:12px;color:#92400e;">Env\u00ede su comprobante de pago por email o WhatsApp antes de la cita.</p>
+        <p style="margin:8px 0 0;font-size:12px;color:#92400e;">Env\u00ede su comprobante de pago a <strong>contador@papeleo.legal</strong> antes de la cita.</p>
       </td></tr>
     </table>`;
   }
