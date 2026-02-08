@@ -46,11 +46,11 @@ export default function Header() {
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-cyan group-hover:w-full transition-all duration-300"></span>
               </Link>
             ))}
-            <button className="px-6 py-2.5 bg-azure text-white font-semibold rounded-lg
-                             hover:bg-cyan hover:shadow-lg hover:shadow-cyan/50 
+            <Link href="/agendar" className="px-6 py-2.5 bg-azure text-white font-semibold rounded-lg
+                             hover:bg-cyan hover:shadow-lg hover:shadow-cyan/50
                              transition-all duration-300 transform hover:scale-105">
               Agenda consulta
-            </button>
+            </Link>
           </div>
 
           {/* Mobile menu button */}
@@ -83,10 +83,11 @@ export default function Header() {
                 {item.name}
               </Link>
             ))}
-            <button className="w-full mt-4 px-6 py-3 bg-azure text-white font-semibold rounded-lg
-                             hover:bg-cyan transition-all duration-300">
+            <Link href="/agendar" className="block w-full mt-4 px-6 py-3 bg-azure text-white font-semibold rounded-lg
+                             hover:bg-cyan transition-all duration-300 text-center"
+                  onClick={() => setIsMenuOpen(false)}>
               Agenda consulta
-            </button>
+            </Link>
           </div>
         )}
       </nav>
