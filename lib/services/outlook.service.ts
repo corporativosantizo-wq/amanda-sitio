@@ -150,8 +150,12 @@ export async function getValidAccessToken(): Promise<string> {
   const bufferMs = 5 * 60 * 1000; // 5 min buffer
 
   if (expiresAt.getTime() - now.getTime() > bufferMs) {
+    const minLeft = Math.round((expiresAt.getTime() - now.getTime()) / 60000);
+    console.log(`[Outlook] Token válido, expira en ${minLeft} min`);
     return decrypt(config.outlook_access_token_encrypted);
   }
+
+  console.log(`[Outlook] Token expirado o por expirar (expires: ${expiresAt.toISOString()}, now: ${now.toISOString()}), refrescando...`);
 
   // Token expired or about to expire — refresh
   if (!config.outlook_refresh_token_encrypted) {
@@ -254,8 +258,11 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
   const client = await getGraphClient();
   const SELECT_FIELDS = 'id,subject,start,end,isAllDay,isOnlineMeeting,onlineMeeting,categories,bodyPreview';
 
+  console.log(`[Outlook] ── getCalendarEvents ──`);
+  console.log(`[Outlook] Rango: ${startDate} → ${endDate}`);
+
   // 1. List all calendars
-  let calendarIds: string[] = [];
+  let calendars: { id: string; name: string }[] = [];
   try {
     const calendarsResult = await client
       .api('/me/calendars')
@@ -263,27 +270,30 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
       .top(50)
       .get();
 
-    const calendars = calendarsResult.value ?? [];
-    calendarIds = calendars.map((c: any) => c.id);
-    console.log(`[Outlook] Found ${calendars.length} calendars:`, calendars.map((c: any) => c.name));
-  } catch (err) {
-    console.warn('[Outlook] Could not list calendars, falling back to default:', err);
+    calendars = (calendarsResult.value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
+    console.log(`[Outlook] Calendarios encontrados: ${calendars.length}`);
+    calendars.forEach((c: { id: string; name: string }, i: number) => {
+      console.log(`[Outlook]   ${i + 1}. "${c.name}" (${c.id.substring(0, 20)}...)`);
+    });
+  } catch (err: any) {
+    console.error(`[Outlook] ERROR al listar calendarios: ${err.message ?? err}`);
+    console.error(`[Outlook] Detalle:`, err.statusCode ?? '', err.code ?? '', err.body ?? '');
+    console.log(`[Outlook] Fallback: usando calendario principal`);
   }
 
   // 2. Fetch events from each calendar (or default if listing failed)
   const allEvents: OutlookEvent[] = [];
   const seenIds = new Set<string>();
 
-  if (calendarIds.length === 0) {
-    // Fallback: default calendar only
-    calendarIds = ['__default__'];
-  }
+  const calendarTargets = calendars.length > 0
+    ? calendars.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
+    : [{ id: '__default__', name: 'Principal (fallback)' }];
 
-  for (const calId of calendarIds) {
+  for (const cal of calendarTargets) {
     try {
-      const apiPath = calId === '__default__'
+      const apiPath = cal.id === '__default__'
         ? '/me/calendarView'
-        : `/me/calendars/${calId}/calendarView`;
+        : `/me/calendars/${cal.id}/calendarView`;
 
       const result = await client
         .api(apiPath)
@@ -297,18 +307,39 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
         .top(100)
         .get();
 
-      for (const ev of result.value ?? []) {
+      const events = result.value ?? [];
+      let newCount = 0;
+      for (const ev of events) {
         if (!seenIds.has(ev.id)) {
           seenIds.add(ev.id);
           allEvents.push(ev);
+          newCount++;
         }
       }
-    } catch (err) {
-      console.warn(`[Outlook] Error fetching calendar ${calId}:`, err);
+
+      console.log(`[Outlook] Calendario "${cal.name}": ${events.length} eventos (${newCount} nuevos, ${events.length - newCount} duplicados)`);
+      if (events.length > 0) {
+        events.forEach((ev: any) => {
+          const allDay = ev.isAllDay ? ' [TODO EL DÍA]' : '';
+          const start = ev.start?.dateTime?.substring(0, 16) ?? '?';
+          console.log(`[Outlook]     • "${ev.subject}" ${start}${allDay}`);
+        });
+      }
+    } catch (err: any) {
+      console.error(`[Outlook] ERROR en calendario "${cal.name}": ${err.message ?? err}`);
+      console.error(`[Outlook]   Status: ${err.statusCode ?? 'N/A'}, Code: ${err.code ?? 'N/A'}`);
+      if (err.body) {
+        try {
+          const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
+          console.error(`[Outlook]   Graph error:`, body?.error?.message ?? err.body);
+        } catch {
+          console.error(`[Outlook]   Body:`, String(err.body).substring(0, 300));
+        }
+      }
     }
   }
 
-  console.log(`[Outlook] Total events across all calendars: ${allEvents.length}`);
+  console.log(`[Outlook] ── Total: ${allEvents.length} eventos únicos de ${calendarTargets.length} calendarios ──`);
   return allEvents;
 }
 

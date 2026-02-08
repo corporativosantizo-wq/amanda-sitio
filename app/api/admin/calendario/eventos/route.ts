@@ -36,14 +36,15 @@ export async function GET(req: NextRequest) {
     let outlookEvents: any[] = [];
     try {
       const connected = await isOutlookConnected();
+      console.log(`[Calendario] Outlook conectado: ${connected}`);
       if (connected && fechaInicio && fechaFin) {
         // Graph API calendarView needs ISO 8601 datetimes
         const startISO = `${fechaInicio}T00:00:00`;
         const endISO = `${fechaFin}T23:59:59`;
 
-        console.log(`[Calendario] Fetching Outlook events: ${startISO} → ${endISO}`);
+        console.log(`[Calendario] Consultando Graph API: ${startISO} → ${endISO}`);
         const graphEvents = await getCalendarEvents(startISO, endISO);
-        console.log(`[Calendario] Outlook returned ${graphEvents.length} events`);
+        console.log(`[Calendario] Graph API retornó ${graphEvents.length} eventos totales`);
 
         // Build set of outlook_event_ids that already have local citas
         const linkedIds = new Set(
@@ -96,10 +97,11 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        console.log(`[Calendario] ${outlookEvents.length} Outlook-only events (not linked to local citas)`);
+        console.log(`[Calendario] Resultado: ${result.data.length} citas locales, ${outlookEvents.length} eventos Outlook-only, ${linkedIds.size} ya vinculados`);
       }
-    } catch (outlookErr) {
-      console.warn('[Calendario] Error fetching Outlook events:', outlookErr);
+    } catch (outlookErr: any) {
+      console.error('[Calendario] ERROR al obtener eventos Outlook:', outlookErr.message ?? outlookErr);
+      console.error('[Calendario] Stack:', outlookErr.stack ?? 'N/A');
     }
 
     // 3. Merge and sort by date + hora_inicio
