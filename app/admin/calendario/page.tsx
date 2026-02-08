@@ -114,22 +114,13 @@ function CalendarioPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createDate, setCreateDate] = useState('');
 
-  // Outlook connection status check
+  // Show OAuth result from URL params
   useEffect(() => {
-    const connected = searchParams.get('connected');
     const error = searchParams.get('error');
-    if (connected === 'true') setOutlookConnected(true);
     if (error) console.warn('Outlook OAuth error:', error);
   }, [searchParams]);
 
-  // Check Outlook status on load
-  useEffect(() => {
-    fetch('/api/admin/calendario/auth')
-      .then((r) => r.ok ? setOutlookConnected(true) : setOutlookConnected(false))
-      .catch(() => setOutlookConnected(false));
-  }, []);
-
-  // Fetch citas for current range
+  // Fetch citas for current range — also gets outlook_connected status
   const fetchCitas = useCallback(async () => {
     setLoading(true);
     const lunes = vista === 'semana' ? getMonday(fechaBase) : fechaBase;
@@ -141,6 +132,7 @@ function CalendarioPage() {
       );
       const json = await res.json();
       setCitas(json.data ?? []);
+      setOutlookConnected(json.outlook_connected ?? false);
     } catch {
       setCitas([]);
     } finally {

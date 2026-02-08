@@ -34,10 +34,11 @@ export async function GET(req: NextRequest) {
 
     // 2. Fetch Outlook events if connected
     let outlookEvents: any[] = [];
+    let outlookConnected = false;
     try {
-      const connected = await isOutlookConnected();
-      console.log(`[Calendario] Outlook conectado: ${connected}`);
-      if (connected && fechaInicio && fechaFin) {
+      outlookConnected = await isOutlookConnected();
+      console.log(`[Calendario] Outlook conectado: ${outlookConnected}`);
+      if (outlookConnected && fechaInicio && fechaFin) {
         // Graph API calendarView needs ISO 8601 datetimes
         const startISO = `${fechaInicio}T00:00:00`;
         const endISO = `${fechaFin}T23:59:59`;
@@ -114,6 +115,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       data: merged,
       total: result.total + outlookEvents.length,
+      outlook_connected: outlookConnected,
     });
   } catch (err) {
     console.error('[Calendario] Error:', err);
