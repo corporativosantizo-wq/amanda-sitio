@@ -6,7 +6,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -96,40 +96,74 @@ export default function ImportarClientes() {
 
   // ── Leer Excel ──────────────────────────────────────────────────────────
 
-  const processFile = useCallback((file: File) => {
+  const MAX_EXCEL_SIZE = 5 * 1024 * 1024; // 5MB
+
+  const processFile = useCallback(async (file: File) => {
     setError(null);
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
       setError('Solo se aceptan archivos .xlsx, .xls o .csv');
       return;
     }
+    if (file.size > MAX_EXCEL_SIZE) {
+      setError(`El archivo es demasiado grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Máximo 5MB.`);
+      return;
+    }
     setFileName(file.name);
 
-    const reader = new FileReader();
-    reader.onload = (e: ProgressEvent<FileReader>) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json: ExcelRow[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-        if (json.length === 0) {
-          setError('El archivo está vacío.');
-          return;
-        }
-
-        const cols = Object.keys(json[0]);
-        setHeaders(cols);
-        setRawRows(json);
-
-        // Auto-detectar mapeo
-        const autoMap = autoDetectMapping(cols);
-        setMapping(autoMap);
-        setStep('preview');
-      } catch {
-        setError('Error al leer el archivo. Verifique que sea un Excel válido.');
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      if (file.name.match(/\.csv$/i)) {
+        const text = new TextDecoder().decode(buffer);
+        const blob = new Blob([text], { type: 'text/csv' });
+        const stream = blob.stream() as any;
+        await workbook.csv.read(stream);
+      } else {
+        await workbook.xlsx.load(buffer);
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      const ws = workbook.worksheets[0];
+      if (!ws || ws.rowCount < 2) {
+        setError('El archivo está vacío.');
+        return;
+      }
+
+      // Extract headers from first row
+      const headerRow = ws.getRow(1);
+      const cols: string[] = [];
+      headerRow.eachCell((cell: any, colNumber: number) => {
+        cols[colNumber - 1] = String(cell.value ?? '').trim();
+      });
+
+      // Extract data rows
+      const json: ExcelRow[] = [];
+      for (let r = 2; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r);
+        const obj: ExcelRow = {};
+        let hasValue = false;
+        cols.forEach((col: string, idx: number) => {
+          const val = row.getCell(idx + 1).value;
+          obj[col] = val != null ? String(val).trim() : '';
+          if (val != null && String(val).trim()) hasValue = true;
+        });
+        if (hasValue) json.push(obj);
+      }
+
+      if (json.length === 0) {
+        setError('El archivo está vacío.');
+        return;
+      }
+
+      setHeaders(cols.filter(Boolean));
+      setRawRows(json);
+
+      // Auto-detectar mapeo
+      const autoMap = autoDetectMapping(cols.filter(Boolean));
+      setMapping(autoMap);
+      setStep('preview');
+    } catch {
+      setError('Error al leer el archivo. Verifique que sea un Excel válido.');
+    }
   }, []);
 
   // ── Drag & Drop handlers ────────────────────────────────────────────────
@@ -139,7 +173,7 @@ export default function ImportarClientes() {
       e.preventDefault();
       setDragOver(false);
       const file = e.dataTransfer.files[0];
-      if (file) processFile(file);
+      if (file) void processFile(file);
     },
     [processFile]
   );
@@ -147,7 +181,7 @@ export default function ImportarClientes() {
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) processFile(file);
+      if (file) void processFile(file);
     },
     [processFile]
   );
