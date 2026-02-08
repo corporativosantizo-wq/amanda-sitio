@@ -392,10 +392,22 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
     event.onlineMeetingProvider = 'teamsForBusiness';
   }
 
-  const created = await client.api('/me/events').post(event);
-  const teamsLink = created.onlineMeeting?.joinUrl ?? null;
+  console.log(`[Outlook] createCalendarEvent: isOnlineMeeting=${event.isOnlineMeeting}, provider=${event.onlineMeetingProvider}`);
 
-  console.log(`[Outlook] Evento creado: ${created.id}, Teams: ${teamsLink ? 'sí' : 'no'}`);
+  const created = await client.api('/me/events').post(event);
+
+  console.log(`[Outlook] Evento creado: id=${created.id}`);
+  console.log(`[Outlook] isOnlineMeeting response: ${created.isOnlineMeeting}`);
+  console.log(`[Outlook] onlineMeetingProvider response: ${created.onlineMeetingProvider}`);
+  console.log(`[Outlook] onlineMeeting object: ${JSON.stringify(created.onlineMeeting ?? null)}`);
+  console.log(`[Outlook] onlineMeetingUrl: ${created.onlineMeetingUrl ?? 'null'}`);
+
+  // Graph API may return the join URL in different fields
+  const teamsLink = created.onlineMeeting?.joinUrl
+    ?? created.onlineMeetingUrl
+    ?? null;
+
+  console.log(`[Outlook] Teams link final: ${teamsLink ? teamsLink.substring(0, 60) + '...' : 'NULL'}`);
   return { eventId: created.id, teamsLink };
 }
 

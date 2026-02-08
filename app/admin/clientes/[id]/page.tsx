@@ -94,6 +94,8 @@ export default function ClienteDetallePage() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const startEdit = useCallback(() => {
     if (!c) return;
@@ -141,6 +143,15 @@ export default function ClienteDetallePage() {
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }));
+
+  const handleDelete = useCallback(async () => {
+    setDeleting(true);
+    await mutate(`/api/admin/clientes/${id}`, {
+      method: 'DELETE',
+      onSuccess: () => router.push('/admin/clientes'),
+      onError: (err) => { alert(`Error: ${err}`); setDeleting(false); setShowDeleteModal(false); },
+    });
+  }, [id, mutate, router]);
 
   // ── Loading / Error ─────────────────────────────────────────────────────
 
@@ -203,6 +214,12 @@ export default function ClienteDetallePage() {
               className="px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all inline-flex items-center gap-1.5">
               + Cotización
             </Link>
+            {c.activo && (
+              <button onClick={() => setShowDeleteModal(true)}
+                className="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors inline-flex items-center gap-1.5">
+                Desactivar
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -249,6 +266,29 @@ export default function ClienteDetallePage() {
       {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
       {tab === 'pagos' && <TabPagos pagos={c.pagos} clienteId={id} />}
       {tab === 'notas' && <TabNotas c={c} id={id} mutate={mutate} refetch={refetch} />}
+
+      {/* Delete confirmation modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Desactivar cliente</h3>
+            <p className="text-sm text-slate-600 mb-1">
+              Se desactivará a <strong>{c.nombre}</strong>. Sus citas, documentos y pagos se mantendrán en el sistema.
+            </p>
+            <p className="text-xs text-slate-400 mb-5">Esta acción se puede revertir reactivando al cliente.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteModal(false)} disabled={deleting}
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50">
+                {deleting ? 'Desactivando...' : 'Sí, desactivar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
