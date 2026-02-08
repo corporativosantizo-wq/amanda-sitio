@@ -124,29 +124,57 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
   const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  const duracion = cita.duracion_minutos ? `${cita.duracion_minutos} minutos` : (cita.tipo === 'consulta_nueva' ? '60 minutos' : '15 minutos');
+  const clienteNombre = cita.cliente?.nombre ?? '';
 
-  let teamsBtn = '';
+  // Teams button
+  let teamsSectionHTML = '';
   if (cita.teams_link) {
-    teamsBtn = teamsButton(cita.teams_link);
+    teamsSectionHTML = `
+    <table width="100%" style="margin:16px 0;"><tr><td align="center" style="padding:8px 0;">
+      <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">
+        Unirse a la reuni\u00f3n por Teams
+      </a>
+      <p style="margin:8px 0 0;color:#94a3b8;font-size:12px;">Tambi\u00e9n recibir\u00e1 la invitaci\u00f3n en su calendario.</p>
+    </td></tr></table>`;
   }
 
-  let costoSection = '';
-  if (cita.costo > 0) {
-    costoSection = `<p style="margin:8px 0;font-size:14px;"><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT')}</p>`;
+  // Payment section for consulta_nueva
+  let pagoSection = '';
+  if (cita.tipo === 'consulta_nueva' && cita.costo > 0) {
+    pagoSection = `
+    <table width="100%" style="margin:16px 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#92400e;">Costo: Q${Number(cita.costo).toLocaleString('es-GT', { minimumFractionDigits: 2 })}</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#78350f;">Pago previo a la consulta. Puede realizar la transferencia a cualquiera de las siguientes cuentas:</p>
+        ${CUENTAS_BANCARIAS.map((c) => `
+          <p style="margin:4px 0;font-size:13px;color:#334155;">
+            <strong>${c.banco}:</strong> ${c.cuenta}<br/>
+            A nombre de: ${c.titular}
+          </p>
+        `).join('')}
+        <p style="margin:8px 0 0;font-size:12px;color:#92400e;">Env\u00ede su comprobante de pago por email o WhatsApp antes de la cita.</p>
+      </td></tr>
+    </table>`;
   }
+
+  const saludo = clienteNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${clienteNombre}</strong>,</p>` : '';
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Confirmada</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita ha sido agendada exitosamente.</p>
+    ${saludo}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita ha sido agendada exitosamente. A continuaci\u00f3n los detalles:</p>
     <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipo}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
-        ${costoSection}
+        <p style="margin:8px 0;font-size:14px;"><strong>Duraci\u00f3n:</strong> ${duracion}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> Virtual por Microsoft Teams</p>
       </td></tr>
     </table>
-    <table>${teamsBtn}</table>
+    ${teamsSectionHTML}
+    ${pagoSection}
     <p style="color:#64748b;font-size:13px;margin-top:16px;">Si necesita cancelar o reprogramar, cont\u00e1ctenos con anticipaci\u00f3n.</p>
   `);
 
