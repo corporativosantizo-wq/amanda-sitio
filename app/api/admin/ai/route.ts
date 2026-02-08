@@ -346,6 +346,28 @@ Puedes gestionar las cuentas por cobrar del despacho usando la herramienta gesti
 - Cuando Amanda dice "cóbrale a..." SIEMPRE usa gestionar_cobros con crear_cobro (NO enviar_email). Esto crea el cobro en el sistema Y envía la solicitud de pago automáticamente.
 - Para registrar pagos contra cobros existentes, usa registrar_pago (NO confirmar_pago). confirmar_pago es para pagos sueltos sin cobro asociado.
 
+## GESTIÓN DE CLIENTES
+Puedes buscar, actualizar y crear clientes usando la herramienta gestionar_clientes. Acciones disponibles:
+
+### Acciones:
+- **buscar**: Busca clientes por nombre o email. Retorna id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion.
+- **actualizar**: Actualiza datos de un cliente existente. Requiere cliente_id (UUID) y los campos a modificar en datos.
+- **crear**: Crea un nuevo cliente. Requiere al menos nombre en datos.
+
+### Campos disponibles para actualizar/crear:
+nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion
+
+### Ejemplos:
+- "Actualiza el correo de Ricardo Valle a ricardo@gmail.com" → buscar(busqueda="Ricardo Valle") para obtener ID, luego actualizar(cliente_id=UUID, datos={email:"ricardo@gmail.com"})
+- "Agrega a María López, NIT 12345, tel 55551234" → crear(datos={nombre:"María López", nit:"12345", telefono:"55551234"})
+- "¿Cuál es el email de Procapeli?" → buscar(busqueda="Procapeli")
+- "Vincula a Ricardo como representante de G.E., S.A." → buscar primero, luego actualizar(cliente_id=UUID, datos={empresa:"G.E., S.A."})
+- "Cambia el NIT de facturación de Flor a 987654" → buscar, luego actualizar(cliente_id=UUID, datos={nit_facturacion:"987654"})
+
+### IMPORTANTE:
+- Para actualizar, SIEMPRE busca primero al cliente para obtener su UUID, luego actualiza con ese UUID.
+- Si Amanda dice "actualiza" o "cambia" datos de un cliente, usa esta herramienta (NO consultar_base_datos).
+
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
 - Usa moneda guatemalteca (Q) siempre
@@ -869,6 +891,84 @@ async function handleGestionarTareas(
   }
 }
 
+// ── Gestionar clientes ───────────────────────────────────────────────────
+
+async function handleGestionarClientes(
+  accion: string,
+  clienteId: string | undefined,
+  busqueda: string | undefined,
+  datos: any,
+): Promise<string> {
+  const db = createAdminClient();
+
+  switch (accion) {
+    case 'buscar': {
+      if (!busqueda?.trim()) throw new Error('Se requiere busqueda (nombre o email)');
+      const { data, error } = await db
+        .from('clientes')
+        .select('id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion')
+        .or(`nombre.ilike.%${busqueda.trim()}%,email.ilike.%${busqueda.trim()}%`)
+        .limit(5);
+
+      if (error) throw new Error(`Error al buscar: ${error.message}`);
+      if (!data?.length) return `No se encontraron clientes con "${busqueda}".`;
+
+      const lines = data.map((c: any) =>
+        `- **${c.nombre}** (id: ${c.id})\n  Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'}\n  Empresa: ${c.empresa ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}\n  Razón social: ${c.razon_social ?? 'N/A'} | NIT fact: ${c.nit_facturacion ?? 'N/A'} | Dir fact: ${c.direccion_facturacion ?? 'N/A'}`
+      );
+      return `${data.length} cliente(s) encontrado(s):\n${lines.join('\n\n')}`;
+    }
+
+    case 'actualizar': {
+      if (!clienteId) throw new Error('Se requiere cliente_id (UUID) para actualizar');
+      if (!datos || Object.keys(datos).length === 0) throw new Error('Se requiere al menos un campo en datos para actualizar');
+
+      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'nit_facturacion', 'direccion_facturacion'];
+      const payload: any = {};
+      for (const key of allowed) {
+        if (datos[key] !== undefined) payload[key] = datos[key];
+      }
+
+      if (Object.keys(payload).length === 0) throw new Error('Ningún campo válido para actualizar');
+
+      const { data, error } = await db
+        .from('clientes')
+        .update(payload)
+        .eq('id', clienteId)
+        .select('id, nombre, email, telefono, dpi, nit, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion')
+        .single();
+
+      if (error) throw new Error(`Error al actualizar: ${error.message}`);
+      if (!data) throw new Error('Cliente no encontrado');
+
+      const cambios = Object.keys(payload).map((k: string) => `${k}: ${payload[k]}`).join(', ');
+      return `Cliente actualizado: **${data.nombre}** — Cambios: ${cambios}`;
+    }
+
+    case 'crear': {
+      if (!datos?.nombre?.trim()) throw new Error('Se requiere al menos el nombre del cliente');
+
+      const allowed = ['nombre', 'email', 'telefono', 'nit', 'dpi', 'empresa', 'direccion', 'razon_social', 'nit_facturacion', 'direccion_facturacion'];
+      const payload: any = {};
+      for (const key of allowed) {
+        if (datos[key] !== undefined) payload[key] = datos[key];
+      }
+
+      const { data, error } = await db
+        .from('clientes')
+        .insert(payload)
+        .select('id, nombre, email, telefono')
+        .single();
+
+      if (error) throw new Error(`Error al crear cliente: ${error.message}`);
+      return `Cliente creado: **${data.nombre}** (id: ${data.id}) — Email: ${data.email ?? 'N/A'}, Tel: ${data.telefono ?? 'N/A'}`;
+    }
+
+    default:
+      throw new Error(`Acción no reconocida: ${accion}. Acciones válidas: buscar, actualizar, crear`);
+  }
+}
+
 // ── Gestionar cobros ─────────────────────────────────────────────────────
 
 async function handleGestionarCobros(
@@ -1138,6 +1238,33 @@ export async function POST(req: Request) {
           required: ['accion'],
         },
       },
+      {
+        name: 'gestionar_clientes',
+        description: 'Buscar, actualizar y crear clientes en el sistema. Usar para cualquier operación con datos de clientes.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            accion: {
+              type: 'string',
+              enum: ['buscar', 'actualizar', 'crear'],
+              description: 'Acción a realizar.',
+            },
+            cliente_id: {
+              type: 'string',
+              description: 'UUID del cliente (requerido para actualizar).',
+            },
+            busqueda: {
+              type: 'string',
+              description: 'Nombre o email para buscar.',
+            },
+            datos: {
+              type: 'object',
+              description: 'Datos a actualizar o crear: nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, nit_facturacion, direccion_facturacion.',
+            },
+          },
+          required: ['accion'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -1204,6 +1331,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'gestionar_cobros') {
               const input = block.input as any;
               result = await handleGestionarCobros(input.accion, input.datos ?? {});
+            } else if (block.name === 'gestionar_clientes') {
+              const input = block.input as any;
+              result = await handleGestionarClientes(input.accion, input.cliente_id, input.busqueda, input.datos ?? {});
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
