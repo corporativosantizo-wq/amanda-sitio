@@ -18,14 +18,14 @@ export async function GET() {
     events: {},
   };
 
-  // 0. Env vars
+  // 0. Env vars (only show presence, never values or lengths)
   diag.env = {
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? 'NOT SET',
-    VERCEL_URL: process.env.VERCEL_URL ?? 'NOT SET',
-    AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? process.env.AZURE_CLIENT_ID.substring(0, 8) + '...' : 'NOT SET',
-    AZURE_TENANT_ID: process.env.AZURE_TENANT_ID ? process.env.AZURE_TENANT_ID.substring(0, 8) + '...' : 'NOT SET',
-    AZURE_CLIENT_SECRET: process.env.AZURE_CLIENT_SECRET ? 'SET (' + process.env.AZURE_CLIENT_SECRET.length + ' chars)' : 'NOT SET',
-    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY ? 'SET (' + process.env.ENCRYPTION_KEY.length + ' chars)' : 'NOT SET',
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? 'SET' : 'NOT SET',
+    VERCEL_URL: process.env.VERCEL_URL ? 'SET' : 'NOT SET',
+    AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET',
+    AZURE_TENANT_ID: process.env.AZURE_TENANT_ID ? 'SET' : 'NOT SET',
+    AZURE_CLIENT_SECRET: process.env.AZURE_CLIENT_SECRET ? 'SET' : 'NOT SET',
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY ? 'SET' : 'NOT SET',
   };
 
   // 1. Read tokens from DB
@@ -43,13 +43,8 @@ export async function GET() {
     }
 
     diag.tokens = {
-      row_id: config?.id ?? 'NULL',
-      access_token_encrypted: config?.outlook_access_token_encrypted
-        ? config.outlook_access_token_encrypted.substring(0, 10) + '... (' + config.outlook_access_token_encrypted.length + ' chars)'
-        : 'NULL',
-      refresh_token_encrypted: config?.outlook_refresh_token_encrypted
-        ? config.outlook_refresh_token_encrypted.substring(0, 10) + '... (' + config.outlook_refresh_token_encrypted.length + ' chars)'
-        : 'NULL',
+      access_token_present: !!config?.outlook_access_token_encrypted,
+      refresh_token_present: !!config?.outlook_refresh_token_encrypted,
       expires_at: config?.outlook_token_expires_at ?? 'NULL',
       expired: config?.outlook_token_expires_at
         ? new Date(config.outlook_token_expires_at) < new Date()
@@ -70,7 +65,6 @@ export async function GET() {
       accessToken = decrypt(config.outlook_access_token_encrypted);
       diag.decrypt = {
         status: 'OK',
-        token_preview: accessToken.substring(0, 10) + '... (' + accessToken.length + ' chars)',
         looks_like_jwt: accessToken.startsWith('eyJ'),
       };
     } catch (err: any) {
@@ -92,8 +86,7 @@ export async function GET() {
         diag.graph_me = {
           status: res.status,
           displayName: me.displayName,
-          mail: me.mail,
-          userPrincipalName: me.userPrincipalName,
+          connected: true,
         };
       } else {
         diag.graph_me = { status: res.status, error: body.substring(0, 500) };
@@ -112,7 +105,7 @@ export async function GET() {
         diag.calendars = {
           status: res.status,
           count: cals.length,
-          list: cals.map((c: any) => ({ name: c.name, color: c.color, id_preview: c.id.substring(0, 20) + '...' })),
+          list: cals.map((c: any) => ({ name: c.name, color: c.color })),
         };
       } else {
         diag.calendars = { status: res.status, error: body.substring(0, 500) };

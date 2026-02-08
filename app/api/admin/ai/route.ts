@@ -575,7 +575,8 @@ async function handleEnviarEmail(tipoEmail: string, clienteId: string, datos: an
   // 3. Send
   await sendMail({ from, to: cliente.email, subject, htmlBody: html });
 
-  console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${cliente.email}, asunto=${subject}`);
+  const emailMask = cliente.email.replace(/(.{2}).+(@.+)/, '$1***$2');
+  console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${emailMask}, asunto=${subject}`);
   return `Email enviado a ${cliente.nombre} (${cliente.email}) desde ${from} — Asunto: ${subject}`;
 }
 

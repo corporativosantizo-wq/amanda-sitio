@@ -16,7 +16,6 @@ const isPublicRoute = createRouteMatcher([
   '/api/cron(.*)',        // Cron jobs (protegidos por CRON_SECRET)
   '/api/pagos(.*)',       // Stripe webhooks/checkout
   '/api/public(.*)',      // Agendamiento público, disponibilidad
-  '/api/admin/calendario/diagnostico',  // Diagnóstico temporal Outlook
   '/agendar(.*)',         // Página pública de agendamiento
   '/portal(.*)',          // Portal de clientes usa su propia auth
   '/sign-in(.*)',

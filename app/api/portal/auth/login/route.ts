@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       .single();
 
     if (!cliente) {
-      console.warn(`[Portal Login] Email no encontrado: ${email}`);
+      console.warn(`[Portal Login] Email no encontrado: ${email.replace(/(.{2}).+(@.+)/, '$1***$2')}`);
       return Response.json(
         { error: 'No tiene cuenta activa. Contacte al bufete.' },
         { status: 404, headers: SECURITY_HEADERS }

@@ -469,7 +469,8 @@ export async function sendMail(params: {
     saveToSentItems: true,
   });
 
-  console.log(`[Outlook] Email enviado desde: ${params.from}, a: ${params.to}, asunto: ${params.subject}`);
+  const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
+  console.log(`[Outlook] Email enviado desde: ${params.from}, a: ${toMask}, asunto: ${params.subject}`);
 }
 
 /** @deprecated Use sendMail() with explicit `from` parameter instead */

@@ -121,7 +121,8 @@ export async function POST(req: NextRequest) {
     const db = createAdminClient();
     let clienteId: string;
 
-    console.log(`[Agendar] Buscando cliente con email: ${email.trim()}`);
+    const emailMask = email.trim().replace(/(.{2}).+(@.+)/, '$1***$2');
+    console.log(`[Agendar] Buscando cliente con email: ${emailMask}`);
     const { data: existing, error: lookupErr } = await db
       .from('clientes')
       .select('id')
