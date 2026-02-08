@@ -26,6 +26,19 @@ export async function GET(req: NextRequest) {
   try {
     const slots = await obtenerDisponibilidad(fecha, tipo);
 
+    // Filter out past slots if the requested date is today
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const isToday = fecha === todayStr;
+    const currentHH = now.getHours();
+    const currentMM = now.getMinutes();
+
+    function isSlotInPast(horaInicio: string): boolean {
+      if (!isToday) return false;
+      const [h, m] = horaInicio.split(':').map(Number);
+      return h < currentHH || (h === currentHH && m <= currentMM);
+    }
+
     // For consulta_nueva: aggregate 30-min slots into 60-min hourly slots
     // A 1-hour slot at HH:00 is available only if both HH:00 and HH:30 are free
     if (tipo === 'consulta_nueva') {
@@ -36,7 +49,7 @@ export async function GET(req: NextRequest) {
         const horaStr = `${String(h).padStart(2, '0')}:00`;
         const halfStr = `${String(h).padStart(2, '0')}:30`;
 
-        if (slotSet.has(horaStr) && slotSet.has(halfStr)) {
+        if (slotSet.has(horaStr) && slotSet.has(halfStr) && !isSlotInPast(horaStr)) {
           hourlySlots.push({
             hora_inicio: horaStr,
             hora_fin: `${String(h + 1).padStart(2, '0')}:00`,
@@ -48,9 +61,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ slots: hourlySlots });
     }
 
-    // For seguimiento: return 15-min slots as-is
+    // For seguimiento: return 15-min slots as-is, filtering past
+    const filtered = slots.filter((s: any) => !isSlotInPast(s.hora_inicio));
     return NextResponse.json({
-      slots: slots.map((s: any) => ({
+      slots: filtered.map((s: any) => ({
         hora_inicio: s.hora_inicio,
         hora_fin: s.hora_fin,
         duracion_minutos: s.duracion_minutos,

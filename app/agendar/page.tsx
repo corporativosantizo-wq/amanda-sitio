@@ -114,7 +114,9 @@ export default function AgendarPage() {
   const [selectedSlot, setSelectedSlot] = useState<SlotItem | null>(null);
 
   // Step 4
-  const [nombre, setNombre] = useState('');
+  const [nombres, setNombres] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [nit, setNit] = useState('');
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
   const [empresa, setEmpresa] = useState('');
@@ -171,7 +173,9 @@ export default function AgendarPage() {
           tipo,
           fecha: selectedDate,
           hora: selectedSlot.hora_inicio,
-          nombre: nombre.trim(),
+          nombres: nombres.trim(),
+          apellidos: apellidos.trim() || undefined,
+          nit: nit.trim(),
           email: email.trim(),
           telefono: telefono.trim(),
           empresa: empresa.trim() || undefined,
@@ -319,14 +323,18 @@ export default function AgendarPage() {
         {step === 4 && tipo && (
           <StepDatos
             tipo={tipo}
-            nombre={nombre}
+            nombres={nombres}
+            apellidos={apellidos}
+            nit={nit}
             email={email}
             telefono={telefono}
             empresa={empresa}
             asunto={asunto}
             numeroCaso={numeroCaso}
             honeypot={honeypot}
-            onNombre={setNombre}
+            onNombres={setNombres}
+            onApellidos={setApellidos}
+            onNit={setNit}
             onEmail={setEmail}
             onTelefono={setTelefono}
             onEmpresa={setEmpresa}
@@ -343,7 +351,9 @@ export default function AgendarPage() {
             tipo={tipo}
             fecha={selectedDate}
             slot={selectedSlot}
-            nombre={nombre}
+            nombres={nombres}
+            apellidos={apellidos}
+            nit={nit}
             email={email}
             telefono={telefono}
             empresa={empresa}
@@ -357,7 +367,7 @@ export default function AgendarPage() {
         )}
 
         {step === 6 && result && tipo && (
-          <StepExito result={result} tipo={tipo} nombre={nombre} />
+          <StepExito result={result} tipo={tipo} nombres={nombres} />
         )}
       </main>
 
@@ -705,14 +715,18 @@ function StepHora({
 
 function StepDatos({
   tipo,
-  nombre,
+  nombres,
+  apellidos,
+  nit,
   email,
   telefono,
   empresa,
   asunto,
   numeroCaso,
   honeypot,
-  onNombre,
+  onNombres,
+  onApellidos,
+  onNit,
   onEmail,
   onTelefono,
   onEmpresa,
@@ -723,14 +737,18 @@ function StepDatos({
   onBack,
 }: {
   tipo: TipoCita;
-  nombre: string;
+  nombres: string;
+  apellidos: string;
+  nit: string;
   email: string;
   telefono: string;
   empresa: string;
   asunto: string;
   numeroCaso: string;
   honeypot: string;
-  onNombre: (v: string) => void;
+  onNombres: (v: string) => void;
+  onApellidos: (v: string) => void;
+  onNit: (v: string) => void;
   onEmail: (v: string) => void;
   onTelefono: (v: string) => void;
   onEmpresa: (v: string) => void;
@@ -743,7 +761,7 @@ function StepDatos({
   const [formError, setFormError] = useState('');
 
   const validate = (): boolean => {
-    if (!nombre.trim() || !email.trim() || !telefono.trim() || !asunto.trim()) {
+    if (!nombres.trim() || !nit.trim() || !email.trim() || !telefono.trim() || !asunto.trim()) {
       setFormError('Por favor complete todos los campos requeridos.');
       return false;
     }
@@ -777,15 +795,42 @@ function StepDatos({
           />
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nombre(s) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={nombres}
+              onChange={(e) => onNombres(e.target.value)}
+              placeholder="Ej: Maria"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Apellido(s) <span className="text-gray-400 text-xs font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={apellidos}
+              onChange={(e) => onApellidos(e.target.value)}
+              placeholder="Ej: Garcia Lopez"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            />
+          </div>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Nombre completo <span className="text-red-500">*</span>
+            NIT <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            value={nombre}
-            onChange={(e) => onNombre(e.target.value)}
-            placeholder="Ej: Maria Garcia Lopez"
+            value={nit}
+            onChange={(e) => onNit(e.target.value)}
+            placeholder="Ej: 12345678 o CF"
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
           />
         </div>
@@ -886,7 +931,9 @@ function StepConfirmar({
   tipo,
   fecha,
   slot,
-  nombre,
+  nombres,
+  apellidos,
+  nit,
   email,
   telefono,
   empresa,
@@ -900,7 +947,9 @@ function StepConfirmar({
   tipo: TipoCita;
   fecha: string;
   slot: SlotItem;
-  nombre: string;
+  nombres: string;
+  apellidos: string;
+  nit: string;
   email: string;
   telefono: string;
   empresa: string;
@@ -966,7 +1015,13 @@ function StepConfirmar({
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Nombre</span>
-              <span className="text-gray-900 font-medium">{nombre}</span>
+              <span className="text-gray-900 font-medium">
+                {nombres}{apellidos ? ` ${apellidos}` : ''}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">NIT</span>
+              <span className="text-gray-900">{nit}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Email</span>
@@ -1039,11 +1094,11 @@ function StepConfirmar({
 function StepExito({
   result,
   tipo,
-  nombre,
+  nombres,
 }: {
   result: BookingResult;
   tipo: TipoCita;
-  nombre: string;
+  nombres: string;
 }) {
   const info = TIPO_INFO[tipo];
 
@@ -1060,7 +1115,7 @@ function StepExito({
         Cita agendada exitosamente
       </h2>
       <p className="text-gray-500 mb-8">
-        {nombre}, su cita ha sido confirmada. Recibira un email con los detalles.
+        {nombres}, su cita ha sido confirmada. Recibira un email con los detalles.
       </p>
 
       {/* Summary card */}

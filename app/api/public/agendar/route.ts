@@ -41,7 +41,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { tipo, fecha, hora, nombre, email, telefono, empresa, asunto, numero_caso, _hp } = body;
+    const { tipo, fecha, hora, nombres, apellidos, nit, nombre: nombreLegacy, email, telefono, empresa, asunto, numero_caso, _hp } = body;
+    // Build full name from split fields (fallback to legacy nombre for backwards compat)
+    const nombreCompleto = nombres
+      ? `${nombres.trim()}${apellidos?.trim() ? ` ${apellidos.trim()}` : ''}`
+      : nombreLegacy?.trim() || '';
 
     // Honeypot — bots fill hidden fields, humans don't
     if (_hp) {
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest) {
     // Validate required fields
     if (
       !tipo || !fecha || !hora ||
-      !nombre?.trim() || !email?.trim() ||
+      !nombreCompleto || !email?.trim() ||
       !telefono?.trim() || !asunto?.trim()
     ) {
       return NextResponse.json(
@@ -135,10 +139,10 @@ export async function POST(req: NextRequest) {
       const insertPayload = {
         codigo,
         tipo: 'persona',
-        nombre: nombre.trim(),
+        nombre: nombreCompleto,
         email: email.trim().toLowerCase(),
         telefono: telefono.trim(),
-        nit: 'CF',
+        nit: nit?.trim() || 'CF',
         notas: empresa?.trim() ? `Empresa: ${empresa.trim()}` : null,
         fuente: 'web-agendar',
         activo: true,
@@ -164,7 +168,7 @@ export async function POST(req: NextRequest) {
 
     // Build title
     const tipoLabel = tipoCita === 'consulta_nueva' ? 'Consulta' : 'Seguimiento';
-    const titulo = `${tipoLabel} — ${nombre.trim()}`;
+    const titulo = `${tipoLabel} — ${nombreCompleto}`;
 
     // Create cita (handles Outlook event + confirmation email automatically)
     console.log(`[Agendar] Creando cita: ${titulo} — ${fecha} ${matchedSlot.hora_inicio}-${matchedSlot.hora_fin}`);
