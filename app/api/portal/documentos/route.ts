@@ -102,13 +102,13 @@ export async function GET(req: Request) {
         // Documentos del sistema documental (aprobados)
         const { data: doc } = await db
           .from('documentos')
-          .select('id, storage_path, nombre_archivo')
+          .select('id, archivo_url, nombre_archivo')
           .eq('id', docId)
           .eq('cliente_id', session.clienteId)
           .eq('estado', 'aprobado')
           .single();
 
-        if (!doc || !doc.storage_path) {
+        if (!doc || !doc.archivo_url) {
           return Response.json(
             { error: 'Documento no encontrado' },
             { status: 404, headers: SECURITY_HEADERS }
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
 
         const { data: docSignedData, error: docSignError } = await docStorage.storage
           .from('documentos')
-          .createSignedUrl(doc.storage_path, 600);
+          .createSignedUrl(doc.archivo_url, 600);
 
         if (docSignError || !docSignedData) {
           return Response.json(
@@ -184,7 +184,7 @@ export async function GET(req: Request) {
     // Listar documentos aprobados del sistema documental
     const { data: documentosAprobados } = await db
       .from('documentos')
-      .select('id, titulo, tipo, fecha_documento, nombre_archivo, storage_path, created_at')
+      .select('id, titulo, tipo, fecha_documento, nombre_archivo, archivo_url, created_at')
       .eq('cliente_id', session.clienteId)
       .eq('estado', 'aprobado')
       .order('fecha_documento', { ascending: false });

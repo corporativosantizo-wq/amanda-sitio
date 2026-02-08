@@ -42,10 +42,10 @@ interface DocItem {
   fecha_documento: string | null;
   confianza_ia: number;
   estado: string;
-  nombre_cliente_extraido: string | null;
+  cliente_nombre_detectado: string | null;
   cliente_id: string | null;
   partes: any[];
-  tamano_bytes: number;
+  archivo_tamano: number;
   created_at: string;
   cliente: { id: string; codigo: string; nombre: string } | null;
 }
@@ -286,7 +286,7 @@ export default function DocumentosPage() {
                       <span>Fecha: {new Date(doc.fecha_documento).toLocaleDateString('es-GT')}</span>
                     )}
                     <span>Archivo: {doc.nombre_archivo}</span>
-                    <span>{(doc.tamano_bytes / 1024 / 1024).toFixed(1)} MB</span>
+                    <span>{(doc.archivo_tamano / 1024 / 1024).toFixed(1)} MB</span>
                   </div>
 
                   {/* Partes */}
@@ -320,7 +320,7 @@ export default function DocumentosPage() {
                         onClick={() => setEditingCliente(doc.id)}
                         className="text-xs text-[#0891B2] hover:underline"
                       >
-                        {doc.cliente?.nombre ?? doc.nombre_cliente_extraido ?? 'Sin asignar'}{' '}
+                        {doc.cliente?.nombre ?? doc.cliente_nombre_detectado ?? 'Sin asignar'}{' '}
                         <span className="text-slate-400">(cambiar)</span>
                       </button>
                     )}

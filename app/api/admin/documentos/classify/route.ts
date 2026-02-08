@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     const db = createAdminClient();
     const { data: doc, error: fetchErr } = await db
       .from('documentos')
-      .select('id, storage_path, nombre_archivo, estado')
+      .select('id, archivo_url, nombre_archivo, estado')
       .eq('id', documentoId)
       .single();
 
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[Classify] Documento encontrado: ${doc.nombre_archivo}, estado: ${doc.estado}, path: ${doc.storage_path}`);
+    console.log(`[Classify] Documento encontrado: ${doc.nombre_archivo}, estado: ${doc.estado}, path: ${doc.archivo_url}`);
 
     if (doc.estado !== 'pendiente') {
       return NextResponse.json(
@@ -109,10 +109,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Paso 2: Descargar PDF de Storage
-    console.log(`[Classify] Paso 2: Descargando PDF de Storage: ${doc.storage_path}`);
+    console.log(`[Classify] Paso 2: Descargando PDF de Storage: ${doc.archivo_url}`);
     let pdfBuffer: Buffer;
     try {
-      pdfBuffer = await descargarPDF(doc.storage_path);
+      pdfBuffer = await descargarPDF(doc.archivo_url);
       console.log(`[Classify] PDF descargado OK: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
     } catch (dlErr: any) {
       const detail = dlErr instanceof DocumentoError
@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
         fecha_documento: clasificacion.fecha_documento ?? null,
         numero_documento: clasificacion.numero_documento ?? null,
         partes: clasificacion.partes ?? [],
-        nombre_cliente_extraido: clasificacion.cliente_probable ?? null,
+        cliente_nombre_detectado: clasificacion.cliente_probable ?? null,
         confianza_ia: clasificacion.confianza ?? 0,
         metadata: clasificacion.datos_adicionales ?? {},
         cliente_id: clienteMatch?.id ?? null,

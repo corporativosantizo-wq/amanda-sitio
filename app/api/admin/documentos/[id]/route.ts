@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // Generar URL firmada para ver el PDF
     let signedUrl: string | null = null;
     try {
-      signedUrl = await generarSignedUrl(doc.storage_path, 600);
+      signedUrl = await generarSignedUrl(doc.archivo_url, 600);
     } catch {
       // Si falla la URL firmada, no bloquear
     }

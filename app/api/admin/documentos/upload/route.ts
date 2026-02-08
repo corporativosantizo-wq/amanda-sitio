@@ -119,9 +119,9 @@ export async function POST(req: NextRequest) {
         // Paso C: Crear registro en BD
         console.log(`[Upload] [${i + 1}] Creando registro en BD...`);
         const doc = await crearDocumento({
-          storage_path: storagePath,
+          archivo_url: storagePath,
           nombre_archivo: archivo.name,
-          tamano_bytes: archivo.size,
+          archivo_tamano: archivo.size,
         });
 
         console.log(`[Upload] [${i + 1}] Registro creado OK: id=${doc.id}`);

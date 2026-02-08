@@ -30,9 +30,9 @@ export const TIPOS_DOCUMENTO = [
 ] as const;
 
 export interface DocumentoInsert {
-  storage_path: string;
+  archivo_url: string;
   nombre_archivo: string;
-  tamano_bytes: number;
+  archivo_tamano: number;
 }
 
 export interface ClasificacionIA {
@@ -42,7 +42,7 @@ export interface ClasificacionIA {
   fecha_documento?: string | null;
   numero_documento?: string | null;
   partes?: any[];
-  nombre_cliente_extraido?: string | null;
+  cliente_nombre_detectado?: string | null;
   confianza_ia?: number;
   metadata?: Record<string, unknown>;
   cliente_id?: string | null;
@@ -63,12 +63,14 @@ export async function crearDocumento(input: DocumentoInsert) {
   const { data, error } = await db()
     .from('documentos')
     .insert({
-      storage_path: input.storage_path,
+      archivo_url: input.archivo_url,
       nombre_archivo: input.nombre_archivo,
-      tamano_bytes: input.tamano_bytes,
+      archivo_tamano: input.archivo_tamano,
+      titulo: input.nombre_archivo,
+      tipo: 'otro',
       estado: 'pendiente',
     })
-    .select('id, nombre_archivo, storage_path')
+    .select('id, nombre_archivo, archivo_url')
     .single();
 
   if (error) throw new DocumentoError('Error al crear documento', error);
@@ -83,12 +85,11 @@ export async function clasificarDocumento(id: string, clasificacion: Clasificaci
     fecha_documento: clasificacion.fecha_documento ?? null,
     numero_documento: clasificacion.numero_documento ?? null,
     partes: clasificacion.partes ?? [],
-    nombre_cliente_extraido: clasificacion.nombre_cliente_extraido ?? null,
+    cliente_nombre_detectado: clasificacion.cliente_nombre_detectado ?? null,
     confianza_ia: clasificacion.confianza_ia ?? 0,
     metadata: clasificacion.metadata ?? {},
     cliente_id: clasificacion.cliente_id ?? null,
     estado: 'clasificado',
-    clasificado_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
@@ -118,7 +119,7 @@ export async function aprobarDocumento(
 
   const clienteId = edits?.cliente_id ?? doc.cliente_id;
   const tipo = edits?.tipo ?? doc.tipo ?? 'otro';
-  const oldPath = doc.storage_path as string;
+  const oldPath = doc.archivo_url as string;
   const fileName = doc.nombre_archivo as string;
 
   // Mover archivo si tiene cliente asignado
@@ -130,8 +131,7 @@ export async function aprobarDocumento(
 
   const updates: Record<string, unknown> = {
     estado: 'aprobado',
-    storage_path: newPath,
-    aprobado_at: new Date().toISOString(),
+    archivo_url: newPath,
     updated_at: new Date().toISOString(),
   };
 
@@ -183,7 +183,7 @@ export async function listarDocumentos(params: ListParams = {}) {
   if (cliente_id) query = query.eq('cliente_id', cliente_id);
   if (busqueda) {
     query = query.or(
-      `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,nombre_cliente_extraido.ilike.%${busqueda}%`
+      `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,cliente_nombre_detectado.ilike.%${busqueda}%`
     );
   }
 
@@ -213,14 +213,14 @@ export async function obtenerDocumento(id: string) {
 export async function eliminarDocumento(id: string) {
   const { data: doc } = await db()
     .from('documentos')
-    .select('storage_path, estado')
+    .select('archivo_url, estado')
     .eq('id', id)
     .single();
 
   if (doc) {
     // Eliminar archivo de Storage
     const storage = storageClient().storage.from('documentos');
-    await storage.remove([doc.storage_path]);
+    await storage.remove([doc.archivo_url]);
   }
 
   const { error } = await db()
