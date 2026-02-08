@@ -301,12 +301,15 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   }
   console.log(`[crearCita] clienteEmail: ${clienteEmail ? clienteEmail.replace(/(.{2}).+(@.+)/, '$1***$2') : 'NULL'}`);
 
+  console.log(`[crearCita] ══════ INICIO Outlook Calendar ══════`);
   try {
     const connected = await isOutlookConnected();
-    console.log(`[crearCita] Outlook conectado: ${connected}`);
+    console.log(`[crearCita] isOutlookConnected() = ${connected}`);
 
-    if (connected) {
-      const { eventId, teamsLink } = await createCalendarEvent({
+    if (!connected) {
+      console.log(`[crearCita] ⚠ Outlook NO conectado — no se creará evento. Verifica que exista outlook_access_token_encrypted en legal.configuracion`);
+    } else {
+      const calendarPayload = {
         subject: cita.titulo,
         startDateTime: `${cita.fecha}T${cita.hora_inicio}:00`,
         endDateTime: `${cita.fecha}T${cita.hora_fin}:00`,
@@ -314,10 +317,14 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         isOnlineMeeting: true,
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
-      });
-      console.log(`[crearCita] Evento Outlook creado: eventId=${eventId}, teamsLink=${teamsLink ? 'sí' : 'no'}`);
+      };
+      console.log(`[crearCita] createCalendarEvent payload: ${JSON.stringify(calendarPayload)}`);
 
-      await db()
+      const { eventId, teamsLink } = await createCalendarEvent(calendarPayload);
+      console.log(`[crearCita] ✓ Evento Outlook creado: eventId=${eventId}`);
+      console.log(`[crearCita] ✓ Teams link: ${teamsLink ?? 'NULL'}`);
+
+      const { error: updateErr } = await db()
         .from('citas')
         .update({
           outlook_event_id: eventId,
@@ -326,12 +333,25 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         })
         .eq('id', cita.id);
 
+      if (updateErr) {
+        console.error(`[crearCita] ERROR al guardar outlook_event_id/teams_link en BD: ${JSON.stringify(updateErr)}`);
+      } else {
+        console.log(`[crearCita] ✓ outlook_event_id y teams_link guardados en BD`);
+      }
+
       cita.outlook_event_id = eventId;
       cita.teams_link = teamsLink;
     }
-  } catch (outlookErr) {
-    console.warn('[crearCita] Error al crear evento en Outlook:', outlookErr);
+  } catch (outlookErr: any) {
+    console.error(`[crearCita] ══════ ERROR Outlook Calendar ══════`);
+    console.error(`[crearCita] message: ${outlookErr.message ?? outlookErr}`);
+    console.error(`[crearCita] name: ${outlookErr.name ?? 'N/A'}`);
+    console.error(`[crearCita] statusCode: ${outlookErr.statusCode ?? 'N/A'}`);
+    console.error(`[crearCita] code: ${outlookErr.code ?? 'N/A'}`);
+    console.error(`[crearCita] details: ${JSON.stringify(outlookErr.details ?? outlookErr.body ?? {}).substring(0, 1000)}`);
+    console.error(`[crearCita] stack: ${(outlookErr.stack ?? '').substring(0, 500)}`);
   }
+  console.log(`[crearCita] ══════ FIN Outlook Calendar (event_id=${cita.outlook_event_id ?? 'NULL'}, teams=${cita.teams_link ? 'SÍ' : 'NULL'}) ══════`);
 
   // Enviar email de confirmación (independiente de Outlook calendar)
   if (clienteEmail) {

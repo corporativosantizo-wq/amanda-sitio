@@ -228,13 +228,20 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 }
 
 export async function isOutlookConnected(): Promise<boolean> {
-  const { data: config } = await db()
+  const { data: config, error } = await db()
     .from('configuracion')
-    .select('outlook_access_token_encrypted')
+    .select('outlook_access_token_encrypted, outlook_token_expires_at')
     .limit(1)
     .single();
 
-  return !!config?.outlook_access_token_encrypted;
+  if (error) {
+    console.error(`[isOutlookConnected] Error consultando configuracion: ${JSON.stringify(error)}`);
+    return false;
+  }
+
+  const hasToken = !!config?.outlook_access_token_encrypted;
+  console.log(`[isOutlookConnected] hasToken=${hasToken}, expires_at=${config?.outlook_token_expires_at ?? 'NULL'}, token_length=${config?.outlook_access_token_encrypted?.length ?? 0}`);
+  return hasToken;
 }
 
 // ── Graph Client ────────────────────────────────────────────────────────────
