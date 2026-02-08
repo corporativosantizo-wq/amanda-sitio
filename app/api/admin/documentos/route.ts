@@ -1,14 +1,21 @@
 // ============================================================================
 // GET /api/admin/documentos
-// Listar documentos con filtros
+// Listar documentos con filtros, o carpetas de clientes
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { listarDocumentos, DocumentoError } from '@/lib/services/documentos.service';
+import { listarDocumentos, clientesConDocumentos, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function GET(req: NextRequest) {
   try {
     const s = req.nextUrl.searchParams;
+
+    // Folder view: list clients that have documents
+    if (s.get('carpetas') === 'true') {
+      const carpetas = await clientesConDocumentos();
+      return NextResponse.json({ carpetas });
+    }
+
     const result = await listarDocumentos({
       estado: s.get('estado') ?? undefined,
       tipo: s.get('tipo') ?? undefined,

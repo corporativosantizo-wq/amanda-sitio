@@ -33,6 +33,8 @@ export interface DocumentoInsert {
   archivo_url: string;
   nombre_archivo: string;
   archivo_tamano: number;
+  cliente_id?: string | null;
+  nombre_original?: string;
 }
 
 export interface ClasificacionIA {
@@ -60,16 +62,20 @@ interface ListParams {
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function crearDocumento(input: DocumentoInsert) {
+  const payload: Record<string, unknown> = {
+    archivo_url: input.archivo_url,
+    nombre_archivo: input.nombre_archivo,
+    archivo_tamano: input.archivo_tamano,
+    nombre_original: input.nombre_original ?? input.nombre_archivo,
+    titulo: input.nombre_archivo,
+    tipo: 'otro',
+    estado: 'pendiente',
+  };
+  if (input.cliente_id) payload.cliente_id = input.cliente_id;
+
   const { data, error } = await db()
     .from('documentos')
-    .insert({
-      archivo_url: input.archivo_url,
-      nombre_archivo: input.nombre_archivo,
-      archivo_tamano: input.archivo_tamano,
-      titulo: input.nombre_archivo,
-      tipo: 'otro',
-      estado: 'pendiente',
-    })
+    .insert(payload)
     .select('id, nombre_archivo, archivo_url')
     .single();
 
@@ -120,18 +126,11 @@ export async function aprobarDocumento(
   const clienteId = edits?.cliente_id ?? doc.cliente_id;
   const tipo = edits?.tipo ?? doc.tipo ?? 'otro';
   const oldPath = doc.archivo_url as string;
-  const fileName = doc.nombre_archivo as string;
-
-  // Mover archivo si tiene cliente asignado
-  let newPath = oldPath;
-  if (clienteId && oldPath.startsWith('pendientes/')) {
-    newPath = `clientes/${clienteId}/${tipo}/${Date.now()}_${sanitizarNombre(fileName)}`;
-    await moverArchivo(oldPath, newPath);
-  }
+  const originalName = (doc.nombre_original ?? doc.nombre_archivo) as string;
+  const extension = originalName.split('.').pop()?.toLowerCase() ?? 'pdf';
 
   const updates: Record<string, unknown> = {
     estado: 'aprobado',
-    archivo_url: newPath,
     updated_at: new Date().toISOString(),
   };
 
@@ -140,6 +139,40 @@ export async function aprobarDocumento(
   if (edits?.fecha_documento !== undefined) updates.fecha_documento = edits.fecha_documento;
   if (edits?.cliente_id) updates.cliente_id = edits.cliente_id;
   if (edits?.notas) updates.notas = edits.notas;
+
+  // Move file to organized folder if client is assigned
+  if (clienteId) {
+    // Get client code
+    const { data: cliente } = await db()
+      .from('clientes')
+      .select('codigo')
+      .eq('id', clienteId)
+      .single();
+
+    const codigoCliente = (cliente?.codigo as string) ?? 'SIN-CODIGO';
+
+    // Generate sequential document code
+    const { count } = await db()
+      .from('documentos')
+      .select('*', { count: 'exact', head: true })
+      .eq('cliente_id', clienteId)
+      .not('codigo_documento', 'is', null);
+
+    const secuencial = (count ?? 0) + 1;
+    const tipoSlug = slugificarTipo(tipo);
+    const codigoDoc = `${codigoCliente}-DOC-${String(secuencial).padStart(3, '0')}`;
+    const nombreArchivo = `${codigoDoc}-${tipoSlug}.${extension}`;
+    const newPath = `${codigoCliente}/${nombreArchivo}`;
+
+    // Move the file
+    if (oldPath !== newPath) {
+      await moverArchivo(oldPath, newPath);
+    }
+
+    updates.archivo_url = newPath;
+    updates.nombre_archivo = nombreArchivo;
+    updates.codigo_documento = codigoDoc;
+  }
 
   const { data, error } = await db()
     .from('documentos')
@@ -293,6 +326,77 @@ export async function buscarClienteFuzzy(
   }
 
   return mejor;
+}
+
+// ── Carpetas y nomenclatura ──────────────────────────────────────────────
+
+export function slugificarTipo(tipo: string): string {
+  const label = TIPOS_DOCUMENTO.find((t: any) => t.key === tipo)?.label ?? tipo;
+  return label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+export async function clientesConDocumentos(): Promise<
+  { cliente_id: string; codigo: string; nombre: string; total_docs: number }[]
+> {
+  // Get distinct client_ids that have documents
+  const { data: docs } = await db()
+    .from('documentos')
+    .select('cliente_id, cliente:clientes!cliente_id(id, codigo, nombre)')
+    .not('cliente_id', 'is', null)
+    .order('created_at', { ascending: false });
+
+  if (!docs?.length) return [];
+
+  // Group by client
+  const map = new Map<string, { codigo: string; nombre: string; total_docs: number }>();
+  for (const d of docs) {
+    const c = d.cliente as any;
+    if (!c?.id) continue;
+    const existing = map.get(c.id);
+    if (existing) {
+      existing.total_docs++;
+    } else {
+      map.set(c.id, { codigo: c.codigo ?? '', nombre: c.nombre ?? '', total_docs: 1 });
+    }
+  }
+
+  return Array.from(map.entries()).map(([cliente_id, v]: [string, any]) => ({
+    cliente_id,
+    ...v,
+  })).sort((a: any, b: any) => a.codigo.localeCompare(b.codigo));
+}
+
+export async function previewCodigoDocumento(clienteId: string, tipo: string): Promise<{
+  codigo_documento: string;
+  nombre_archivo: string;
+  storage_path: string;
+}> {
+  const { data: cliente } = await db()
+    .from('clientes')
+    .select('codigo')
+    .eq('id', clienteId)
+    .single();
+
+  const codigoCliente = (cliente?.codigo as string) ?? 'SIN-CODIGO';
+
+  const { count } = await db()
+    .from('documentos')
+    .select('*', { count: 'exact', head: true })
+    .eq('cliente_id', clienteId)
+    .not('codigo_documento', 'is', null);
+
+  const secuencial = (count ?? 0) + 1;
+  const tipoSlug = slugificarTipo(tipo);
+  const codigoDoc = `${codigoCliente}-DOC-${String(secuencial).padStart(3, '0')}`;
+  const nombreArchivo = `${codigoDoc}-${tipoSlug}.pdf`;
+  const storagePath = `${codigoCliente}/${nombreArchivo}`;
+
+  return { codigo_documento: codigoDoc, nombre_archivo: nombreArchivo, storage_path: storagePath };
 }
 
 // ── Storage helpers ─────────────────────────────────────────────────────────

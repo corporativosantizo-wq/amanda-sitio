@@ -2,10 +2,11 @@
 // app/admin/documentos/upload/page.tsx
 // Subida masiva de PDFs con clasificación IA
 // Sube directo a Supabase Storage (bypasses Vercel 4.5MB body limit)
+// Requiere seleccionar cliente antes de subir
 // ============================================================================
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
@@ -21,6 +22,12 @@ interface FileEntry {
   storagePath?: string;
 }
 
+interface ClienteOption {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
 export default function UploadDocumentos() {
   const [step, setStep] = useState<'select' | 'processing' | 'done'>('select');
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -29,6 +36,87 @@ export default function UploadDocumentos() {
   const [currentIdx, setCurrentIdx] = useState(-1);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Client selector state
+  const [clienteQuery, setClienteQuery] = useState('');
+  const [clienteResults, setClienteResults] = useState<ClienteOption[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<ClienteOption | null>(null);
+  const [searchingClientes, setSearchingClientes] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [codePreview, setCodePreview] = useState<string | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Search clients as user types
+  useEffect(() => {
+    if (!clienteQuery.trim() || clienteQuery.length < 2) {
+      setClienteResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearchingClientes(true);
+      try {
+        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(clienteQuery)}&limit=8&activo=true`);
+        const data = await res.json();
+        const results = (data.data ?? []).map((c: any) => ({
+          id: c.id,
+          codigo: c.codigo ?? '',
+          nombre: c.nombre ?? '',
+        }));
+        setClienteResults(results);
+        setShowDropdown(results.length > 0);
+      } catch {
+        setClienteResults([]);
+      } finally {
+        setSearchingClientes(false);
+      }
+    }, 300);
+
+    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
+  }, [clienteQuery]);
+
+  // Fetch code preview when client is selected
+  useEffect(() => {
+    if (!selectedCliente) {
+      setCodePreview(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/documentos/preview-code?cliente_id=${selectedCliente.id}`);
+        const data = await res.json();
+        if (res.ok) setCodePreview(data.codigo_documento);
+      } catch {
+        setCodePreview(null);
+      }
+    })();
+  }, [selectedCliente]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectCliente = (c: ClienteOption) => {
+    setSelectedCliente(c);
+    setClienteQuery(`${c.codigo} — ${c.nombre}`);
+    setShowDropdown(false);
+  };
+
+  const clearCliente = () => {
+    setSelectedCliente(null);
+    setClienteQuery('');
+    setCodePreview(null);
+  };
 
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -87,7 +175,7 @@ export default function UploadDocumentos() {
   };
 
   const startUpload = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || !selectedCliente) return;
     setStep('processing');
     setUploading(true);
     setGlobalError(null);
@@ -157,6 +245,7 @@ export default function UploadDocumentos() {
             storage_path: u.storage_path,
             filename: u.filename,
             filesize: u.filesize,
+            cliente_id: selectedCliente.id,
           })),
         }),
       });
@@ -251,6 +340,8 @@ export default function UploadDocumentos() {
     error: { icon: '✗', color: '#dc2626', text: 'Error' },
   };
 
+  const canUpload = files.length > 0 && selectedCliente !== null;
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -260,13 +351,89 @@ export default function UploadDocumentos() {
         </Link>
         <h1 className="text-xl font-bold text-slate-900 mt-2">Subir documentos</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Arrastre archivos PDF para clasificarlos automáticamente con IA
+          Seleccione el cliente, arrastre archivos PDF y clasifíquelos automáticamente con IA
         </p>
       </div>
 
-      {/* Step 1: Selección de archivos */}
+      {/* Step 1: Selección de cliente y archivos */}
       {step === 'select' && (
         <>
+          {/* Client selector */}
+          <div className="mb-6 bg-white rounded-xl border border-slate-200 p-5">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Cliente asociado <span className="text-red-500">*</span>
+            </label>
+            <div className="relative" ref={dropdownRef}>
+              {selectedCliente ? (
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-[#1E40AF] to-[#0891B2] text-white text-xs font-bold">
+                      {selectedCliente.codigo.slice(0, 3)}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{selectedCliente.nombre}</p>
+                      <p className="text-xs text-slate-500">{selectedCliente.codigo}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={clearCliente}
+                    className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                    title="Cambiar cliente"
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={clienteQuery}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setClienteQuery(e.target.value)}
+                    onFocus={() => { if (clienteResults.length > 0) setShowDropdown(true); }}
+                    placeholder="Buscar cliente por nombre, código o NIT..."
+                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0891B2] focus:border-transparent"
+                  />
+                  {searchingClientes && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-slate-300 border-t-[#0891B2] rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Dropdown results */}
+              {showDropdown && !selectedCliente && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {clienteResults.map((c: ClienteOption) => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectCliente(c)}
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0"
+                    >
+                      <p className="text-sm font-medium text-slate-900">{c.nombre}</p>
+                      <p className="text-xs text-slate-500">{c.codigo}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Code preview */}
+            {codePreview && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>
+                  Siguiente código: <strong className="text-slate-700">{codePreview}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Drop zone */}
           <div
             onDrop={handleDrop}
             onDragOver={(e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }}
@@ -327,9 +494,14 @@ export default function UploadDocumentos() {
                 <span className="text-sm text-slate-500">{files.length} archivo{files.length !== 1 ? 's' : ''}</span>
                 <button
                   onClick={startUpload}
-                  className="px-5 py-2 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg transition-all"
+                  disabled={!canUpload}
+                  className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${
+                    canUpload
+                      ? 'bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white hover:shadow-lg'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
-                  Subir y clasificar
+                  {!selectedCliente ? 'Seleccione un cliente primero' : 'Subir y clasificar'}
                 </button>
               </div>
             </div>

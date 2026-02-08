@@ -9,7 +9,7 @@ import { crearDocumento, DocumentoError } from '@/lib/services/documentos.servic
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const files: { storage_path: string; filename: string; filesize: number }[] = body.files;
+    const files: { storage_path: string; filename: string; filesize: number; cliente_id?: string }[] = body.files;
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return NextResponse.json(
@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
           archivo_url: f.storage_path,
           nombre_archivo: f.filename,
           archivo_tamano: f.filesize ?? 0,
+          cliente_id: f.cliente_id ?? null,
+          nombre_original: f.filename,
         });
         documentos.push(doc);
       } catch (err: any) {
