@@ -110,39 +110,56 @@ export async function POST(req: NextRequest) {
     const db = createAdminClient();
     let clienteId: string;
 
-    const { data: existing } = await db
+    console.log(`[Agendar] Buscando cliente con email: ${email.trim()}`);
+    const { data: existing, error: lookupErr } = await db
       .from('clientes')
       .select('id')
       .ilike('email', email.trim())
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (lookupErr) {
+      console.error('[Agendar] Error al buscar cliente:', JSON.stringify(lookupErr));
+    }
 
     if (existing) {
       clienteId = existing.id;
+      console.log(`[Agendar] Cliente existente encontrado: ${clienteId}`);
     } else {
+      console.log('[Agendar] Cliente no encontrado, creando nuevo...');
       const codigo = `CLI-${Date.now().toString(36).toUpperCase()}`;
+
+      // Columns must match legal.clientes table:
+      //   tipo (legal.tipo_persona enum: 'persona'|'empresa'), activo (bool)
+      //   No 'empresa' or 'tipo_persona' or 'estado' columns
+      const insertPayload = {
+        codigo,
+        tipo: 'persona',
+        nombre: nombre.trim(),
+        email: email.trim().toLowerCase(),
+        telefono: telefono.trim(),
+        nit: 'CF',
+        notas: empresa?.trim() ? `Empresa: ${empresa.trim()}` : null,
+        fuente: 'web-agendar',
+        activo: true,
+      };
+      console.log('[Agendar] INSERT payload:', JSON.stringify(insertPayload));
+
       const { data: nuevo, error: createErr } = await db
         .from('clientes')
-        .insert({
-          codigo,
-          nombre: nombre.trim(),
-          email: email.trim().toLowerCase(),
-          telefono: telefono.trim(),
-          empresa: empresa?.trim() || null,
-          tipo_persona: 'individual',
-          estado: 'activo',
-        })
+        .insert(insertPayload)
         .select('id')
         .single();
 
       if (createErr) {
-        console.error('[Agendar] Error al crear cliente:', createErr);
+        console.error('[Agendar] ERROR al crear cliente:', JSON.stringify(createErr));
         return NextResponse.json(
           { error: 'Error al procesar datos del cliente.' },
           { status: 500 }
         );
       }
       clienteId = nuevo.id;
+      console.log(`[Agendar] Cliente creado: ${clienteId}`);
     }
 
     // Build title
@@ -150,6 +167,7 @@ export async function POST(req: NextRequest) {
     const titulo = `${tipoLabel} — ${nombre.trim()}`;
 
     // Create cita (handles Outlook event + confirmation email automatically)
+    console.log(`[Agendar] Creando cita: ${titulo} — ${fecha} ${matchedSlot.hora_inicio}-${matchedSlot.hora_fin}`);
     const cita = await crearCita({
       tipo: tipoCita,
       titulo,
@@ -163,7 +181,7 @@ export async function POST(req: NextRequest) {
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
     });
 
-    console.log(`[Agendar] Cita creada: ${cita.id} — ${titulo} — ${fecha} ${matchedSlot.hora_inicio}`);
+    console.log(`[Agendar] Cita creada OK: ${cita.id}, teams_link=${cita.teams_link ? 'sí' : 'no'}`);
 
     return NextResponse.json(
       {
