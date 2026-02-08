@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { PDFDocument } from 'pdf-lib';
 import {
   descargarPDF,
   clasificarDocumento,
@@ -108,25 +109,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Paso 2: Descargar PDF de Storage
+    // Paso 2: Descargar PDF de Storage y extraer primeras 3 páginas
     console.log(`[Classify] Paso 2: Descargando PDF de Storage: ${doc.archivo_url}`);
-    let pdfBuffer: Buffer;
+    let base64: string;
     try {
-      pdfBuffer = await descargarPDF(doc.archivo_url);
-      console.log(`[Classify] PDF descargado OK: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+      const fullBuffer = await descargarPDF(doc.archivo_url);
+      console.log(`[Classify] PDF descargado OK: ${(fullBuffer.length / 1024).toFixed(0)} KB`);
+
+      // Extract only first 3 pages to reduce payload for Claude
+      const MAX_PAGES = 3;
+      const srcDoc = await PDFDocument.load(fullBuffer);
+      const totalPages = srcDoc.getPageCount();
+      console.log(`[Classify] PDF tiene ${totalPages} página(s)`);
+
+      if (totalPages > MAX_PAGES) {
+        const trimmedDoc = await PDFDocument.create();
+        const pages = await trimmedDoc.copyPages(srcDoc, [0, 1, 2].filter((i: number) => i < totalPages));
+        for (const page of pages) trimmedDoc.addPage(page);
+        const trimmedBytes = await trimmedDoc.save();
+        base64 = Buffer.from(trimmedBytes).toString('base64');
+        console.log(`[Classify] PDF recortado a ${MAX_PAGES} páginas: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
+      } else {
+        base64 = fullBuffer.toString('base64');
+      }
     } catch (dlErr: any) {
       const detail = dlErr instanceof DocumentoError
         ? `${dlErr.message} — ${JSON.stringify(dlErr.details)}`
         : (dlErr.message ?? 'desconocido');
-      console.error(`[Classify] Error al descargar PDF:`, detail, dlErr);
+      console.error(`[Classify] Error al descargar/procesar PDF:`, detail, dlErr);
       return NextResponse.json(
         { error: `No se pudo descargar el PDF de Storage: ${detail}` },
         { status: 500 }
       );
     }
-
-    const base64 = pdfBuffer.toString('base64');
-    console.log(`[Classify] Base64 generado: ${(base64.length / 1024).toFixed(0)} KB`);
 
     // Paso 3: Llamar a Claude
     console.log(`[Classify] Paso 3: Enviando a Claude API...`);

@@ -1,11 +1,14 @@
 // ============================================================================
 // app/admin/documentos/upload/page.tsx
 // Subida masiva de PDFs con clasificación IA
+// Sube directo a Supabase Storage (bypasses Vercel 4.5MB body limit)
 // ============================================================================
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 interface FileEntry {
   id: string;
@@ -15,6 +18,7 @@ interface FileEntry {
   status: 'pendiente' | 'subiendo' | 'analizando' | 'clasificado' | 'error';
   resultado?: any;
   error?: string;
+  storagePath?: string;
 }
 
 export default function UploadDocumentos() {
@@ -33,17 +37,34 @@ export default function UploadDocumentos() {
   };
 
   const addFiles = useCallback((fileList: FileList | File[]) => {
-    const newFiles: FileEntry[] = Array.from(fileList)
-      .filter((f: File) => f.type === 'application/pdf')
-      .slice(0, 20)
-      .map((f: File) => ({
+    const newFiles: FileEntry[] = [];
+    const rejected: string[] = [];
+
+    for (const f of Array.from(fileList)) {
+      if (f.type !== 'application/pdf') {
+        rejected.push(`${f.name}: no es un PDF.`);
+        continue;
+      }
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 20MB.`);
+        continue;
+      }
+      newFiles.push({
         id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
         file: f,
         nombre: f.name,
         tamano: formatSize(f.size),
         status: 'pendiente' as const,
-      }));
-    setFiles((prev: FileEntry[]) => [...prev, ...newFiles].slice(0, 20));
+      });
+    }
+
+    if (rejected.length > 0) {
+      setGlobalError(rejected.join('\n'));
+    }
+
+    if (newFiles.length > 0) {
+      setFiles((prev: FileEntry[]) => [...prev, ...newFiles].slice(0, 20));
+    }
   }, []);
 
   const handleDrop = useCallback(
@@ -71,89 +92,129 @@ export default function UploadDocumentos() {
     setUploading(true);
     setGlobalError(null);
 
-    // Paso 1: Subir todos los PDFs
-    const formData = new FormData();
-    for (const f of files) {
-      formData.append('archivos', f.file);
+    // Paso 1: Subir cada PDF directo a Supabase Storage via signed URL
+    const uploaded: { id: string; storage_path: string; filename: string; filesize: number; docId?: string }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setCurrentIdx(i);
       updateFile(f.id, { status: 'subiendo' });
+
+      try {
+        // 1a. Get signed upload URL from API
+        const urlRes = await fetch('/api/admin/documentos/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: f.file.name, filesize: f.file.size }),
+        });
+
+        const urlData = await urlRes.json();
+        if (!urlRes.ok) {
+          updateFile(f.id, { status: 'error', error: urlData.error ?? `Error HTTP ${urlRes.status}` });
+          continue;
+        }
+
+        // 1b. Upload directly to Supabase Storage (no Vercel body limit)
+        const uploadRes = await fetch(urlData.signed_url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/pdf' },
+          body: f.file,
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text().catch(() => '');
+          updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${errText.slice(0, 200)}` });
+          continue;
+        }
+
+        uploaded.push({
+          id: f.id,
+          storage_path: urlData.storage_path,
+          filename: f.file.name,
+          filesize: f.file.size,
+        });
+        updateFile(f.id, { storagePath: urlData.storage_path });
+      } catch (err: any) {
+        updateFile(f.id, { status: 'error', error: `Error de conexión: ${err.message ?? 'desconocido'}` });
+      }
     }
 
-    let uploadedDocs: any[] = [];
+    if (uploaded.length === 0) {
+      setGlobalError('Ningún archivo se subió correctamente.');
+      setUploading(false);
+      setStep('done');
+      return;
+    }
+
+    // Paso 2: Registrar documentos en BD (metadata only — tiny JSON payload)
+    let registeredDocs: any[] = [];
     try {
-      const res = await fetch('/api/admin/documentos/upload', {
+      const regRes = await fetch('/api/admin/documentos/upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: uploaded.map((u: any) => ({
+            storage_path: u.storage_path,
+            filename: u.filename,
+            filesize: u.filesize,
+          })),
+        }),
       });
 
-      // Leer body como texto primero (evita bug de body-consumed)
-      const rawText = await res.text();
-      let data: any;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        setGlobalError(`Error del servidor (HTTP ${res.status}): respuesta no es JSON — ${rawText.slice(0, 300)}`);
-        for (const f of files) updateFile(f.id, { status: 'error', error: `HTTP ${res.status}: respuesta inválida` });
+      const regData = await regRes.json();
+      if (!regRes.ok) {
+        setGlobalError(`Error al registrar: ${regData.error ?? 'desconocido'}`);
+        for (const u of uploaded) updateFile(u.id, { status: 'error', error: 'Error al registrar en BD' });
         setUploading(false);
+        setStep('done');
         return;
       }
 
-      if (!res.ok) {
-        const errorMsg = data.error ?? `Error HTTP ${res.status}`;
-        setGlobalError(`Error al subir: ${errorMsg}`);
-        for (const f of files) updateFile(f.id, { status: 'error', error: errorMsg });
-        setUploading(false);
-        return;
+      registeredDocs = regData.documentos ?? [];
+
+      // Match registered docs back to files
+      for (const doc of registeredDocs) {
+        const match = uploaded.find((u: any) => u.filename === doc.nombre_archivo);
+        if (match) {
+          match.docId = doc.id;
+          updateFile(match.id, { resultado: doc, status: 'analizando' });
+        }
       }
 
-      uploadedDocs = data.documentos ?? [];
-
-      // Mapear documentos subidos a archivos por nombre
-      for (const doc of uploadedDocs) {
-        const match = files.find((f: FileEntry) => f.nombre === doc.nombre_archivo);
-        if (match) updateFile(match.id, { resultado: doc, status: 'analizando' });
-      }
-
-      // Marcar errores de subida
-      for (const err of data.errores ?? []) {
+      for (const err of regData.errores ?? []) {
         const fileName = err.split(':')[0]?.trim();
         const match = files.find((f: FileEntry) => f.nombre === fileName);
         if (match) updateFile(match.id, { status: 'error', error: err });
       }
-
-      if (uploadedDocs.length === 0 && (data.errores ?? []).length > 0) {
-        setGlobalError(`Ningún archivo se subió correctamente. Errores: ${(data.errores ?? []).join('; ')}`);
-      }
     } catch (connErr: any) {
-      const errorMsg = `Error de conexión: ${connErr.message ?? 'No se pudo conectar al servidor'}`;
-      setGlobalError(errorMsg);
-      for (const f of files) updateFile(f.id, { status: 'error', error: errorMsg });
+      setGlobalError(`Error de conexión: ${connErr.message ?? 'desconocido'}`);
+      for (const u of uploaded) updateFile(u.id, { status: 'error', error: 'Error de conexión' });
       setUploading(false);
+      setStep('done');
       return;
     }
 
-    // Paso 2: Clasificar uno por uno
-    for (let i = 0; i < uploadedDocs.length; i++) {
-      const doc = uploadedDocs[i];
-      const match = files.find((f: FileEntry) => f.nombre === doc.nombre_archivo);
-      if (!match) continue;
+    // Paso 3: Clasificar uno por uno
+    for (let i = 0; i < uploaded.length; i++) {
+      const u = uploaded[i];
+      if (!u.docId) continue;
 
       setCurrentIdx(i);
-      updateFile(match.id, { status: 'analizando' });
+      updateFile(u.id, { status: 'analizando' });
 
       try {
         const res = await fetch('/api/admin/documentos/classify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ documento_id: doc.id }),
+          body: JSON.stringify({ documento_id: u.docId }),
         });
 
-        // Leer body como texto primero (evita bug de body-consumed)
         const rawClassify = await res.text();
         let result: any;
         try {
           result = JSON.parse(rawClassify);
         } catch {
-          updateFile(match.id, {
+          updateFile(u.id, {
             status: 'error',
             error: `Respuesta inválida del clasificador (HTTP ${res.status}): ${rawClassify.slice(0, 200)}`,
           });
@@ -161,16 +222,16 @@ export default function UploadDocumentos() {
         }
 
         if (res.ok) {
-          updateFile(match.id, { status: 'clasificado', resultado: result.documento });
+          updateFile(u.id, { status: 'clasificado', resultado: result.documento });
         } else {
-          updateFile(match.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
+          updateFile(u.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
         }
       } catch (classErr: any) {
-        updateFile(match.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
+        updateFile(u.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
       }
 
       // Delay 1s entre documentos
-      if (i < uploadedDocs.length - 1) {
+      if (i < uploaded.length - 1) {
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
@@ -331,7 +392,7 @@ export default function UploadDocumentos() {
                 <div key={f.id} className="flex items-center justify-between px-5 py-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <span style={{ color: s.color }} className="text-lg font-bold w-5 text-center">
-                      {f.status === 'analizando' ? (
+                      {(f.status === 'analizando' || f.status === 'subiendo') ? (
                         <span className="inline-block w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
                       ) : (
                         s.icon
@@ -364,7 +425,7 @@ export default function UploadDocumentos() {
           {step === 'done' && (
             <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
               <button
-                onClick={() => { setStep('select'); setFiles([]); }}
+                onClick={() => { setStep('select'); setFiles([]); setGlobalError(null); }}
                 className="px-4 py-2 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
               >
                 Subir más archivos

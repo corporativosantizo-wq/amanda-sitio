@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "app/api/admin/documentos/classify/route.ts": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/recordatorios",
