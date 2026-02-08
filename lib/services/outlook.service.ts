@@ -254,6 +254,7 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 
   const result = await client
     .api('/me/calendarView')
+    .header('Prefer', 'outlook.timezone="America/Guatemala"')
     .query({
       startDateTime: startDate,
       endDateTime: endDate,

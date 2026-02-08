@@ -12,7 +12,7 @@ import Link from 'next/link';
 
 interface CitaItem {
   id: string;
-  tipo: 'consulta_nueva' | 'seguimiento';
+  tipo: 'consulta_nueva' | 'seguimiento' | 'outlook';
   titulo: string;
   descripcion: string | null;
   fecha: string;
@@ -24,6 +24,7 @@ interface CitaItem {
   teams_link: string | null;
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
+  _source?: 'outlook';
 }
 
 interface SlotItem {
@@ -44,6 +45,7 @@ interface ClienteOption {
 const TIPO_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   consulta_nueva: { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-800' },
   seguimiento: { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-800' },
+  outlook: { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-800' },
 };
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
@@ -52,6 +54,7 @@ const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   completada: { label: 'Completada', color: 'bg-green-100 text-green-800' },
   cancelada: { label: 'Cancelada', color: 'bg-red-100 text-red-700' },
   no_asistio: { label: 'No asistió', color: 'bg-gray-100 text-gray-700' },
+  outlook: { label: 'Outlook', color: 'bg-purple-100 text-purple-700' },
 };
 
 const HORAS = Array.from({ length: 23 }, (_, i) => {
@@ -334,7 +337,12 @@ function WeekView({
             <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
             {weekDays.map((d: Date, di: number) => {
               const dateStr = formatDate(d);
-              const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => c.hora_inicio === hora);
+              const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
+                // Snap to nearest 30-min slot for matching
+                const [ch, cm] = c.hora_inicio.split(':').map(Number);
+                const snapped = `${String(ch).padStart(2, '0')}:${cm < 30 ? '00' : '30'}`;
+                return snapped === hora;
+              });
 
               return (
                 <div
@@ -353,7 +361,7 @@ function WeekView({
                       >
                         <div className="font-medium truncate">{cita.titulo}</div>
                         <div className="text-[10px] opacity-70 truncate">
-                          {cita.cliente?.nombre ?? 'Sin cliente'}
+                          {cita.cliente?.nombre ?? (cita._source === 'outlook' ? `${cita.hora_inicio}` : 'Sin cliente')}
                         </div>
                       </div>
                     );
@@ -409,7 +417,7 @@ function DayView({
                 <p className="text-sm text-gray-500 mt-1">
                   {formatHora12(cita.hora_inicio)} — {formatHora12(cita.hora_fin)}
                   <span className="mx-2">|</span>
-                  {cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento'}
+                  {cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : cita.tipo === 'seguimiento' ? 'Seguimiento' : 'Outlook'}
                 </p>
                 {cita.cliente && (
                   <p className="text-sm text-gray-600 mt-1">{cita.cliente.nombre}</p>
@@ -451,7 +459,8 @@ function DetailModal({
   onAction: (id: string, accion: 'completar' | 'cancelar') => void;
 }) {
   const estado = ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente;
-  const activo = cita.estado === 'pendiente' || cita.estado === 'confirmada';
+  const isOutlook = cita._source === 'outlook';
+  const activo = !isOutlook && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -471,7 +480,7 @@ function DetailModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <span className="text-xs text-gray-500 uppercase">Tipo</span>
-              <p className="font-medium">{cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento'}</p>
+              <p className="font-medium">{cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : cita.tipo === 'seguimiento' ? 'Seguimiento' : 'Outlook'}</p>
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Estado</span>
