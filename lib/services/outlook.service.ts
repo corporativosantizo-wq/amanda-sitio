@@ -447,7 +447,61 @@ export async function getFreeBusy(startDate: string, endDate: string): Promise<B
     }));
 }
 
-// ── Send Email ──────────────────────────────────────────────────────────────
+// ── App Token (client_credentials) — used for Mail.Send ─────────────────────
+
+let appTokenCache: { token: string; expiresAt: number } | null = null;
+
+async function getAppToken(): Promise<string> {
+  // Return cached token if still valid (with 5-min buffer)
+  if (appTokenCache && appTokenCache.expiresAt > Date.now() + 5 * 60 * 1000) {
+    console.log(`[getAppToken] Usando token cacheado, expira en ${Math.round((appTokenCache.expiresAt - Date.now()) / 60000)} min`);
+    return appTokenCache.token;
+  }
+
+  const tenantId = process.env.AZURE_TENANT_ID;
+  const clientId = process.env.AZURE_CLIENT_ID;
+  const clientSecret = process.env.AZURE_CLIENT_SECRET;
+
+  if (!tenantId || !clientId || !clientSecret) {
+    throw new OutlookError('Faltan variables AZURE_TENANT_ID, AZURE_CLIENT_ID o AZURE_CLIENT_SECRET');
+  }
+
+  console.log(`[getAppToken] Solicitando nuevo token de aplicación...`);
+
+  const res = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials',
+      }),
+    }
+  );
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    console.error(`[getAppToken] ERROR ${res.status}: ${text.substring(0, 500)}`);
+    throw new OutlookError(`Error al obtener app token: ${res.status}`, text);
+  }
+
+  const data = JSON.parse(text);
+  const expiresIn = data.expires_in ?? 3600;
+
+  appTokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+
+  console.log(`[getAppToken] Token obtenido OK, expira en ${expiresIn}s`);
+  return data.access_token;
+}
+
+// ── Send Email (app permissions — client_credentials) ───────────────────────
 
 export type MailboxAlias = 'asistente@papeleo.legal' | 'contador@papeleo.legal' | 'amanda@papeleo.legal';
 
@@ -464,11 +518,12 @@ export async function sendMail(params: {
   console.log(`[sendMail] subject: ${params.subject}`);
   console.log(`[sendMail] htmlBody length: ${params.htmlBody.length} chars`);
 
-  const client = await getGraphClient();
-  console.log(`[sendMail] Graph client obtenido OK`);
+  // Use app token (client_credentials) — NOT the delegated user token
+  const appToken = await getAppToken();
+  console.log(`[sendMail] App token obtenido OK`);
 
-  const endpoint = `/users/${params.from}/sendMail`;
-  console.log(`[sendMail] Endpoint: POST ${endpoint}`);
+  const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
+  console.log(`[sendMail] POST ${url}`);
 
   const payload = {
     message: {
@@ -479,17 +534,24 @@ export async function sendMail(params: {
     saveToSentItems: true,
   };
 
-  try {
-    await client.api(endpoint).post(payload);
-    console.log(`[sendMail] ── ÉXITO — email enviado ──`);
-  } catch (err: any) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${appToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
     console.error(`[sendMail] ── ERROR ──`);
-    console.error(`[sendMail] statusCode: ${err.statusCode ?? 'N/A'}`);
-    console.error(`[sendMail] code: ${err.code ?? 'N/A'}`);
-    console.error(`[sendMail] message: ${err.message ?? 'N/A'}`);
-    console.error(`[sendMail] body: ${JSON.stringify(err.body ?? err).substring(0, 500)}`);
-    throw err;
+    console.error(`[sendMail] status: ${res.status}`);
+    console.error(`[sendMail] body: ${errBody.substring(0, 500)}`);
+    throw new OutlookError(`Error al enviar email: ${res.status}`, errBody);
   }
+
+  console.log(`[sendMail] ── ÉXITO — email enviado (${res.status}) ──`);
 }
 
 /** @deprecated Use sendMail() with explicit `from` parameter instead */
