@@ -4,7 +4,7 @@
 // ============================================================================
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch } from '@/lib/hooks/use-fetch';
@@ -35,6 +35,18 @@ const ESTADO_COLORS: Record<string, { bg: string; text: string }> = {
   clasificado: { bg: 'bg-purple-50', text: 'text-purple-700' },
   aprobado: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
   rechazado: { bg: 'bg-red-50', text: 'text-red-700' },
+};
+
+const TIPO_COLORS: Record<string, { bg: string; text: string }> = {
+  escritura_publica: { bg: 'bg-blue-50', text: 'text-blue-700' },
+  acta_notarial: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  contrato_comercial: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  contrato_laboral: { bg: 'bg-teal-50', text: 'text-teal-700' },
+  resolucion_judicial: { bg: 'bg-amber-50', text: 'text-amber-700' },
+  demanda_memorial: { bg: 'bg-red-50', text: 'text-red-700' },
+  poder: { bg: 'bg-indigo-50', text: 'text-indigo-700' },
+  testimonio: { bg: 'bg-cyan-50', text: 'text-cyan-700' },
+  otro: { bg: 'bg-slate-100', text: 'text-slate-600' },
 };
 
 const TABS = [
@@ -70,6 +82,22 @@ interface Carpeta {
   total_docs: number;
 }
 
+interface BuscarDocItem {
+  id: string;
+  titulo: string | null;
+  tipo: string | null;
+  nombre_archivo: string;
+  nombre_original: string | null;
+  fecha_documento: string | null;
+  numero_documento: string | null;
+  cliente_id: string | null;
+  cliente_nombre: string | null;
+  archivo_url: string | null;
+  paginas: number | null;
+  relevancia: number | null;
+  created_at: string;
+}
+
 export default function DocumentosPage() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('estado') ?? 'carpetas';
@@ -83,6 +111,21 @@ export default function DocumentosPage() {
   const [processing, setProcessing] = useState<Set<string>>(new Set());
   const [clientes, setClientes] = useState<any[]>([]);
   const [editingCliente, setEditingCliente] = useState<string | null>(null);
+
+  // Global search state
+  const [vista, setVista] = useState<'tabs' | 'busqueda'>('tabs');
+  const [busquedaQuery, setBusquedaQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [busquedaTipo, setBusquedaTipo] = useState('');
+  const [busquedaCliente, setBusquedaCliente] = useState('');
+  const [busquedaClienteNombre, setBusquedaClienteNombre] = useState('');
+  const [busquedaClienteQuery, setBusquedaClienteQuery] = useState('');
+  const [showClienteDropdown, setShowClienteDropdown] = useState(false);
+  const [busquedaFechaDesde, setBusquedaFechaDesde] = useState('');
+  const [busquedaFechaHasta, setBusquedaFechaHasta] = useState('');
+  const [busquedaPage, setBusquedaPage] = useState(1);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const clienteDropdownRef = useRef<HTMLDivElement>(null);
 
   // Transcription state
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
@@ -138,6 +181,76 @@ export default function DocumentosPage() {
       }
     }
   }, [initialCarpeta, clientes]);
+
+  // Debounce search query (300ms)
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      setDebouncedQuery(busquedaQuery);
+      setBusquedaPage(1);
+    }, 300);
+    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
+  }, [busquedaQuery]);
+
+  // Close client dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (clienteDropdownRef.current && !clienteDropdownRef.current.contains(e.target as Node)) {
+        setShowClienteDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Build search URL
+  const busquedaParams = new URLSearchParams();
+  if (debouncedQuery) busquedaParams.set('q', debouncedQuery);
+  if (busquedaTipo) busquedaParams.set('tipo', busquedaTipo);
+  if (busquedaCliente) busquedaParams.set('cliente_id', busquedaCliente);
+  if (busquedaFechaDesde) busquedaParams.set('fecha_desde', busquedaFechaDesde);
+  if (busquedaFechaHasta) busquedaParams.set('fecha_hasta', busquedaFechaHasta);
+  busquedaParams.set('limite', '50');
+  busquedaParams.set('offset', String((busquedaPage - 1) * 50));
+
+  const hayFiltrosBusqueda = debouncedQuery || busquedaTipo || busquedaCliente || busquedaFechaDesde || busquedaFechaHasta;
+  const { data: busquedaData, loading: busquedaLoading } = useFetch<{
+    data: BuscarDocItem[];
+    page: number;
+    limit: number;
+    hasMore: boolean;
+    total: number;
+  }>(vista === 'busqueda' && hayFiltrosBusqueda ? `/api/admin/documentos/buscar?${busquedaParams}` : null);
+
+  const busquedaResults = busquedaData?.data ?? [];
+
+  // Filter clientes for dropdown
+  const clientesFiltrados = busquedaClienteQuery.length >= 1
+    ? clientes.filter((c: any) =>
+        c.nombre.toLowerCase().includes(busquedaClienteQuery.toLowerCase()) ||
+        (c.codigo ?? '').toLowerCase().includes(busquedaClienteQuery.toLowerCase())
+      ).slice(0, 8)
+    : [];
+
+  const verPDFBusqueda = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const d = await res.json();
+      if (d.signed_url) window.open(d.signed_url, '_blank');
+    } catch { /* ignore */ }
+  };
+
+  const limpiarBusqueda = () => {
+    setBusquedaQuery('');
+    setDebouncedQuery('');
+    setBusquedaTipo('');
+    setBusquedaCliente('');
+    setBusquedaClienteNombre('');
+    setBusquedaClienteQuery('');
+    setBusquedaFechaDesde('');
+    setBusquedaFechaHasta('');
+    setBusquedaPage(1);
+  };
 
   const aprobar = async (id: string, edits?: any) => {
     setProcessing((prev: Set<string>) => new Set([...prev, id]));
@@ -318,8 +431,36 @@ export default function DocumentosPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Documentos</h1>
-          {tab === 'carpetas' && carpetaAbierta ? (
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-slate-900">Documentos</h1>
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              <button
+                onClick={() => { setVista('tabs'); limpiarBusqueda(); }}
+                className={`p-1.5 rounded-md transition-all ${vista === 'tabs' ? 'bg-white shadow-sm text-[#1E40AF]' : 'text-slate-400 hover:text-slate-600'}`}
+                title="Vista de carpetas"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setVista('busqueda')}
+                className={`p-1.5 rounded-md transition-all ${vista === 'busqueda' ? 'bg-white shadow-sm text-[#1E40AF]' : 'text-slate-400 hover:text-slate-600'}`}
+                title="Buscar documentos"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {vista === 'busqueda' ? (
+            <p className="text-sm text-slate-500 mt-0.5">
+              {hayFiltrosBusqueda
+                ? `${busquedaResults.length}${busquedaData?.hasMore ? '+' : ''} resultado${busquedaResults.length !== 1 ? 's' : ''}`
+                : 'Buscar en todos los documentos'}
+            </p>
+          ) : tab === 'carpetas' && carpetaAbierta ? (
             <div className="flex items-center gap-1 text-sm text-slate-500 mt-0.5">
               <button onClick={() => setCarpetaAbierta(null)} className="hover:text-[#0891B2] transition-colors">
                 Documentos
@@ -345,8 +486,269 @@ export default function DocumentosPage() {
         </Link>
       </div>
 
+      {/* Search mode */}
+      {vista === 'busqueda' && (
+        <>
+          {/* Search bar */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <div className="relative">
+              <svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 -translate-y-1/2">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Buscar documentos por texto, titulo, cliente..."
+                value={busquedaQuery}
+                onChange={(e: any) => setBusquedaQuery(e.target.value)}
+                autoFocus
+                className="w-full pl-11 pr-4 py-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+              />
+              {busquedaQuery && (
+                <button
+                  onClick={() => { setBusquedaQuery(''); setDebouncedQuery(''); }}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Filters row */}
+            <div className="flex gap-3 flex-wrap items-end">
+              {/* Tipo dropdown */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-slate-500">Tipo</label>
+                <select
+                  value={busquedaTipo}
+                  onChange={(e: any) => { setBusquedaTipo(e.target.value); setBusquedaPage(1); }}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                >
+                  <option value="">Todos los tipos</option>
+                  {Object.entries(TIPOS).map(([k, v]: [string, string]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Cliente dropdown with search */}
+              <div className="flex flex-col gap-1 relative" ref={clienteDropdownRef}>
+                <label className="text-xs font-medium text-slate-500">Cliente</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={busquedaCliente ? busquedaClienteNombre : busquedaClienteQuery}
+                    onChange={(e: any) => {
+                      if (busquedaCliente) {
+                        setBusquedaCliente('');
+                        setBusquedaClienteNombre('');
+                        setBusquedaPage(1);
+                      }
+                      setBusquedaClienteQuery(e.target.value);
+                      setShowClienteDropdown(true);
+                    }}
+                    onFocus={() => { if (busquedaClienteQuery.length >= 1) setShowClienteDropdown(true); }}
+                    className="w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                  />
+                  {busquedaCliente && (
+                    <button
+                      onClick={() => {
+                        setBusquedaCliente('');
+                        setBusquedaClienteNombre('');
+                        setBusquedaClienteQuery('');
+                        setBusquedaPage(1);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {showClienteDropdown && clientesFiltrados.length > 0 && (
+                  <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                    {clientesFiltrados.map((c: any) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setBusquedaCliente(c.id);
+                          setBusquedaClienteNombre(`${c.codigo} — ${c.nombre}`);
+                          setBusquedaClienteQuery('');
+                          setShowClienteDropdown(false);
+                          setBusquedaPage(1);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                      >
+                        <span className="font-medium text-slate-700">{c.codigo}</span>
+                        <span className="text-slate-500 ml-1.5">{c.nombre}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Date range */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-slate-500">Desde</label>
+                <input
+                  type="date"
+                  value={busquedaFechaDesde}
+                  onChange={(e: any) => { setBusquedaFechaDesde(e.target.value); setBusquedaPage(1); }}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-slate-500">Hasta</label>
+                <input
+                  type="date"
+                  value={busquedaFechaHasta}
+                  onChange={(e: any) => { setBusquedaFechaHasta(e.target.value); setBusquedaPage(1); }}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                />
+              </div>
+
+              {hayFiltrosBusqueda && (
+                <button
+                  onClick={limpiarBusqueda}
+                  className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Search results */}
+          {!hayFiltrosBusqueda ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
+              <svg width="48" height="48" fill="none" stroke="#d1d5db" viewBox="0 0 24 24" className="mx-auto mb-3">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <p className="text-sm text-slate-500">Escribe un texto o selecciona un filtro para buscar documentos.</p>
+            </div>
+          ) : busquedaLoading ? (
+            <div className="bg-white rounded-xl p-10 text-center">
+              <div className="w-8 h-8 border-3 border-slate-200 border-t-[#0891B2] rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-400">Buscando documentos...</p>
+            </div>
+          ) : busquedaResults.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
+              <svg width="48" height="48" fill="none" stroke="#d1d5db" viewBox="0 0 24 24" className="mx-auto mb-3">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <p className="text-sm text-slate-500">No se encontraron documentos con esos criterios.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200">
+                      {['Titulo', 'Tipo', 'Cliente', 'Fecha', 'No. Documento', ''].map((h: string) => (
+                        <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {busquedaResults.map((doc: BuscarDocItem) => {
+                      const tipoColor = TIPO_COLORS[doc.tipo ?? ''] ?? TIPO_COLORS.otro;
+                      return (
+                        <tr
+                          key={doc.id}
+                          className="hover:bg-slate-50/50 transition-colors"
+                        >
+                          <td className="py-3 px-4 pl-5 text-sm text-slate-900 max-w-[300px]">
+                            <div className="truncate font-medium">
+                              <span className="mr-1.5">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
+                              {doc.titulo ?? doc.nombre_archivo}
+                            </div>
+                            {doc.nombre_original && doc.titulo && (
+                              <p className="text-xs text-slate-400 truncate mt-0.5">{doc.nombre_original}</p>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            {doc.tipo ? (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${tipoColor.bg} ${tipoColor.text}`}>
+                                {TIPOS[doc.tipo] ?? doc.tipo}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-slate-600 max-w-[180px] truncate">
+                            {doc.cliente_nombre ?? '—'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-slate-500 whitespace-nowrap">
+                            {doc.fecha_documento
+                              ? new Date(doc.fecha_documento).toLocaleDateString('es-GT')
+                              : '—'}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-mono text-slate-600">
+                            {doc.numero_documento ?? '—'}
+                          </td>
+                          <td className="py-3 px-4 pr-5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => verPDFBusqueda(doc.id)}
+                                className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors whitespace-nowrap"
+                              >
+                                Abrir
+                              </button>
+                              {doc.archivo_url && (
+                                <a
+                                  href={doc.archivo_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
+                                >
+                                  Descargar
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {(busquedaData?.hasMore || busquedaPage > 1) && (
+                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+                  <p className="text-sm text-slate-500">
+                    Mostrando {((busquedaPage - 1) * 50) + 1}–{((busquedaPage - 1) * 50) + busquedaResults.length} resultados
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setBusquedaPage((p: number) => Math.max(1, p - 1))}
+                      disabled={busquedaPage <= 1}
+                      className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      &larr; Anterior
+                    </button>
+                    <button
+                      onClick={() => setBusquedaPage((p: number) => p + 1)}
+                      disabled={!busquedaData?.hasMore}
+                      className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      Siguiente &rarr;
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-1">
+      {vista === 'tabs' && <div className="flex gap-1">
         {TABS.map((t: any) => (
           <button
             key={t.key}
@@ -358,10 +760,10 @@ export default function DocumentosPage() {
             {t.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* Folder view */}
-      {tab === 'carpetas' && !carpetaAbierta && (
+      {vista === 'tabs' && tab === 'carpetas' && !carpetaAbierta && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {carpetas.length === 0 ? (
             <div className="p-10 text-center">
@@ -402,7 +804,7 @@ export default function DocumentosPage() {
       )}
 
       {/* Document list (inside folder or other tabs) */}
-      {shouldFetchDocs && (
+      {vista === 'tabs' && shouldFetchDocs && (
         <>
           {/* Filters */}
           {(tab !== 'carpetas' || carpetaAbierta) && (

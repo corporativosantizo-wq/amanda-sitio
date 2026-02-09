@@ -17,11 +17,6 @@ export interface EmailTemplate {
 
 const CUENTAS_BANCARIAS = [
   {
-    banco: 'Banco G&T Continental',
-    cuenta: '024-0024518-5',
-    titular: 'Invest & Jure-Advisor, S.A.',
-  },
-  {
     banco: 'Banco Industrial',
     cuenta: '455-008846-4',
     titular: 'Invest & Jure-Advisor, S.A.',

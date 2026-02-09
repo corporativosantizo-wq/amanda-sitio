@@ -100,63 +100,11 @@ Si un cliente pide una escritura de compraventa por Q150,000:
 - Cálculo: Q500 base + 3% de Q150,000 = Q500 + Q4,500 = Q5,000
 - Más IVA si aplica
 
-## CATÁLOGO DE SERVICIOS LEGALES — Tarifas del Bufete
+## CATÁLOGO DE SERVICIOS LEGALES
+**IMPORTANTE:** NO uses precios hardcodeados. SIEMPRE consulta el catálogo actualizado de la base de datos usando la herramienta consultar_catalogo con consulta="catalogo_servicios" antes de cotizar cualquier servicio. Los precios pueden cambiar y el catálogo de la BD es la fuente de verdad.
 
-### Consultas y Asesorías
-- Consulta legal simple (30 min): Q500
-- Consulta legal extendida (1 hora): Q1,200
-- Consulta legal especializada (derecho internacional, 1 hora): Q1,500
-- Asesoría empresarial básica (hasta 2 horas): Q2,400
-- Asesoría empresarial integral (paquete): Q6,000
-- Asesoría en comercio exterior: Q3,500
-- Asesoría en inversión extranjera: Q5,000
-- Due diligence legal: Q12,000
-- Segunda opinión legal: Q1,200
-
-### Contratos y Documentos
-- Redacción de contrato simple: Q3,500
-- Redacción de contrato complejo: Q8,000
-- Revisión de contrato: Q2,000
-- Contrato de compraventa de inmueble: Q7,500
-- Contrato de arrendamiento: Q3,000
-- Contrato de sociedad: Q10,000
-- Contrato de franquicia: Q12,000
-- Contrato de distribución: Q8,500
-- Contrato de confidencialidad (NDA): Q2,500
-- Contrato laboral: Q2,500
-- Poder general/especial: Q2,000
-- Testamento: según Art. 109 del Código de Notariado
-
-### Litigio Civil y Mercantil
-- Demanda civil ordinaria: Q12,000
-- Juicio ejecutivo: Q10,000
-- Juicio oral: Q8,500
-- Medidas cautelares: Q6,000
-- Recurso de apelación: Q7,500
-- Recurso de casación: Q12,000
-- Proceso arbitral (nacional): Q20,000
-- Proceso arbitral (internacional): Q40,000
-- Mediación y conciliación: Q5,000
-
-### Derecho Societario y Mercantil
-- Constitución de sociedad anónima: Q12,000
-- Constitución de SRL: Q10,000
-- Modificación de escritura social: Q6,000
-- Fusión o escisión de sociedades: Q20,000
-- Liquidación de sociedad: Q15,000
-- Inscripción en Registro Mercantil: Q3,500
-
-### Derecho Internacional
-- Apostilla y legalización: Q1,200
-- Exequátur: Q20,000
-- Arbitraje comercial internacional: Q40,000
-- Asesoría en tratados bilaterales de inversión: Q12,000
-- Protección de inversión extranjera: Q25,000
-
-### Propiedad Intelectual
-- Registro de marca: Q7,500
-- Registro de patente: Q12,000
-- Oposición a registro de marca: Q8,500
+## DATOS BANCARIOS Y CONFIGURACIÓN DEL DESPACHO
+**IMPORTANTE:** NO uses datos bancarios de memoria. SIEMPRE consulta la configuración del despacho usando consultar_catalogo con consulta="configuracion" para obtener los datos bancarios correctos, porcentaje de IVA, dirección y teléfono actualizados. El único banco autorizado actualmente es Banco Industrial — cuenta 455-008846-4 a nombre de Invest & Jure-Advisor, S.A.
 
 ## REGLAS FISCALES GUATEMALA
 - IVA: 12% (se incluye en el precio o se suma, según acuerdo con el cliente)
@@ -167,10 +115,12 @@ Si un cliente pide una escritura de compraventa por Q150,000:
 
 ## INSTRUCCIONES PARA COTIZACIONES
 Cuando te pidan una cotización:
-1. Para servicios NOTARIALES: calcula siempre usando el Art. 109 como mínimo
-2. Para servicios LEGALES no notariales: usa el catálogo del bufete
-3. Siempre indica si el IVA está incluido o se suma
-4. Formato:
+1. SIEMPRE ejecuta consultar_catalogo con consulta="catalogo_servicios" para obtener precios actualizados
+2. SIEMPRE ejecuta consultar_catalogo con consulta="configuracion" para obtener datos bancarios e IVA
+3. Para servicios NOTARIALES: calcula siempre usando el Art. 109 como mínimo
+4. Para servicios LEGALES no notariales: usa los precios del catálogo de la BD
+5. IVA (12%): SIEMPRE calcúlalo y muéstralo separado (subtotal + IVA = total)
+6. Formato para chat:
 
 ---
 COTIZACIÓN
@@ -186,7 +136,14 @@ Total: Q[total]
 
 Vigencia: 15 días
 Forma de pago: 50% anticipo, 50% al finalizar
+Cuenta para depósito: [datos de consultar_catalogo configuracion]
 ---
+
+7. Cuando envíes cotización por email (tipo=cotizacion), incluye en los servicios el IVA como línea separada o súmalo al total, según lo que Amanda indique.
+8. NUNCA inventes datos bancarios. Solo usa los que devuelve consultar_catalogo configuracion.
+
+## PLANTILLA DE RECORDATORIO DE AUDIENCIA
+Puedes consultar la plantilla de recordatorio de audiencia usando consultar_catalogo con consulta="plantilla_recordatorio_audiencia". Esto te da la estructura y campos disponibles para generar recordatorios con la herramienta generar_documento.
 
 ## PLANTILLAS DE DOCUMENTOS DISPONIBLES
 Puedes generar los siguientes documentos en formato Word (.docx) usando la herramienta generar_documento:
@@ -1072,6 +1029,90 @@ async function handleGestionarCobros(
   }
 }
 
+// ── Consultar catálogo, plantillas y configuración ────────────────────────
+
+async function handleConsultarCatalogo(
+  consulta: 'catalogo_servicios' | 'plantilla_cotizacion' | 'plantilla_recordatorio_audiencia' | 'configuracion',
+): Promise<string> {
+  const db = createAdminClient();
+
+  switch (consulta) {
+    case 'catalogo_servicios': {
+      const { data, error } = await db
+        .from('catalogo_servicios')
+        .select('codigo, categoria, servicio, precio_base, unidad, descripcion')
+        .eq('activo', true)
+        .order('categoria')
+        .order('servicio');
+      if (error) throw new Error(`Error consultando catálogo: ${error.message}`);
+      if (!data?.length) return 'No hay servicios activos en el catálogo.';
+      const byCategoria: Record<string, any[]> = {};
+      for (const s of data) {
+        const cat = s.categoria ?? 'Sin categoría';
+        if (!byCategoria[cat]) byCategoria[cat] = [];
+        byCategoria[cat].push(s);
+      }
+      let result = `Catálogo de servicios (${data.length} servicios activos):\n`;
+      for (const [cat, servicios] of Object.entries(byCategoria)) {
+        result += `\n### ${cat}\n`;
+        for (const s of servicios) {
+          result += `- **${s.servicio}** (${s.codigo}) — Q${Number(s.precio_base).toLocaleString('es-GT', { minimumFractionDigits: 2 })}${s.unidad ? ` / ${s.unidad}` : ''}${s.descripcion ? ` — ${s.descripcion}` : ''}\n`;
+        }
+      }
+      return result;
+    }
+
+    case 'plantilla_cotizacion': {
+      const { data, error } = await db
+        .from('plantillas')
+        .select('id, nombre, descripcion, campos, contenido')
+        .eq('tipo', 'cotizacion')
+        .eq('activa', true)
+        .limit(1)
+        .single();
+      if (error || !data) return 'No hay plantilla de cotización activa.';
+      return JSON.stringify({
+        id: data.id,
+        nombre: data.nombre,
+        descripcion: data.descripcion,
+        campos: data.campos,
+        contenido: data.contenido,
+      });
+    }
+
+    case 'plantilla_recordatorio_audiencia': {
+      const { data, error } = await db
+        .from('plantillas')
+        .select('id, nombre, descripcion, campos, contenido')
+        .eq('tipo', 'recordatorio_audiencia')
+        .eq('activa', true)
+        .limit(1)
+        .single();
+      if (error || !data) return 'No hay plantilla de recordatorio de audiencia activa.';
+      return JSON.stringify({
+        id: data.id,
+        nombre: data.nombre,
+        descripcion: data.descripcion,
+        campos: data.campos,
+        contenido: data.contenido,
+      });
+    }
+
+    case 'configuracion': {
+      const { data, error } = await db
+        .from('configuracion')
+        .select('banco, tipo_cuenta, numero_cuenta, cuenta_nombre, email_contador, iva_porcentaje, direccion_despacho, telefono_despacho')
+        .limit(1)
+        .single();
+      if (error || !data) return 'No se encontró configuración del despacho.';
+      return JSON.stringify(data);
+    }
+
+    default:
+      return `Consulta no reconocida: ${consulta}. Opciones: catalogo_servicios, plantilla_cotizacion, plantilla_recordatorio_audiencia, configuracion`;
+  }
+}
+
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -1296,6 +1337,21 @@ export async function POST(req: Request) {
           required: ['accion'],
         },
       },
+      {
+        name: 'consultar_catalogo',
+        description: 'Consulta el catálogo de servicios, plantillas de documentos y configuración del despacho desde la base de datos. SIEMPRE usa esta herramienta antes de generar cotizaciones para obtener precios actualizados y datos bancarios correctos.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            consulta: {
+              type: 'string',
+              enum: ['catalogo_servicios', 'plantilla_cotizacion', 'plantilla_recordatorio_audiencia', 'configuracion'],
+              description: 'Qué consultar: catalogo_servicios (precios y servicios del bufete), plantilla_cotizacion (estructura de cotización), plantilla_recordatorio_audiencia (plantilla para recordatorios), configuracion (datos bancarios, IVA, dirección del despacho).',
+            },
+          },
+          required: ['consulta'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -1365,6 +1421,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'gestionar_clientes') {
               const input = block.input as any;
               result = await handleGestionarClientes(input.accion, input.cliente_id, input.busqueda, input.datos ?? {});
+            } else if (block.name === 'consultar_catalogo') {
+              const input = block.input as any;
+              result = await handleConsultarCatalogo(input.consulta);
             } else if (block.name === 'transcribir_documento') {
               const input = block.input as any;
               if (input.accion === 'buscar_pendientes') {
