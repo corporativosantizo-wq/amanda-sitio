@@ -537,6 +537,7 @@ export async function sendMail(params: {
   to: string;
   subject: string;
   htmlBody: string;
+  attachments?: Array<{ name: string; contentType: string; contentBytes: string }>;
 }): Promise<void> {
   const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log(`[sendMail] ── INICIO ──`);
@@ -552,14 +553,23 @@ export async function sendMail(params: {
   const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
   console.log(`[sendMail] POST ${url}`);
 
-  const payload = {
-    message: {
-      subject: params.subject,
-      body: { contentType: 'HTML', content: params.htmlBody },
-      toRecipients: [{ emailAddress: { address: params.to } }],
-    },
-    saveToSentItems: true,
+  const message: any = {
+    subject: params.subject,
+    body: { contentType: 'HTML', content: params.htmlBody },
+    toRecipients: [{ emailAddress: { address: params.to } }],
   };
+
+  if (params.attachments?.length) {
+    message.attachments = params.attachments.map((att) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: att.name,
+      contentType: att.contentType,
+      contentBytes: att.contentBytes,
+    }));
+    console.log(`[sendMail] ${params.attachments.length} adjunto(s): ${params.attachments.map((a) => a.name).join(', ')}`);
+  }
+
+  const payload = { message, saveToSentItems: true };
 
   const res = await fetch(url, {
     method: 'POST',

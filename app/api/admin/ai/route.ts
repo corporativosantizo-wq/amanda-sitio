@@ -327,6 +327,17 @@ nombre, email, telefono, nit, dpi, empresa, direccion, razon_social, representan
 - Para actualizar, SIEMPRE busca primero al cliente para obtener su UUID, luego actualiza con ese UUID.
 - Si Amanda dice "actualiza" o "cambia" datos de un cliente, usa esta herramienta (NO consultar_base_datos).
 
+## ARCHIVOS ADJUNTOS
+Amanda puede adjuntar archivos al chat (PDF, DOCX, imágenes, max 3 MB). Cuando recibas un archivo:
+- Si es PDF, recibirás el texto extraído automáticamente. Úsalo para responder preguntas sobre el documento.
+- Si Amanda pide que envíes el archivo por email, usa la herramienta enviar_email_con_adjunto (NO enviar_email).
+- El archivo queda en Storage temporal (molly-temp/). Usa el archivo_url que te llega en el contexto del mensaje.
+
+### Ejemplos:
+- [Amanda adjunta factura.pdf] "¿Qué dice esta factura?" → Lee el texto extraído y responde.
+- [Amanda adjunta contrato.pdf] "Envíaselo a Flor Coronado" → usa enviar_email_con_adjunto con el archivo_url del adjunto.
+- [Amanda adjunta foto.jpg] "Mándalo a juan@gmail.com" → usa enviar_email_con_adjunto.
+
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
 - Usa moneda guatemalteca (Q) siempre
@@ -701,6 +712,98 @@ async function handleEnviarEmail(
   const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${emailMask}, asunto=${subject}`);
   return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}`;
+}
+
+// ── Envío de email con adjunto ────────────────────────────────────────────
+
+const CONTENT_TYPES_MAP: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+};
+
+async function handleEnviarEmailConAdjunto(
+  clienteId: string | undefined,
+  emailDirecto: string | undefined,
+  nombreDestinatario: string | undefined,
+  asunto: string,
+  contenidoHtml: string,
+  archivoUrl: string,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // 1. Resolve destination (same pattern as handleEnviarEmail)
+  let destinatarioEmail: string;
+  let destinatarioNombre: string;
+
+  if (emailDirecto?.trim()) {
+    destinatarioEmail = emailDirecto.trim();
+    destinatarioNombre = nombreDestinatario?.trim() || destinatarioEmail;
+  } else if (clienteId) {
+    let cliente: any;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+
+    if (isUUID) {
+      const { data, error } = await db.from('clientes').select('id, nombre, email').eq('id', clienteId).single();
+      if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
+      cliente = data;
+    } else {
+      const { data, error } = await db.from('clientes').select('id, nombre, email').ilike('nombre', `%${clienteId}%`).limit(1);
+      if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
+      cliente = data[0];
+    }
+
+    if (!cliente.email) throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+    destinatarioEmail = cliente.email;
+    destinatarioNombre = cliente.nombre;
+  } else {
+    throw new Error('Se requiere cliente_id o email_directo para enviar el email.');
+  }
+
+  // 2. Download file from Storage
+  const storage = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { data: fileData, error: dlError } = await storage.storage
+    .from('documentos')
+    .download(archivoUrl);
+
+  if (dlError || !fileData) throw new Error(`Error al descargar archivo: ${dlError?.message ?? 'sin datos'}`);
+
+  const buffer = Buffer.from(await fileData.arrayBuffer());
+  const contentBytes = buffer.toString('base64');
+
+  // 3. Detect content type from extension
+  const fileName = archivoUrl.split('/').pop() ?? 'archivo';
+  const ext = fileName.includes('.') ? '.' + fileName.split('.').pop()!.toLowerCase() : '';
+  const contentType = CONTENT_TYPES_MAP[ext] ?? 'application/octet-stream';
+
+  // Use original filename if available (remove timestamp prefix from molly-temp/)
+  const displayName = fileName.replace(/^\d+_/, '');
+
+  // 4. Build HTML
+  const { emailWrapper } = await import('@/lib/templates/emails');
+  const html = contenidoHtml
+    ? emailWrapper(contenidoHtml)
+    : emailWrapper(`<p>Adjunto el archivo solicitado.</p>`);
+
+  // 5. Send with attachment
+  await sendMail({
+    from: 'asistente@papeleo.legal',
+    to: destinatarioEmail,
+    subject: asunto,
+    htmlBody: html,
+    attachments: [{ name: displayName, contentType, contentBytes }],
+  });
+
+  const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
+  console.log(`[AI] Email con adjunto enviado: to=${emailMask}, archivo=${displayName}`);
+  return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) con adjunto "${displayName}" desde asistente@papeleo.legal — Asunto: ${asunto}`;
 }
 
 // ── Confirmar pago ────────────────────────────────────────────────────────
@@ -1117,9 +1220,22 @@ async function handleConsultarCatalogo(
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, attachment } = await req.json();
     if (!messages || !Array.isArray(messages)) {
       return Response.json({ error: 'Messages array required' }, { status: 400 });
+    }
+
+    // If there's an attachment, enrich the last user message with file context
+    if (attachment?.storagePath && messages.length > 0) {
+      const last = messages[messages.length - 1];
+      if (last.role === 'user') {
+        const sizeKB = Math.round((attachment.fileSize ?? 0) / 1024);
+        let prefix = `[Archivo adjunto: ${attachment.fileName} (${sizeKB} KB) — Storage: ${attachment.storagePath}]`;
+        if (attachment.textoExtraido) {
+          prefix += `\n\nTexto extraído del PDF:\n${attachment.textoExtraido}`;
+        }
+        last.content = `${prefix}\n\n${last.content}`;
+      }
     }
 
     const anthropic = new Anthropic({
@@ -1207,6 +1323,40 @@ export async function POST(req: Request) {
             },
           },
           required: ['tipo_email'],
+        },
+      },
+      {
+        name: 'enviar_email_con_adjunto',
+        description: 'Envía un email con un archivo adjunto (PDF, DOCX, imagen) desde asistente@papeleo.legal. Usar cuando Amanda pide enviar un archivo que adjuntó al chat.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cliente_id: {
+              type: 'string',
+              description: 'UUID del cliente o nombre para buscar en la BD. Opcional si se usa email_directo.',
+            },
+            email_directo: {
+              type: 'string',
+              description: 'Email del destinatario. Opcional si se usa cliente_id.',
+            },
+            nombre_destinatario: {
+              type: 'string',
+              description: 'Nombre del destinatario (cuando se usa email_directo).',
+            },
+            asunto: {
+              type: 'string',
+              description: 'Asunto del email.',
+            },
+            contenido_html: {
+              type: 'string',
+              description: 'Contenido HTML del email (opcional, se envuelve en template del despacho).',
+            },
+            archivo_url: {
+              type: 'string',
+              description: 'Ruta del archivo en Storage (molly-temp/...). Se obtiene del contexto del mensaje adjunto.',
+            },
+          },
+          required: ['asunto', 'archivo_url'],
         },
       },
       {
@@ -1409,6 +1559,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'enviar_email') {
               const input = block.input as any;
               result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos, input.email_directo, input.nombre_destinatario);
+            } else if (block.name === 'enviar_email_con_adjunto') {
+              const input = block.input as any;
+              result = await handleEnviarEmailConAdjunto(input.cliente_id, input.email_directo, input.nombre_destinatario, input.asunto, input.contenido_html ?? '', input.archivo_url);
             } else if (block.name === 'confirmar_pago') {
               const input = block.input as any;
               result = await handleConfirmarPago(input.cliente_id, input.monto, input.concepto, input.metodo_pago, input.referencia_bancaria, input.fecha_pago);

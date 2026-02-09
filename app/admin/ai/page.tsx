@@ -155,8 +155,13 @@ export default function AIAssistantPage() {
   const [showPanel, setShowPanel] = useState(true);
   const [quickInput, setQuickInput] = useState('');
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
+  const [attachedFile, setAttachedFile] = useState<{
+    name: string; size: number; storagePath: string; textoExtraido?: string | null;
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fechaHoy = hoy();
   const fechaFinSemana = finDeSemana();
@@ -296,6 +301,51 @@ export default function AIAssistantPage() {
     });
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+
+    const MAX_SIZE = 3 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setError(`El archivo excede 3 MB (${(file.size / 1024 / 1024).toFixed(1)} MB). Límite de Graph API para adjuntos inline.`);
+      return;
+    }
+
+    const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+    const allowed = new Set(['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']);
+    if (!allowed.has(ext)) {
+      setError(`Tipo de archivo no permitido (${ext}). Permitidos: PDF, DOCX, DOC, JPG, PNG.`);
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/admin/ai/upload', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? `Error ${res.status}`);
+      }
+
+      const data = await res.json();
+      setAttachedFile({
+        name: data.fileName,
+        size: data.fileSize,
+        storagePath: data.storagePath,
+        textoExtraido: data.textoExtraido,
+      });
+    } catch (err: any) {
+      setError(err.message ?? 'Error al subir archivo');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
 
@@ -307,18 +357,25 @@ export default function AIAssistantPage() {
     };
 
     const newMessages = [...messages, userMessage];
+    const currentAttachment = attachedFile;
     setMessages(newMessages);
     setInput('');
+    setAttachedFile(null);
     setIsLoading(true);
     setError(null);
 
     try {
+      const body: any = {
+        messages: newMessages.map((m: Message) => ({ role: m.role, content: m.content })),
+      };
+      if (currentAttachment) {
+        body.attachment = currentAttachment;
+      }
+
       const res = await fetch('/api/admin/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages.map((m: Message) => ({ role: m.role, content: m.content })),
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -651,28 +708,86 @@ export default function AIAssistantPage() {
 
         {/* Input area */}
         <div className="px-6 py-4 border-t border-slate-200 bg-white shrink-0">
-          <div className="flex gap-3 items-end max-w-3xl mx-auto">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Escribe tu consulta... (Enter para enviar, Shift+Enter para nueva línea)"
-              disabled={isLoading}
-              rows={1}
-              className="flex-1 px-4 py-3 border-2 border-slate-200 rounded-xl text-sm outline-none resize-none font-[inherit] leading-relaxed max-h-[200px] transition-colors focus:border-teal-500"
-            />
-            <button
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || isLoading}
-              className={`px-5 py-3 text-white rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
-                input.trim() && !isLoading
-                  ? 'bg-gradient-to-br from-teal-500 to-cyan-500 cursor-pointer hover:shadow-md'
-                  : 'bg-slate-300 cursor-not-allowed'
-              }`}
-            >
-              {isLoading ? '...' : 'Enviar'}
-            </button>
+          <div className="max-w-3xl mx-auto">
+            {/* Attachment chip preview */}
+            {(attachedFile || isUploading) && (
+              <div className="mb-2 flex items-center gap-2">
+                {isUploading ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs">
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Subiendo...
+                  </span>
+                ) : attachedFile ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                    {attachedFile.name} ({Math.round(attachedFile.size / 1024)} KB)
+                    <button
+                      onClick={() => setAttachedFile(null)}
+                      className="ml-1 text-teal-500 hover:text-teal-800 transition-colors"
+                      title="Quitar adjunto"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                ) : null}
+              </div>
+            )}
+
+            <div className="flex gap-3 items-end">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
+              {/* Paperclip button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isUploading}
+                className={`p-3 rounded-xl border-2 transition-all ${
+                  isLoading || isUploading
+                    ? 'border-slate-200 text-slate-300 cursor-not-allowed'
+                    : 'border-slate-200 text-slate-400 hover:border-teal-400 hover:text-teal-500 cursor-pointer'
+                }`}
+                title="Adjuntar archivo (PDF, DOCX, imagen, max 3 MB)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Escribe tu consulta... (Enter para enviar, Shift+Enter para nueva línea)"
+                disabled={isLoading}
+                rows={1}
+                className="flex-1 px-4 py-3 border-2 border-slate-200 rounded-xl text-sm outline-none resize-none font-[inherit] leading-relaxed max-h-[200px] transition-colors focus:border-teal-500"
+              />
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim() || isLoading}
+                className={`px-5 py-3 text-white rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                  input.trim() && !isLoading
+                    ? 'bg-gradient-to-br from-teal-500 to-cyan-500 cursor-pointer hover:shadow-md'
+                    : 'bg-slate-300 cursor-not-allowed'
+                }`}
+              >
+                {isLoading ? '...' : 'Enviar'}
+              </button>
+            </div>
           </div>
           <p className="text-[10px] text-slate-400 mt-2 text-center">
             IA puede cometer errores. Verifica la información importante.
