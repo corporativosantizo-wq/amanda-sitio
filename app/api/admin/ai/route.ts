@@ -37,6 +37,12 @@ import {
   emailAvisoAudiencia,
   emailWrapper,
 } from '@/lib/templates/emails';
+import {
+  crearCotizacion,
+  obtenerCotizacion,
+  obtenerConfiguracion as obtenerConfigCotizacion,
+} from '@/lib/services/cotizaciones.service';
+import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
 
 const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo — Despacho Jurídico, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
 
@@ -141,6 +147,37 @@ Cuenta para depósito: [datos de consultar_catalogo configuracion]
 
 7. Cuando envíes cotización por email (tipo=cotizacion), incluye en los servicios el IVA como línea separada o súmalo al total, según lo que Amanda indique.
 8. NUNCA inventes datos bancarios. Solo usa los que devuelve consultar_catalogo configuracion.
+
+## CREAR COTIZACIONES (herramienta completa)
+Puedes crear cotizaciones completas con PDF profesional usando la herramienta crear_cotizacion_completa. Esto:
+1. Crea la cotización en la base de datos con número secuencial (COT-XXXX)
+2. Calcula automáticamente subtotal, IVA (12%), total y anticipo (60%)
+3. Genera un PDF profesional con diseño corporativo
+4. Sube el PDF a Storage
+5. Opcionalmente envía el PDF al cliente por email desde contador@papeleo.legal
+
+### Parámetros:
+- **cliente_id** (requerido): UUID o nombre del cliente
+- **items** (requerido): Lista de {servicio, cantidad, precio_unitario} — precios SIN IVA
+- **notas** (opcional): Notas internas (no visibles para el cliente)
+- **enviar_por_correo** (opcional): true para enviar email con PDF adjunto al cliente
+
+### Flujo:
+1. SIEMPRE consulta consultar_catalogo("catalogo_servicios") para obtener precios actualizados del catálogo
+2. Si Amanda especifica un monto diferente al del catálogo, usa el monto que ella indique
+3. Busca al cliente por nombre para obtener su UUID
+4. Usa crear_cotizacion_completa con los items y precios correctos
+
+### Ejemplos:
+- "Hazle cotización a Roberto Salazar por constitución de sociedad" → consulta catálogo (SRV-027 = Q8,000), busca cliente, crear_cotizacion_completa(cliente_id="Roberto Salazar", items=[{servicio:"Constitución de sociedad anónima", cantidad:1, precio_unitario:8000}])
+- "Cotización a Jessica por Q7,000 de registro de marca" → crear_cotizacion_completa(cliente_id="Jessica", items=[{servicio:"Registro de marca", cantidad:1, precio_unitario:7000}])
+- "Mándale cotización a Silvia Valdez por consulta especializada y revisión de contrato, envíasela" → consultar catálogo para ambos precios, crear_cotizacion_completa(cliente_id="Silvia Valdez", items=[...], enviar_por_correo=true)
+
+### IMPORTANTE:
+- Los precios en items son SIN IVA (el sistema agrega IVA 12% automáticamente)
+- Usa esta herramienta (NO enviar_email tipo=cotizacion) cuando Amanda quiera crear una cotización formal con PDF
+- Si Amanda dice "cotiza y envíale" o "envíasela", usa enviar_por_correo=true
+- Después de crear, reporta: número de cotización, total con IVA, anticipo, y si se envió el email
 
 ## PLANTILLA DE RECORDATORIO DE AUDIENCIA
 Puedes consultar la plantilla de recordatorio de audiencia usando consultar_catalogo con consulta="plantilla_recordatorio_audiencia". Esto te da la estructura y campos disponibles para generar recordatorios con la herramienta generar_documento.
@@ -1132,6 +1169,140 @@ async function handleGestionarCobros(
   }
 }
 
+// ── Crear cotización completa (BD + PDF + email) ──────────────────────────
+
+async function handleCrearCotizacionCompleta(
+  clienteId: string,
+  items: Array<{ servicio: string; cantidad: number; precio_unitario: number }>,
+  notas?: string,
+  enviarPorCorreo?: boolean,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // 1. Resolve client
+  let cliente: any;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
+
+  if (isUUID) {
+    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
+    if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
+    cliente = data;
+  } else {
+    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
+    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
+    cliente = data[0];
+  }
+
+  // 2. Create cotizacion in DB (reuses existing service: numero, IVA, anticipo, conditions)
+  const cotizacionItems = items.map((item, idx) => ({
+    descripcion: item.servicio,
+    cantidad: item.cantidad,
+    precio_unitario: item.precio_unitario,
+    orden: idx,
+  }));
+
+  const cotizacion = await crearCotizacion({
+    cliente_id: cliente.id,
+    items: cotizacionItems,
+    notas_internas: notas ?? null,
+  });
+
+  console.log(`[AI] Cotización creada: ${cotizacion.numero} — cliente: ${cliente.nombre}`);
+
+  // 3. Fetch full cotizacion with client join + items (for PDF)
+  const cotizacionCompleta = await obtenerCotizacion(cotizacion.id);
+  const config = await obtenerConfigCotizacion();
+
+  // 4. Generate PDF
+  const pdfBuffer = await generarPDFCotizacion(cotizacionCompleta, config);
+  console.log(`[AI] PDF generado: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+
+  // 5. Upload to Storage
+  const storage = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const storagePath = `cotizaciones/${cotizacion.numero}.pdf`;
+
+  const { error: uploadError } = await storage.storage
+    .from('documentos')
+    .upload(storagePath, pdfBuffer, {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+
+  if (uploadError) throw new Error(`Error al subir PDF: ${uploadError.message}`);
+  console.log(`[AI] PDF subido: ${storagePath}`);
+
+  // 6. Update pdf_url
+  await db.from('cotizaciones').update({
+    pdf_url: storagePath,
+    updated_at: new Date().toISOString(),
+  }).eq('id', cotizacion.id);
+
+  // 7. Generate signed URL for Molly's response
+  const { data: signedData } = await storage.storage
+    .from('documentos')
+    .createSignedUrl(storagePath, 600);
+  const downloadUrl = signedData?.signedUrl ?? '';
+
+  // 8. If enviar_por_correo: send email + mark as enviada
+  let emailInfo = '';
+  if (enviarPorCorreo) {
+    if (!cliente.email) {
+      emailInfo = ' ADVERTENCIA: el cliente no tiene email registrado, no se envió.';
+    } else {
+      const serviciosEmail = cotizacionCompleta.items.map((item: any) => ({
+        descripcion: item.descripcion,
+        monto: item.total,
+      }));
+
+      const emailTemplate = emailCotizacion({
+        clienteNombre: cliente.nombre,
+        servicios: serviciosEmail,
+        vigencia: cotizacionCompleta.fecha_vencimiento,
+      });
+
+      const pdfBase64 = pdfBuffer.toString('base64');
+
+      await sendMail({
+        from: emailTemplate.from,
+        to: cliente.email,
+        subject: `Cotización de Servicios No. ${cotizacion.numero} — Amanda Santizo Despacho Jurídico`,
+        htmlBody: emailTemplate.html,
+        attachments: [{
+          name: `${cotizacion.numero}.pdf`,
+          contentType: 'application/pdf',
+          contentBytes: pdfBase64,
+        }],
+      });
+
+      // Mark as enviada
+      await db.from('cotizaciones').update({
+        estado: 'enviada',
+        enviada_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', cotizacion.id);
+
+      const emailMask = cliente.email.replace(/(.{2}).+(@.+)/, '$1***$2');
+      emailInfo = ` Email enviado a ${cliente.nombre} (${emailMask}) desde contador@papeleo.legal con PDF adjunto.`;
+      console.log(`[AI] Cotización enviada por email a ${emailMask}`);
+    }
+  }
+
+  // 9. Return summary
+  const totalFmt = `Q${cotizacionCompleta.total.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  const anticipoFmt = `Q${cotizacionCompleta.anticipo_monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+
+  let result = `Cotización creada: **${cotizacion.numero}** — Total: ${totalFmt} (anticipo ${cotizacionCompleta.anticipo_porcentaje}%: ${anticipoFmt}) — Cliente: ${cliente.nombre}. PDF generado.`;
+  if (downloadUrl) {
+    result += `\nDescargar PDF: ${downloadUrl}`;
+  }
+  result += emailInfo;
+  return result;
+}
+
 // ── Consultar catálogo, plantillas y configuración ────────────────────────
 
 async function handleConsultarCatalogo(
@@ -1502,6 +1673,41 @@ export async function POST(req: Request) {
           required: ['consulta'],
         },
       },
+      {
+        name: 'crear_cotizacion_completa',
+        description: 'Crea una cotización completa: registro en BD con número secuencial, cálculo de IVA y anticipo, generación de PDF profesional, y opcionalmente envío por correo electrónico con el PDF adjunto. SIEMPRE consulta consultar_catalogo("catalogo_servicios") ANTES de usar esta herramienta para obtener precios actualizados.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cliente_id: {
+              type: 'string',
+              description: 'UUID del cliente o nombre parcial para buscar. Si es nombre, se busca el cliente por coincidencia.',
+            },
+            items: {
+              type: 'array',
+              description: 'Lista de servicios a cotizar. Los precios son SIN IVA (el sistema agrega IVA 12% automáticamente).',
+              items: {
+                type: 'object',
+                properties: {
+                  servicio: { type: 'string', description: 'Nombre/descripción del servicio.' },
+                  cantidad: { type: 'number', description: 'Cantidad de unidades. Default: 1.' },
+                  precio_unitario: { type: 'number', description: 'Precio unitario SIN IVA en quetzales.' },
+                },
+                required: ['servicio', 'precio_unitario'],
+              },
+            },
+            notas: {
+              type: 'string',
+              description: 'Notas internas opcionales para la cotización.',
+            },
+            enviar_por_correo: {
+              type: 'boolean',
+              description: 'Si es true, envía la cotización por correo electrónico al cliente con el PDF adjunto.',
+            },
+          },
+          required: ['cliente_id', 'items'],
+        },
+      },
     ];
 
     // ── Inyectar plantillas custom al system prompt ─────────────────────
@@ -1577,6 +1783,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'consultar_catalogo') {
               const input = block.input as any;
               result = await handleConsultarCatalogo(input.consulta);
+            } else if (block.name === 'crear_cotizacion_completa') {
+              const input = block.input as any;
+              result = await handleCrearCotizacionCompleta(input.cliente_id, input.items, input.notas, input.enviar_por_correo);
             } else if (block.name === 'transcribir_documento') {
               const input = block.input as any;
               if (input.accion === 'buscar_pendientes') {

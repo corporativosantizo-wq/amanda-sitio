@@ -383,7 +383,7 @@ export async function duplicarCotizacion(id: string, nuevoClienteId?: string): P
 
 // --- Helpers internos ---
 
-async function obtenerConfiguracion() {
+export async function obtenerConfiguracion() {
   const { data, error } = await db()
     .from('configuracion')
     .select('*')
