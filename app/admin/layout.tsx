@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Analytics } from "@vercel/analytics/react"
@@ -9,6 +10,7 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const navigation = [
     {
@@ -137,55 +139,104 @@ export default function AdminLayout({
     return pathname.startsWith(href)
   }
 
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-6 py-5 border-b border-navy-light">
+        <div className="w-10 h-10 bg-cyan rounded-lg flex items-center justify-center">
+          <span className="text-navy-dark font-bold text-lg">AS</span>
+        </div>
+        <div>
+          <div className="text-white font-semibold">Amanda Santizo</div>
+          <div className="text-cyan text-xs">Panel Admin</div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="px-4 py-6 space-y-1 overflow-y-auto pb-20" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+        {navigation.map((item) => (
+          <Link
+            key={item.name}
+            href={item.href}
+            onClick={() => setSidebarOpen(false)}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
+              isActive(item.href)
+                ? 'bg-cyan text-navy-dark font-semibold'
+                : 'text-slate-light hover:bg-navy-light hover:text-white'
+            }`}
+          >
+            {item.icon}
+            <span>{item.name}</span>
+          </Link>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-navy-light">
+        <Link
+          href="/"
+          className="flex items-center gap-3 px-4 py-3 text-slate-light hover:text-cyan transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Volver al sitio</span>
+        </Link>
+      </div>
+    </>
+  )
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-64 bg-navy-dark">
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-navy-light">
-          <div className="w-10 h-10 bg-cyan rounded-lg flex items-center justify-center">
-            <span className="text-navy-dark font-bold text-lg">AS</span>
+      {/* Mobile hamburger button */}
+      <div className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-4 py-3 bg-navy-dark md:hidden">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="p-2 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition-colors"
+          aria-label="Abrir menú"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-cyan rounded-md flex items-center justify-center">
+            <span className="text-navy-dark font-bold text-xs">AS</span>
           </div>
-          <div>
-            <div className="text-white font-semibold">Amanda Santizo</div>
-            <div className="text-cyan text-xs">Panel Admin</div>
-          </div>
+          <span className="text-white font-semibold text-sm">Admin</span>
         </div>
+      </div>
 
-        {/* Navigation */}
-        <nav className="px-4 py-6 space-y-1 overflow-y-auto pb-20" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-          {navigation.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
-                isActive(item.href)
-                  ? 'bg-cyan text-navy-dark font-semibold'
-                  : 'text-slate-light hover:bg-navy-light hover:text-white'
-              }`}
-            >
-              {item.icon}
-              <span>{item.name}</span>
-            </Link>
-          ))}
-        </nav>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-        {/* Footer */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-navy-light">
-          <Link
-            href="/"
-            className="flex items-center gap-3 px-4 py-3 text-slate-light hover:text-cyan transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span>Volver al sitio</span>
-          </Link>
-        </div>
+      {/* Sidebar — desktop: fixed, mobile: overlay drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-navy-dark transition-transform duration-300 ease-in-out md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Mobile close button */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition-colors md:hidden"
+          aria-label="Cerrar menú"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        {sidebarContent}
       </aside>
 
-      {/* Main content */}
-      <main className="ml-64 min-h-screen">
+      {/* Main content — desktop: offset by sidebar, mobile: full width with top bar padding */}
+      <main className="md:ml-64 min-h-screen pt-14 md:pt-0">
         {children}
       </main>
     </div>
