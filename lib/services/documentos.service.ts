@@ -456,6 +456,52 @@ export async function generarSignedUrl(storagePath: string, expiresIn = 300): Pr
   return data.signedUrl;
 }
 
+// ── Extracción de texto de PDFs ─────────────────────────────────────────────
+
+const MAX_TEXT_LENGTH = 50000;
+const MAX_FILE_SIZE_OCR = 50 * 1024 * 1024; // 50 MB
+
+function sanitizarTextoExtraido(texto: string): string {
+  return texto
+    .replace(/\0/g, '')
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/[\uD800-\uDFFF]/g, '')
+    .replace(/[\uFFFE\uFFFF]/g, '');
+}
+
+export async function extraerYGuardarTexto(docId: string, archivoUrl: string): Promise<void> {
+  try {
+    const buffer = await descargarPDF(archivoUrl);
+
+    if (buffer.length > MAX_FILE_SIZE_OCR) {
+      console.log(`[OCR] Saltado ${archivoUrl} (${(buffer.length / 1024 / 1024).toFixed(1)} MB > 50 MB)`);
+      await db().from('documentos').update({ texto_extraido: '[archivo demasiado grande]' }).eq('id', docId);
+      return;
+    }
+
+    const { PDFParse } = await import('pdf-parse');
+    const pdf = new PDFParse({ data: buffer });
+    let textoRaw: string;
+    try {
+      const result = await pdf.getText();
+      textoRaw = (result.text || '').trim();
+    } finally {
+      await pdf.destroy();
+    }
+
+    const texto = sanitizarTextoExtraido(textoRaw);
+
+    if (texto.length > 10) {
+      await db().from('documentos').update({ texto_extraido: texto.slice(0, MAX_TEXT_LENGTH) }).eq('id', docId);
+    } else {
+      await db().from('documentos').update({ texto_extraido: '[sin texto extraible]' }).eq('id', docId);
+    }
+  } catch (err: any) {
+    console.error(`[OCR] Error extrayendo texto de ${archivoUrl}:`, err.message);
+    // No throw — extraction failure must not affect the upload
+  }
+}
+
 // ── Error ───────────────────────────────────────────────────────────────────
 
 export class DocumentoError extends Error {

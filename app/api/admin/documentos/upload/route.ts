@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { crearDocumento, DocumentoError } from '@/lib/services/documentos.service';
+import { crearDocumento, extraerYGuardarTexto, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
           nombre_original: f.filename,
         });
         documentos.push(doc);
+
+        // Fire-and-forget: extract text from PDF in background
+        if (f.filename.toLowerCase().endsWith('.pdf')) {
+          extraerYGuardarTexto(doc.id, doc.archivo_url).catch(() => {});
+        }
       } catch (err: any) {
         const detail = err instanceof DocumentoError
           ? `${err.message} — ${JSON.stringify(err.details)}`
