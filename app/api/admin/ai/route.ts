@@ -386,6 +386,27 @@ Amanda puede adjuntar archivos al chat (PDF, DOCX, imágenes, max 3 MB). Cuando 
 - Cuando no sepas algo, dilo honestamente
 - Puedes usar markdown para formatear respuestas`;
 
+// ── Helper: búsqueda fuzzy de clientes por nombre ─────────────────────────
+// Divide el nombre en palabras y busca con AND ILIKE por cada una.
+// Ej: "Eric Byrne" → WHERE nombre ILIKE '%eric%' AND nombre ILIKE '%byrne%'
+// Funciona con nombres en MAYÚSCULAS, minúsculas, parciales, y cualquier orden.
+
+function buscarClientePorNombre(
+  db: ReturnType<typeof createAdminClient>,
+  nombre: string,
+  select: string = 'id, nombre, email, telefono',
+  limit: number = 5,
+) {
+  const words = nombre.trim().split(/\s+/).filter(Boolean);
+  console.log(`[AI] Búsqueda de cliente: "${nombre}" → palabras: [${words.join(', ')}]`);
+
+  let query = db.from('clientes').select(select);
+  for (const word of words) {
+    query = query.ilike('nombre', `%${word}%`);
+  }
+  return query.limit(limit);
+}
+
 // ── Consultas a BD ────────────────────────────────────────────────────────
 
 async function queryDatabase(query: string): Promise<string> {
@@ -428,7 +449,7 @@ async function queryDatabase(query: string): Promise<string> {
     }
     if (query.includes('buscar_cliente')) {
       const nombre = query.replace('buscar_cliente:', '').trim();
-      const { data } = await db.from('clientes').select('id, nombre, email, telefono, direccion, dpi, nit').ilike('nombre', `%${nombre}%`).limit(5);
+      const { data } = await buscarClientePorNombre(db, nombre, 'id, nombre, email, telefono, direccion, dpi, nit', 5);
       if (!data?.length) return `No se encontraron clientes con nombre "${nombre}".`;
       return 'Clientes encontrados:\n' + data.map((c: any) =>
         `- ${c.nombre} | Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}`
@@ -598,7 +619,7 @@ async function handleEnviarEmail(
       if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
       cliente = data;
     } else {
-      const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
+      const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email, nit', 1);
       if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
       cliente = data[0];
     }
@@ -790,7 +811,7 @@ async function handleEnviarEmailConAdjunto(
       if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
       cliente = data;
     } else {
-      const { data, error } = await db.from('clientes').select('id, nombre, email').ilike('nombre', `%${clienteId}%`).limit(1);
+      const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email', 1);
       if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
       cliente = data[0];
     }
@@ -867,7 +888,7 @@ async function handleConfirmarPago(
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
-    const { data, error } = await db.from('clientes').select('id, nombre, email').ilike('nombre', `%${clienteId}%`).limit(1);
+    const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email', 1);
     if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
     cliente = data[0];
   }
@@ -918,7 +939,7 @@ async function handleGestionarTareas(
       // Resolve client name → ID if provided as text
       let clienteId = datos.cliente_id ?? null;
       if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
-        const { data: clientes } = await db.from('clientes').select('id, nombre').ilike('nombre', `%${clienteId}%`).limit(1);
+        const { data: clientes } = await buscarClientePorNombre(db, clienteId, 'id, nombre', 1);
         if (clientes?.length) {
           clienteId = clientes[0].id;
         } else {
@@ -1007,11 +1028,37 @@ async function handleGestionarClientes(
     case 'buscar': {
       if (!busqueda?.trim()) throw new Error('Se requiere busqueda (nombre, email, empresa, NIT, etc.)');
       const q = busqueda.trim();
-      const { data, error } = await db
-        .from('clientes')
-        .select('id, codigo, tipo, nombre, nit, dpi, telefono, email, direccion, empresa, representante_legal, razon_social, nit_facturacion, direccion_facturacion, notas, activo')
-        .or(`nombre.ilike.%${q}%,email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`)
-        .limit(5);
+      const words = q.split(/\s+/).filter(Boolean);
+      console.log(`[AI] gestionar_clientes buscar: "${q}" → palabras: [${words.join(', ')}]`);
+
+      // Build query: each word must match nombre (AND), OR full query matches email/empresa/nit
+      const selectCols = 'id, codigo, tipo, nombre, nit, dpi, telefono, email, direccion, empresa, representante_legal, razon_social, nit_facturacion, direccion_facturacion, notas, activo';
+      let query = db.from('clientes').select(selectCols);
+
+      if (words.length <= 1) {
+        // Single word: search across all fields
+        query = query.or(`nombre.ilike.%${q}%,email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`);
+      } else {
+        // Multiple words: AND match each word in nombre (primary), OR try full query in other fields
+        // Use two queries and merge results for best coverage
+        for (const word of words) {
+          query = query.ilike('nombre', `%${word}%`);
+        }
+      }
+      const { data, error } = await query.limit(5);
+
+      // If no results with AND on nombre and multi-word, try OR across other fields
+      if (!data?.length && words.length > 1) {
+        const { data: fallback } = await db.from('clientes').select(selectCols)
+          .or(`email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`)
+          .limit(5);
+        if (fallback?.length) {
+          const lines = fallback.map((c: any) =>
+            `- **${c.nombre}** (id: ${c.id}, código: ${c.codigo ?? 'N/A'}, tipo: ${c.tipo ?? 'N/A'})\n  Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'}\n  Empresa: ${c.empresa ?? 'N/A'} | Rep. legal: ${c.representante_legal ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}\n  Razón social: ${c.razon_social ?? 'N/A'} | NIT fact: ${c.nit_facturacion ?? 'N/A'} | Dir fact: ${c.direccion_facturacion ?? 'N/A'}${c.notas ? `\n  Notas: ${c.notas}` : ''}`
+          );
+          return `${fallback.length} cliente(s) encontrado(s):\n${lines.join('\n\n')}`;
+        }
+      }
 
       if (error) throw new Error(`Error al buscar: ${error.message}`);
       if (!data?.length) return `No se encontraron clientes con "${busqueda}".`;
@@ -1085,7 +1132,7 @@ async function handleGestionarCobros(
       // Resolve client name → ID
       let clienteId = datos.cliente_id;
       if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
-        const { data: clientes } = await db.from('clientes').select('id, nombre').ilike('nombre', `%${clienteId}%`).limit(1);
+        const { data: clientes } = await buscarClientePorNombre(db, clienteId, 'id, nombre', 1);
         if (clientes?.length) {
           clienteId = clientes[0].id;
         } else {
@@ -1191,7 +1238,7 @@ async function handleCrearCotizacionCompleta(
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
-    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').ilike('nombre', `%${clienteId}%`).limit(1);
+    const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email, nit', 1);
     if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
     cliente = data[0];
   }
