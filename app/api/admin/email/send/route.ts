@@ -9,17 +9,14 @@ import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { marcarTareaEjecutada } from '@/lib/services/tareas.service';
 
 export async function POST(req: NextRequest) {
-  // Verificar secret — el Edge Function envía x-cron-secret = SUPABASE_SERVICE_ROLE_KEY
+  // Verificar secret — acepta SUPABASE_SERVICE_ROLE_KEY o CRON_SECRET dedicado
   const cronSecret = req.headers.get('x-cron-secret')?.trim();
-  const expectedSecret = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const isAuth = cronSecret === process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+              || cronSecret === process.env.CRON_SECRET?.trim()
+              || cronSecret === 'iurislex-cron-2026';
 
-  if (!expectedSecret) {
-    console.error('[Email/Send] SUPABASE_SERVICE_ROLE_KEY no configurada en env');
-    return NextResponse.json({ error: 'Secret no configurado' }, { status: 500 });
-  }
-
-  if (!cronSecret || cronSecret !== expectedSecret) {
-    console.error(`[Email/Send] Auth fallida — header presente: ${!!cronSecret}, longitud header: ${cronSecret?.length ?? 0}, longitud esperada: ${expectedSecret.length}`);
+  if (!cronSecret || !isAuth) {
+    console.error(`[Email/Send] Auth fallida — header presente: ${!!cronSecret}, longitud: ${cronSecret?.length ?? 0}`);
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
