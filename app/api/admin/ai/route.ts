@@ -386,25 +386,30 @@ Amanda puede adjuntar archivos al chat (PDF, DOCX, imágenes, max 3 MB). Cuando 
 - Cuando no sepas algo, dilo honestamente
 - Puedes usar markdown para formatear respuestas`;
 
-// ── Helper: búsqueda fuzzy de clientes por nombre ─────────────────────────
-// Divide el nombre en palabras y busca con AND ILIKE por cada una.
-// Ej: "Eric Byrne" → WHERE nombre ILIKE '%eric%' AND nombre ILIKE '%byrne%'
-// Funciona con nombres en MAYÚSCULAS, minúsculas, parciales, y cualquier orden.
+// ── Helper: búsqueda de contactos (clientes + proveedores) ─────────────────
+// Usa la RPC legal.buscar_contacto que hace fuzzy search por palabras en ambas tablas.
+// Retorna: { id, nombre, email, telefono, tipo_contacto, codigo }
 
-function buscarClientePorNombre(
+async function buscarContacto(
   db: ReturnType<typeof createAdminClient>,
   nombre: string,
-  select: string = 'id, nombre, email, telefono',
   limit: number = 5,
-) {
-  const words = nombre.trim().split(/\s+/).filter(Boolean);
-  console.log(`[AI] Búsqueda de cliente: "${nombre}" → palabras: [${words.join(', ')}]`);
+): Promise<{ id: string; nombre: string; email: string | null; telefono: string | null; tipo_contacto: 'cliente' | 'proveedor'; codigo: string }[]> {
+  console.log(`[AI] Búsqueda de contacto: "${nombre}"`);
+  // @ts-ignore
+  const { data, error } = await db.schema('public').rpc('buscar_contacto', { nombre });
+  if (error) throw new Error(`Error buscando contacto: ${error.message}`);
+  return (data ?? []).slice(0, limit);
+}
 
-  let query = db.from('clientes').select(select);
-  for (const word of words) {
-    query = query.ilike('nombre', `%${word}%`);
-  }
-  return query.limit(limit);
+// Helper: fetch nit for a contact (not returned by RPC)
+async function fetchContactoNit(
+  db: ReturnType<typeof createAdminClient>,
+  contacto: { id: string; tipo_contacto: string },
+): Promise<string> {
+  const table = contacto.tipo_contacto === 'proveedor' ? 'proveedores' : 'clientes';
+  const { data } = await db.from(table).select('nit').eq('id', contacto.id).single();
+  return data?.nit ?? 'CF';
 }
 
 // ── Consultas a BD ────────────────────────────────────────────────────────
@@ -447,15 +452,15 @@ async function queryDatabase(query: string): Promise<string> {
       const total = (data ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
       return `Pagos recibidos este mes: ${data?.length ?? 0} por un total de Q${total.toFixed(2)}`;
     }
-    if (query.includes('buscar_cliente')) {
-      const nombre = query.replace('buscar_cliente:', '').trim();
-      const { data } = await buscarClientePorNombre(db, nombre, 'id, nombre, email, telefono, direccion, dpi, nit', 5);
-      if (!data?.length) return `No se encontraron clientes con nombre "${nombre}".`;
-      return 'Clientes encontrados:\n' + data.map((c: any) =>
-        `- ${c.nombre} | Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | DPI: ${c.dpi ?? 'N/A'} | NIT: ${c.nit ?? 'N/A'} | Dir: ${c.direccion ?? 'N/A'}`
+    if (query.includes('buscar_cliente') || query.includes('buscar_contacto')) {
+      const nombre = query.replace(/buscar_cliente:|buscar_contacto:/, '').trim();
+      const contactos = await buscarContacto(db, nombre, 5);
+      if (!contactos.length) return `No se encontraron contactos con nombre "${nombre}".`;
+      return 'Contactos encontrados:\n' + contactos.map((c: any) =>
+        `- ${c.nombre} (${c.tipo_contacto}) | Email: ${c.email ?? 'N/A'} | Tel: ${c.telefono ?? 'N/A'} | Código: ${c.codigo ?? 'N/A'}`
       ).join('\n');
     }
-    return 'Consulta no reconocida. Queries disponibles: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_cliente:[nombre]';
+    return 'Consulta no reconocida. Queries disponibles: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_contacto:[nombre]';
   } catch (error: any) {
     return `Error al consultar: ${error.message}`;
   }
@@ -619,13 +624,14 @@ async function handleEnviarEmail(
       if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
       cliente = data;
     } else {
-      const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email, nit', 1);
-      if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
-      cliente = data[0];
+      const contactos = await buscarContacto(db, clienteId, 1);
+      if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
+      cliente = contactos[0];
+      cliente.nit = await fetchContactoNit(db, cliente);
     }
 
     if (!cliente.email) {
-      throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+      throw new Error(`El contacto ${cliente.nombre} no tiene email registrado.`);
     }
 
     destinatarioEmail = cliente.email;
@@ -811,12 +817,12 @@ async function handleEnviarEmailConAdjunto(
       if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
       cliente = data;
     } else {
-      const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email', 1);
-      if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
-      cliente = data[0];
+      const contactos = await buscarContacto(db, clienteId, 1);
+      if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
+      cliente = contactos[0];
     }
 
-    if (!cliente.email) throw new Error(`El cliente ${cliente.nombre} no tiene email registrado.`);
+    if (!cliente.email) throw new Error(`El contacto ${cliente.nombre} no tiene email registrado.`);
     destinatarioEmail = cliente.email;
     destinatarioNombre = cliente.nombre;
   } else {
@@ -888,9 +894,9 @@ async function handleConfirmarPago(
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
-    const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email', 1);
-    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
-    cliente = data[0];
+    const contactos = await buscarContacto(db, clienteId, 1);
+    if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
+    cliente = contactos[0];
   }
 
   // 2. Register + confirm payment in one step
@@ -939,9 +945,9 @@ async function handleGestionarTareas(
       // Resolve client name → ID if provided as text
       let clienteId = datos.cliente_id ?? null;
       if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
-        const { data: clientes } = await buscarClientePorNombre(db, clienteId, 'id, nombre', 1);
-        if (clientes?.length) {
-          clienteId = clientes[0].id;
+        const contactos = await buscarContacto(db, clienteId, 1);
+        if (contactos.length) {
+          clienteId = contactos[0].id;
         } else {
           clienteId = null;
         }
@@ -1132,11 +1138,11 @@ async function handleGestionarCobros(
       // Resolve client name → ID
       let clienteId = datos.cliente_id;
       if (clienteId && !/^[0-9a-f]{8}-/i.test(clienteId)) {
-        const { data: clientes } = await buscarClientePorNombre(db, clienteId, 'id, nombre', 1);
-        if (clientes?.length) {
-          clienteId = clientes[0].id;
+        const contactos = await buscarContacto(db, clienteId, 1);
+        if (contactos.length) {
+          clienteId = contactos[0].id;
         } else {
-          throw new CobroError(`Cliente no encontrado: "${datos.cliente_id}"`);
+          throw new CobroError(`Contacto no encontrado: "${datos.cliente_id}"`);
         }
       }
 
@@ -1238,9 +1244,10 @@ async function handleCrearCotizacionCompleta(
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
-    const { data, error } = await buscarClientePorNombre(db, clienteId, 'id, nombre, email, nit', 1);
-    if (error || !data?.length) throw new Error(`Cliente no encontrado: "${clienteId}"`);
-    cliente = data[0];
+    const contactos = await buscarContacto(db, clienteId, 1);
+    if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
+    cliente = contactos[0];
+    cliente.nit = await fetchContactoNit(db, cliente);
   }
 
   // 2. Create cotizacion in DB (reuses existing service: numero, IVA, anticipo, conditions)
@@ -1482,13 +1489,13 @@ export async function POST(req: Request) {
     const tools: Anthropic.Tool[] = [
       {
         name: 'consultar_base_datos',
-        description: 'Consulta datos del sistema IURISLEX. Queries disponibles: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_cliente:[nombre]',
+        description: 'Consulta datos del sistema IURISLEX. Queries disponibles: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_contacto:[nombre] (busca clientes Y proveedores)',
         input_schema: {
           type: 'object' as const,
           properties: {
             query: {
               type: 'string',
-              description: 'Tipo de consulta: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_cliente:[nombre del cliente]'
+              description: 'Tipo de consulta: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_contacto:[nombre] (busca en clientes y proveedores)'
             }
           },
           required: ['query']
