@@ -19,21 +19,26 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const db = createAdminClient();
 
     // Fetch related data in parallel
-    const [citasRes, docsRes, pagosRes] = await Promise.all([
+    const [citasRes, docsRes, pagosRes, cotizacionesRes] = await Promise.all([
       db.from('citas')
         .select('id, tipo, titulo, fecha, hora_inicio, hora_fin, estado, costo')
         .eq('cliente_id', id)
         .order('fecha', { ascending: false })
         .limit(20),
       db.from('documentos')
-        .select('id, nombre, tipo, estado, created_at')
+        .select('id, nombre_archivo, titulo, tipo, estado, created_at')
         .eq('cliente_id', id)
         .order('created_at', { ascending: false })
-        .limit(20),
+        .limit(50),
       db.from('pagos')
         .select('id, monto, estado, fecha, concepto, metodo')
         .eq('cliente_id', id)
         .order('fecha', { ascending: false })
+        .limit(20),
+      db.from('cotizaciones')
+        .select('id, numero, fecha_emision, estado, total, pdf_url')
+        .eq('cliente_id', id)
+        .order('fecha_emision', { ascending: false })
         .limit(20),
     ]);
 
@@ -42,6 +47,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       citas: citasRes.data ?? [],
       documentos: docsRes.data ?? [],
       pagos: pagosRes.data ?? [],
+      cotizaciones: cotizacionesRes.data ?? [],
     });
   } catch (err) {
     const msg = err instanceof ClienteError ? err.message : 'Error interno';

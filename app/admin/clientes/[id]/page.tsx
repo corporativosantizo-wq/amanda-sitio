@@ -37,6 +37,7 @@ interface ClienteDetalle {
   citas: CitaRow[];
   documentos: DocRow[];
   pagos: PagoRow[];
+  cotizaciones: CotizacionRow[];
 }
 
 interface CitaRow {
@@ -52,10 +53,20 @@ interface CitaRow {
 
 interface DocRow {
   id: string;
-  nombre: string;
+  nombre_archivo: string;
+  titulo: string | null;
   tipo: string;
   estado: string;
   created_at: string;
+}
+
+interface CotizacionRow {
+  id: string;
+  numero: string;
+  fecha_emision: string;
+  estado: string;
+  total: number;
+  pdf_url: string | null;
 }
 
 interface PagoRow {
@@ -67,12 +78,13 @@ interface PagoRow {
   metodo: string | null;
 }
 
-type TabKey = 'datos' | 'citas' | 'documentos' | 'pagos' | 'notas';
+type TabKey = 'datos' | 'citas' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'datos', label: 'Datos generales', icon: '👤' },
   { key: 'citas', label: 'Citas', icon: '📅' },
   { key: 'documentos', label: 'Documentos', icon: '📁' },
+  { key: 'cotizaciones', label: 'Cotizaciones', icon: '📋' },
   { key: 'pagos', label: 'Pagos', icon: '💰' },
   { key: 'notas', label: 'Notas', icon: '📝' },
 ];
@@ -249,6 +261,9 @@ export default function ClienteDetallePage() {
             {t.key === 'documentos' && c.documentos.length > 0 && (
               <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.documentos.length}</span>
             )}
+            {t.key === 'cotizaciones' && c.cotizaciones.length > 0 && (
+              <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.cotizaciones.length}</span>
+            )}
             {t.key === 'pagos' && c.pagos.length > 0 && (
               <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.pagos.length}</span>
             )}
@@ -264,6 +279,7 @@ export default function ClienteDetallePage() {
       )}
       {tab === 'citas' && <TabCitas citas={c.citas} clienteId={id} />}
       {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
+      {tab === 'cotizaciones' && <TabCotizaciones cotizaciones={c.cotizaciones} clienteNombre={c.nombre} />}
       {tab === 'pagos' && <TabPagos pagos={c.pagos} clienteId={id} />}
       {tab === 'notas' && <TabNotas c={c} id={id} mutate={mutate} refetch={refetch} />}
 
@@ -424,7 +440,7 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50/80 border-b border-slate-200">
-              {['Nombre', 'Tipo', 'Estado', 'Fecha'].map(h => (
+              {['Archivo', 'Título', 'Tipo', 'Estado', 'Fecha'].map(h => (
                 <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">{h}</th>
               ))}
             </tr>
@@ -432,11 +448,77 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
           <tbody className="divide-y divide-slate-100">
             {documentos.map((d: DocRow) => (
               <tr key={d.id} className="hover:bg-slate-50/50">
-                <td className="py-3 px-4 text-sm font-medium text-slate-900">{d.nombre}</td>
-                <td className="py-3 px-4 text-sm text-slate-600">{d.tipo}</td>
+                <td className="py-3 px-4 text-sm font-medium text-slate-900 max-w-[200px] truncate">{d.nombre_archivo}</td>
+                <td className="py-3 px-4 text-sm text-slate-600">{d.titulo ?? '—'}</td>
+                <td className="py-3 px-4 text-sm text-slate-600">{d.tipo ?? '—'}</td>
                 <td className="py-3 px-4"><Badge variant={d.estado as any}>{d.estado}</Badge></td>
                 <td className="py-3 px-4 text-sm text-slate-500">
                   {new Date(d.created_at).toLocaleDateString('es-GT')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+// ── Tab: Cotizaciones ────────────────────────────────────────────────────────
+
+const ESTADO_COT_BADGE: Record<string, string> = {
+  borrador: 'bg-gray-100 text-gray-700',
+  enviada: 'bg-blue-100 text-blue-700',
+  aceptada: 'bg-green-100 text-green-700',
+  rechazada: 'bg-red-100 text-red-700',
+  vencida: 'bg-amber-100 text-amber-700',
+};
+
+function TabCotizaciones({ cotizaciones, clienteNombre }: { cotizaciones: CotizacionRow[]; clienteNombre: string }) {
+  if (!cotizaciones.length) return (
+    <EmptyState icon="📋" title="Sin cotizaciones" description="Este cliente no tiene cotizaciones"
+      action={{ label: '+ Nueva cotización', onClick: () => window.location.href = `/admin/ai?prompt=Genera una cotización para ${clienteNombre}` }} />
+  );
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+
+  return (
+    <Section title={`Cotizaciones (${cotizaciones.length})`} noPadding>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50/80 border-b border-slate-200">
+              {['Número', 'Fecha', 'Estado', 'Total', 'PDF'].map(h => (
+                <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {cotizaciones.map((cot: CotizacionRow) => (
+              <tr key={cot.id} className="hover:bg-slate-50/50">
+                <td className="py-3 px-4 text-sm font-medium text-slate-900 font-mono">{cot.numero}</td>
+                <td className="py-3 px-4 text-sm text-slate-600">
+                  {new Date(cot.fecha_emision).toLocaleDateString('es-GT')}
+                </td>
+                <td className="py-3 px-4">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    ESTADO_COT_BADGE[cot.estado] ?? 'bg-slate-100 text-slate-600'
+                  }`}>{cot.estado}</span>
+                </td>
+                <td className="py-3 px-4 text-sm font-medium text-slate-900">{Q(cot.total)}</td>
+                <td className="py-3 px-4">
+                  {cot.pdf_url ? (
+                    <a
+                      href={`${supabaseUrl}/storage/v1/object/public/documentos/${cot.pdf_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
+                    >
+                      Descargar
+                    </a>
+                  ) : (
+                    <span className="text-sm text-slate-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}
