@@ -537,6 +537,7 @@ export async function sendMail(params: {
   to: string;
   subject: string;
   htmlBody: string;
+  cc?: string | string[];
   attachments?: Array<{ name: string; contentType: string; contentBytes: string }>;
 }): Promise<void> {
   const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
@@ -558,6 +559,11 @@ export async function sendMail(params: {
     body: { contentType: 'HTML', content: params.htmlBody },
     toRecipients: [{ emailAddress: { address: params.to } }],
   };
+
+  if (params.cc) {
+    const ccList = Array.isArray(params.cc) ? params.cc : [params.cc];
+    message.ccRecipients = ccList.map((addr) => ({ emailAddress: { address: addr } }));
+  }
 
   if (params.attachments?.length) {
     message.attachments = params.attachments.map((att) => ({

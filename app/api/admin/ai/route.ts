@@ -746,7 +746,7 @@ async function handleEnviarEmail(
   }
 
   // 3. Send
-  await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html });
+  await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: 'amanda@papeleo.legal' });
 
   const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${emailMask}, asunto=${subject}`);
@@ -837,6 +837,7 @@ async function handleEnviarEmailConAdjunto(
     to: destinatarioEmail,
     subject: asunto,
     htmlBody: html,
+    cc: 'amanda@papeleo.legal',
     attachments: [{ name: displayName, contentType, contentBytes }],
   });
 
@@ -892,7 +893,7 @@ async function handleConfirmarPago(
         monto,
         fechaPago: pago.fecha_pago ?? new Date().toISOString().split('T')[0],
       });
-      await sendMail({ from: t.from, to: cliente.email, subject: t.subject, htmlBody: t.html });
+      await sendMail({ from: t.from, to: cliente.email, subject: t.subject, htmlBody: t.html, cc: 'amanda@papeleo.legal' });
       console.log(`[AI] Comprobante enviado a ${cliente.email} desde ${t.from}`);
       return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. Comprobante enviado a ${cliente.email} desde contador@papeleo.legal.`;
     } catch (emailErr: any) {
@@ -1288,6 +1289,7 @@ async function handleCrearCotizacionCompleta(
         to: cliente.email,
         subject: `Cotización de Servicios No. ${cotizacion.numero} — Amanda Santizo Despacho Jurídico`,
         htmlBody: emailTemplate.html,
+        cc: 'amanda@papeleo.legal',
         attachments: [{
           name: `${cotizacion.numero}.pdf`,
           contentType: 'application/pdf',
