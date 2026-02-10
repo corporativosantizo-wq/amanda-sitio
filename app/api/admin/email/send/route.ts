@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     // sendMail usa app token (client_credentials) — no requiere token delegado
     const mailFrom: MailboxAlias = from || 'asistente@papeleo.legal';
-    await sendMail({ from: mailFrom, to, subject, htmlBody });
+    await sendMail({ from: mailFrom, to, subject, htmlBody, cc: 'amanda@papeleo.legal' });
 
     console.log(`[Email/Send] Email enviado exitosamente a ${maskedTo}`);
 

@@ -159,8 +159,8 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        // Send email
-        await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html });
+        // Send email — CC a Amanda para que tenga copia de todo correo programado
+        await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: 'amanda@papeleo.legal' });
         const maskedEmail = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
         console.log(`[Cron Tareas] Email enviado: ${accion.template} a ${maskedEmail} desde ${from}`);
 
