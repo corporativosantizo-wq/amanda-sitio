@@ -333,20 +333,35 @@ export function emailPagoRecibido(params: {
 export function emailCotizacion(params: {
   clienteNombre: string;
   servicios: { descripcion: string; monto: number }[];
+  subtotal?: number;
+  iva?: number;
+  total?: number;
+  anticipo?: number;
   vigencia?: string;
 }): EmailTemplate {
-  const total = params.servicios.reduce((sum: number, s: { descripcion: string; monto: number }) => sum + s.monto, 0);
-  const totalFmt = `Q${total.toLocaleString('es-GT')}`;
+  const subtotalCalc = params.subtotal ?? params.servicios.reduce((sum, s) => sum + s.monto, 0);
+  const ivaCalc = params.iva ?? subtotalCalc * 0.12;
+  const totalCalc = params.total ?? subtotalCalc + ivaCalc;
+  const anticipoCalc = params.anticipo ?? 0;
+
+  const fmtQ = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const filasServicios = params.servicios
     .map(
       (s) =>
         `<tr>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;">${s.descripcion}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:right;">Q${s.monto.toLocaleString('es-GT')}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:right;">${fmtQ(s.monto)}</td>
         </tr>`
     )
     .join('');
+
+  const anticipoRow = anticipoCalc > 0
+    ? `<tr>
+        <td style="padding:8px 12px;font-size:13px;color:#475569;">Anticipo (60%)</td>
+        <td style="padding:8px 12px;font-size:13px;color:#475569;text-align:right;">${fmtQ(anticipoCalc)}</td>
+      </tr>`
+    : '';
 
   const vigenciaLine = params.vigencia
     ? `<p style="color:#64748b;font-size:13px;margin-top:8px;">Esta cotizaci\u00f3n es v\u00e1lida hasta el ${formatearFechaGT(params.vigencia)}.</p>`
@@ -364,11 +379,22 @@ export function emailCotizacion(params: {
       </thead>
       <tbody>
         ${filasServicios}
-        <tr style="background:#f0fdfa;">
-          <td style="padding:10px 12px;font-size:14px;font-weight:700;">Total</td>
-          <td style="padding:10px 12px;font-size:14px;font-weight:700;text-align:right;">${totalFmt}</td>
-        </tr>
       </tbody>
+    </table>
+    <table width="100%" style="margin:16px 0;border-collapse:collapse;">
+      <tr>
+        <td style="padding:8px 12px;font-size:14px;color:#475569;">Subtotal</td>
+        <td style="padding:8px 12px;font-size:14px;color:#475569;text-align:right;">${fmtQ(subtotalCalc)}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;font-size:14px;color:#475569;">IVA (12%)</td>
+        <td style="padding:8px 12px;font-size:14px;color:#475569;text-align:right;">${fmtQ(ivaCalc)}</td>
+      </tr>
+      <tr style="background:#f0fdfa;">
+        <td style="padding:10px 12px;font-size:15px;font-weight:700;color:#0f172a;">Total</td>
+        <td style="padding:10px 12px;font-size:15px;font-weight:700;color:#0f172a;text-align:right;">${fmtQ(totalCalc)}</td>
+      </tr>
+      ${anticipoRow}
     </table>
     ${vigenciaLine}
     <table width="100%" style="margin:16px 0;background:#eff6ff;border-radius:8px;padding:16px;">
@@ -381,7 +407,7 @@ export function emailCotizacion(params: {
 
   return {
     from: 'contador@papeleo.legal',
-    subject: `Cotizaci\u00f3n \u2014 ${totalFmt}`,
+    subject: `Cotizaci\u00f3n \u2014 ${fmtQ(totalCalc)}`,
     html,
   };
 }

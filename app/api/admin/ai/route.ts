@@ -1261,6 +1261,10 @@ async function handleCrearCotizacionCompleta(
       const emailTemplate = emailCotizacion({
         clienteNombre: cliente.nombre,
         servicios: serviciosEmail,
+        subtotal: cotizacionCompleta.subtotal,
+        iva: cotizacionCompleta.iva_monto,
+        total: cotizacionCompleta.total,
+        anticipo: cotizacionCompleta.anticipo_monto,
         vigencia: cotizacionCompleta.fecha_vencimiento,
       });
 
