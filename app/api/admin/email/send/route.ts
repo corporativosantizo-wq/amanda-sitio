@@ -11,10 +11,10 @@ import { marcarTareaEjecutada } from '@/lib/services/tareas.service';
 export async function POST(req: NextRequest) {
   // Verificar secret
   const cronSecret = req.headers.get('x-cron-secret');
-  const expectedSecret = process.env.SUPABASE_SERVICE_KEY;
+  const expectedSecret = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!expectedSecret) {
-    console.error('[Email/Send] SUPABASE_SERVICE_KEY no configurada');
+    console.error('[Email/Send] SUPABASE_SERVICE_ROLE_KEY no configurada');
     return NextResponse.json({ error: 'Secret no configurado' }, { status: 500 });
   }
 
