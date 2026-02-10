@@ -72,6 +72,24 @@ export async function GET(req: NextRequest) {
           destinatarioNombre = tarea.cliente.nombre;
         }
 
+        // Fallback: buscar email en datos.destinatario
+        if (!destinatarioEmail && accion.datos?.destinatario) {
+          destinatarioEmail = accion.datos.destinatario;
+        }
+
+        // Fallback: si hay cliente_id en la tarea pero no en accion, buscar email
+        if (!destinatarioEmail && tarea.cliente_id && !accion.cliente_id) {
+          const { data: cliFallback } = await db
+            .from('clientes')
+            .select('id, nombre, email')
+            .eq('id', tarea.cliente_id)
+            .single();
+          if (cliFallback?.email) {
+            destinatarioEmail = cliFallback.email;
+            destinatarioNombre = cliFallback.nombre;
+          }
+        }
+
         if (!destinatarioEmail) {
           const msg = `No se encontró email del destinatario para tarea "${tarea.titulo}"`;
           console.error(`[Cron Tareas] ${msg}`);
@@ -126,8 +144,11 @@ export async function GET(req: NextRequest) {
           }
           case 'personalizado': {
             from = 'asistente@papeleo.legal';
-            subject = datos.asunto ?? 'Mensaje de Amanda Santizo — Despacho Jurídico';
-            html = emailWrapper(datos.contenido ?? '');
+            subject = datos.asunto ?? tarea.titulo ?? 'Mensaje de Amanda Santizo — Despacho Jurídico';
+            // Fallback: contenido_html → contenido, o generar body básico desde titulo/descripcion
+            const body = datos.contenido || datos.contenido_html
+              || `<p>${tarea.titulo}</p>${tarea.descripcion ? `<p>${tarea.descripcion}</p>` : ''}`;
+            html = emailWrapper(body);
             break;
           }
           default: {

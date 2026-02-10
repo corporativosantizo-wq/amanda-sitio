@@ -299,9 +299,17 @@ Formato de accion_automatica:
 {
   "tipo": "enviar_email",
   "template": "solicitud_pago|documentos_disponibles|aviso_audiencia|solicitud_documentos|personalizado",
-  "cliente_id": "UUID del cliente (opcional si se incluye email en datos)",
+  "cliente_id": "UUID del cliente",
+  "email_directo": "email@ejemplo.com (si lo conoces)",
+  "nombre_destinatario": "Nombre del destinatario",
   "datos": { ... datos del template ... }
 }
+
+IMPORTANTE para accion_automatica:
+- Para template "personalizado": SIEMPRE incluir datos.asunto y datos.contenido (HTML del email)
+- SIEMPRE incluir email_directo del destinatario si lo conoces
+- SIEMPRE incluir nombre_destinatario cuando esté disponible
+- Si usas cliente_id, el sistema resolverá el email automáticamente como respaldo
 
 Ejemplos:
 - "Mándale recordatorio de pago a Procapeli el lunes" → crear tarea con fecha_limite=lunes, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"solicitud_pago","cliente_id":"[UUID]","datos":{"concepto":"...","monto":...}}
@@ -968,6 +976,50 @@ async function handleGestionarTareas(
         } else {
           clienteId = null;
         }
+      }
+
+      // Validar y enriquecer accion_automatica para emails programados
+      if (datos.accion_automatica?.tipo === 'enviar_email') {
+        const aa = datos.accion_automatica;
+        aa.datos = aa.datos ?? {};
+
+        // Normalizar contenido_html → contenido (el cron usa datos.contenido)
+        if (aa.datos.contenido_html && !aa.datos.contenido) {
+          aa.datos.contenido = aa.datos.contenido_html;
+        }
+
+        // Validar campos mínimos para template personalizado
+        if (aa.template === 'personalizado' && !aa.datos.contenido && !aa.datos.asunto) {
+          return 'Error: para un email personalizado programado se requiere al menos asunto y contenido. No se creó la tarea.';
+        }
+
+        // Validar que exista un template
+        if (!aa.template) {
+          return 'Error: falta el campo template en accion_automatica. No se creó la tarea.';
+        }
+
+        // Asegurar cliente_id es el UUID resuelto
+        if (clienteId) aa.cliente_id = clienteId;
+
+        // Resolver email del destinatario y guardarlo como respaldo
+        if (!aa.email_directo) {
+          const resolvedId = aa.cliente_id ?? clienteId;
+          if (resolvedId) {
+            const { data: cli } = await db
+              .from('clientes').select('id, nombre, email')
+              .eq('id', resolvedId).single();
+            if (cli?.email) {
+              aa.email_directo = cli.email;
+              aa.nombre_destinatario = aa.nombre_destinatario ?? cli.nombre;
+            }
+          }
+        }
+
+        if (!aa.email_directo && !aa.cliente_id && !clienteId) {
+          return 'Error: no se pudo determinar el destinatario del email. Se necesita cliente_id o email_directo. No se creó la tarea.';
+        }
+
+        datos.accion_automatica = aa;
       }
 
       const tarea = await crearTarea({
