@@ -12,8 +12,15 @@ const isProtectedRoute = createRouteMatcher([
   '/api/admin(.*)',
 ]);
 
+// Endpoints machine-to-machine con su propia auth (x-cron-secret)
+// NO deben pasar por Clerk porque son llamados por Supabase Edge Functions / pg_cron
+const isCronEndpoint = createRouteMatcher([
+  '/api/admin/email/send',
+  '/api/admin/email/resumen-semanal',
+]);
+
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
+  if (isProtectedRoute(req) && !isCronEndpoint(req)) {
     await auth.protect();
   }
 });
