@@ -1729,8 +1729,18 @@ export async function POST(req: Request) {
       },
     ];
 
+    // ── Inyectar fecha actual al system prompt ──────────────────────────
+    const hoyGT = new Date().toLocaleDateString('es-GT', {
+      timeZone: 'America/Guatemala',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const isoHoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' }); // YYYY-MM-DD
+
     // ── Inyectar plantillas custom al system prompt ─────────────────────
-    let dynamicPrompt = SYSTEM_PROMPT;
+    let dynamicPrompt = SYSTEM_PROMPT + `\n\n## FECHA ACTUAL\nHoy es ${hoyGT} (${isoHoy}). Usa SIEMPRE esta fecha como referencia para calcular "mañana", "la próxima semana", fechas límite, vencimientos, etc. El año actual es ${new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' }).slice(0, 4)}.`;
     try {
       const customPlantillas = await listarPlantillasActivas();
       if (customPlantillas.length > 0) {
