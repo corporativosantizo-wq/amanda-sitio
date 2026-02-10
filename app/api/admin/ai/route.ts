@@ -377,6 +377,23 @@ Amanda puede adjuntar archivos al chat (PDF, DOCX, imágenes, max 3 MB). Cuando 
 - [Amanda adjunta contrato.pdf] "Envíaselo a Flor Coronado" → usa enviar_email_con_adjunto con el archivo_url del adjunto.
 - [Amanda adjunta foto.jpg] "Mándalo a juan@gmail.com" → usa enviar_email_con_adjunto.
 
+## BÚSQUEDA DE JURISPRUDENCIA
+Tienes acceso a una base de jurisprudencia del despacho con tomos procesados y búsqueda semántica. Usa la herramienta buscar_jurisprudencia cuando:
+- Amanda pregunte sobre jurisprudencia, precedentes o criterios de tribunales
+- Necesites fundamentar una opinión legal con fuentes
+- Te pregunten sobre interpretación de leyes o doctrina legal guatemalteca
+
+### Cómo usar:
+1. Usa buscar_jurisprudencia con una consulta descriptiva del tema
+2. Analiza los fragmentos devueltos
+3. Responde citando las fuentes: "Según el Tomo X, páginas Y-Z: [contenido relevante]"
+4. Si no hay resultados, indica que no se encontró jurisprudencia relevante en la base
+
+### Ejemplos:
+- "¿Qué dice la jurisprudencia sobre prescripción mercantil?" → buscar_jurisprudencia(consulta="prescripción en materia mercantil")
+- "Necesito precedentes de nulidad de contrato" → buscar_jurisprudencia(consulta="nulidad de contrato elementos requisitos")
+- "¿Hay jurisprudencia sobre daño moral en Guatemala?" → buscar_jurisprudencia(consulta="daño moral indemnización Guatemala")
+
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
 - Usa moneda guatemalteca (Q) siempre
@@ -1378,6 +1395,72 @@ async function handleCrearCotizacionCompleta(
 
 // ── Consultar catálogo, plantillas y configuración ────────────────────────
 
+// ── Búsqueda semántica de jurisprudencia ────────────────────────────────
+
+async function handleBuscarJurisprudencia(
+  consulta: string,
+  limite: number = 10,
+): Promise<string> {
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  if (!OPENAI_API_KEY) {
+    return 'Error: OPENAI_API_KEY no configurada en el servidor.';
+  }
+
+  // 1. Generate embedding for the query
+  console.log(`[AI] Jurisprudencia: generando embedding para "${consulta.slice(0, 80)}..."`);
+  const embResponse = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'text-embedding-3-small',
+      input: consulta,
+      dimensions: 1536,
+    }),
+  });
+
+  if (!embResponse.ok) {
+    const errText = await embResponse.text();
+    console.error('[AI] OpenAI embedding error:', errText);
+    return `Error generando embedding: ${embResponse.status}`;
+  }
+
+  const embData = await embResponse.json();
+  const queryEmbedding = embData.data[0].embedding;
+
+  // 2. Call Supabase RPC for semantic search
+  const db = createAdminClient();
+  // @ts-ignore
+  const { data, error } = await db.schema('public').rpc('buscar_jurisprudencia', {
+    query_embedding: JSON.stringify(queryEmbedding),
+    match_count: limite,
+    match_threshold: 0.3,
+  });
+
+  if (error) {
+    console.error('[AI] Jurisprudencia RPC error:', error.message);
+    return `Error buscando jurisprudencia: ${error.message}`;
+  }
+
+  if (!data?.length) {
+    return `No se encontraron fragmentos de jurisprudencia relevantes para: "${consulta}". Es posible que los tomos aún no hayan sido procesados.`;
+  }
+
+  // 3. Format results
+  let result = `Se encontraron ${data.length} fragmento(s) relevantes:\n\n`;
+  for (let i = 0; i < data.length; i++) {
+    const frag = data[i];
+    const similarity = (frag.similarity * 100).toFixed(1);
+    result += `### Resultado ${i + 1} (${similarity}% relevancia)\n`;
+    result += `**Tomo:** ${frag.tomo_nombre} | **Páginas:** ${frag.pagina_inicio}-${frag.pagina_fin}\n\n`;
+    result += `${frag.contenido}\n\n---\n\n`;
+  }
+
+  return result;
+}
+
 async function handleConsultarCatalogo(
   consulta: 'catalogo_servicios' | 'plantilla_cotizacion' | 'plantilla_recordatorio_audiencia' | 'configuracion',
 ): Promise<string> {
@@ -1781,6 +1864,24 @@ export async function POST(req: Request) {
           required: ['cliente_id', 'items'],
         },
       },
+      {
+        name: 'buscar_jurisprudencia',
+        description: 'Busca en la base de jurisprudencia del despacho usando búsqueda semántica por embeddings. Devuelve fragmentos relevantes de tomos de jurisprudencia con referencias a tomo y páginas. Usar cuando Amanda pregunte sobre jurisprudencia, precedentes, criterios de tribunales o leyes.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            consulta: {
+              type: 'string',
+              description: 'La pregunta o tema a buscar en la jurisprudencia. Ej: "prescripción en materia mercantil", "nulidad de contrato por error".',
+            },
+            limite: {
+              type: 'number',
+              description: 'Máximo de fragmentos a devolver (default: 10).',
+            },
+          },
+          required: ['consulta'],
+        },
+      },
     ];
 
     // ── Inyectar fecha actual al system prompt ──────────────────────────
@@ -1915,6 +2016,9 @@ export async function POST(req: Request) {
               } else {
                 result = JSON.stringify({ error: 'Acción no reconocida. Use: transcribir o buscar_pendientes.' });
               }
+            } else if (block.name === 'buscar_jurisprudencia') {
+              const input = block.input as any;
+              result = await handleBuscarJurisprudencia(input.consulta, input.limite ?? 10);
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }
