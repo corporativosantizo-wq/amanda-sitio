@@ -1,5 +1,7 @@
 export const maxDuration = 300; // Allow 5 min for transcription tool
 
+import fs from 'fs';
+import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
@@ -1258,6 +1260,11 @@ async function handleCrearCotizacionCompleta(
         monto: item.total,
       }));
 
+      let logoBase64: string | undefined;
+      try {
+        logoBase64 = fs.readFileSync(path.join(process.cwd(), 'public', 'Logo_Amanda_Santizo_2021_Full_Color.png')).toString('base64');
+      } catch { /* fallback to text */ }
+
       const emailTemplate = emailCotizacion({
         clienteNombre: cliente.nombre,
         servicios: serviciosEmail,
@@ -1266,6 +1273,12 @@ async function handleCrearCotizacionCompleta(
         total: cotizacionCompleta.total,
         anticipo: cotizacionCompleta.anticipo_monto,
         vigencia: cotizacionCompleta.fecha_vencimiento,
+        numeroCotizacion: cotizacion.numero,
+        fechaEmision: cotizacionCompleta.fecha_emision,
+        anticipoPorcentaje: cotizacionCompleta.anticipo_porcentaje,
+        condiciones: cotizacionCompleta.condiciones ?? undefined,
+        configuracion: config,
+        logoBase64,
       });
 
       const pdfBase64 = pdfBuffer.toString('base64');

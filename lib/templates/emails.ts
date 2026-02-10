@@ -330,6 +330,40 @@ export function emailPagoRecibido(params: {
   };
 }
 
+// ── Wrapper especializado para cotizaciones (paleta blue/slate) ──────────────
+
+function emailCotizacionWrapper(content: string, logoBase64?: string): string {
+  const logoHtml = logoBase64
+    ? `<img src="data:image/png;base64,${logoBase64}" alt="Amanda Santizo" style="max-height:45px;width:auto;" />`
+    : `<span style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:0.5px;">Amanda Santizo</span><br/><span style="font-size:12px;color:#64748B;">Despacho Jur\u00eddico</span>`;
+
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 0;">
+    <tr><td align="center">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <!-- Header -->
+        <tr><td style="padding:24px 32px;">${logoHtml}</td></tr>
+        <!-- Gradient line -->
+        <tr><td style="height:3px;background:linear-gradient(90deg,#1E3A8A,#2563EB,#1E3A8A);font-size:0;line-height:0;">&nbsp;</td></tr>
+        <!-- Content -->
+        <tr><td style="padding:32px;">${content}</td></tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:16px 32px;background:#F8FAFC;border-top:1px solid #CBD5E1;text-align:center;">
+            <p style="margin:0;color:#94A3B8;font-size:12px;">Amanda Santizo \u2014 Despacho Jur\u00eddico \u2014 Ciudad de Guatemala</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 export function emailCotizacion(params: {
   clienteNombre: string;
   servicios: { descripcion: string; monto: number }[];
@@ -338,76 +372,132 @@ export function emailCotizacion(params: {
   total?: number;
   anticipo?: number;
   vigencia?: string;
+  numeroCotizacion?: string;
+  fechaEmision?: string;
+  anticipoPorcentaje?: number;
+  condiciones?: string;
+  logoBase64?: string;
+  configuracion?: Record<string, any>;
 }): EmailTemplate {
   const subtotalCalc = params.subtotal ?? params.servicios.reduce((sum, s) => sum + s.monto, 0);
   const ivaCalc = params.iva ?? subtotalCalc * 0.12;
   const totalCalc = params.total ?? subtotalCalc + ivaCalc;
   const anticipoCalc = params.anticipo ?? 0;
+  const antPct = params.anticipoPorcentaje ?? 60;
 
   const fmtQ = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  // Header info (cotizacion number + date)
+  let headerInfo = '';
+  if (params.numeroCotizacion || params.fechaEmision) {
+    const numHtml = params.numeroCotizacion ? `<span style="display:inline-block;background:#DBEAFE;color:#2563EB;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${params.numeroCotizacion}</span>` : '';
+    const fechaHtml = params.fechaEmision ? `<span style="font-size:12px;color:#94A3B8;margin-left:8px;">${formatearFechaGT(params.fechaEmision)}</span>` : '';
+    headerInfo = `<p style="margin:0 0 16px;text-align:right;">${numHtml}${fechaHtml}</p>`;
+  }
+
+  // Validity badge
+  const badgeHtml = `<p style="margin:16px 0;"><span style="display:inline-block;background:#DBEAFE;color:#2563EB;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">V\u00e1lida por 30 d\u00edas</span></p>`;
+
+  // Services table — 4 columns
   const filasServicios = params.servicios
     .map(
-      (s) =>
-        `<tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;">${s.descripcion}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:right;">${fmtQ(s.monto)}</td>
+      (s, i) =>
+        `<tr style="background:${i % 2 === 0 ? '#F8FAFC' : '#ffffff'};">
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#64748B;text-align:center;width:36px;">${i + 1}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;">${s.descripcion}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;text-align:right;width:50px;">1</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#0F172A;text-align:right;width:110px;">${fmtQ(s.monto)}</td>
         </tr>`
     )
     .join('');
 
+  // Anticipo row
   const anticipoRow = anticipoCalc > 0
     ? `<tr>
-        <td style="padding:8px 12px;font-size:13px;color:#475569;">Anticipo (60%)</td>
-        <td style="padding:8px 12px;font-size:13px;color:#475569;text-align:right;">${fmtQ(anticipoCalc)}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#2563EB;">Anticipo (${antPct}%)</td>
+        <td style="padding:8px 12px;font-size:13px;color:#2563EB;font-weight:600;text-align:right;">${fmtQ(anticipoCalc)}</td>
       </tr>`
     : '';
 
-  const vigenciaLine = params.vigencia
-    ? `<p style="color:#64748b;font-size:13px;margin-top:8px;">Esta cotizaci\u00f3n es v\u00e1lida hasta el ${formatearFechaGT(params.vigencia)}.</p>`
-    : '';
+  // Conditions box
+  let conditionsHtml = '';
+  if (params.condiciones) {
+    const condLines = params.condiciones.split('\n').map(l => l.trim()).filter(Boolean);
+    const condContent = condLines.map(l => `<p style="margin:4px 0;font-size:13px;color:#334155;line-height:1.5;">${l}</p>`).join('');
+    conditionsHtml = `
+    <table width="100%" style="margin:20px 0;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="background:#F8FAFC;border-left:3px solid #2563EB;padding:16px 18px;border-radius:0 6px 6px 0;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#2563EB;text-transform:uppercase;letter-spacing:0.5px;">Condiciones de pago</p>
+          ${condContent}
+        </td>
+      </tr>
+    </table>`;
+  }
 
-  const html = emailWrapper(`
-    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cotizaci\u00f3n de Servicios</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, adjuntamos la cotizaci\u00f3n solicitada.</p>
-    <table width="100%" style="margin:16px 0;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;">
+  // Bank info box
+  const banco = params.configuracion?.banco ?? 'Banco Industrial';
+  const cuenta = params.configuracion?.numero_cuenta ?? '455-008846-4';
+  const titularCuenta = params.configuracion?.cuenta_nombre ?? 'Invest & Jure-Advisor, S.A.';
+  const emailCont = params.configuracion?.email_contador ?? 'contador@papeleo.legal';
+
+  const bankHtml = `
+    <table width="100%" style="margin:16px 0;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="border:1px solid #CBD5E1;padding:16px 18px;border-radius:6px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#0F172A;text-transform:uppercase;letter-spacing:0.5px;">\uD83C\uDFE6 Datos bancarios</p>
+          <p style="margin:4px 0;font-size:13px;color:#334155;"><strong>${banco}</strong> \u2014 Cuenta No. ${cuenta}</p>
+          <p style="margin:4px 0;font-size:13px;color:#64748B;">A nombre de: ${titularCuenta}</p>
+          <p style="margin:4px 0;font-size:13px;color:#64748B;">Enviar comprobante a: ${emailCont}</p>
+        </td>
+      </tr>
+    </table>`;
+
+  const html = emailCotizacionWrapper(`
+    ${headerInfo}
+    <h2 style="margin:0 0 8px;color:#0F172A;font-size:20px;font-weight:700;">Cotizaci\u00f3n de Servicios</h2>
+    <p style="color:#334155;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, adjuntamos la cotizaci\u00f3n solicitada.</p>
+    ${badgeHtml}
+    <table width="100%" style="margin:16px 0;border-collapse:collapse;">
       <thead>
-        <tr style="background:#f9fafb;">
-          <th style="padding:10px 12px;text-align:left;font-size:13px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Servicio</th>
-          <th style="padding:10px 12px;text-align:right;font-size:13px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Monto</th>
+        <tr style="background:#F8FAFC;">
+          <th style="padding:10px 8px;text-align:center;font-size:11px;color:#64748B;font-weight:600;border-bottom:1px solid #F1F5F9;width:36px;">No.</th>
+          <th style="padding:10px 8px;text-align:left;font-size:11px;color:#64748B;font-weight:600;border-bottom:1px solid #F1F5F9;">Servicio</th>
+          <th style="padding:10px 8px;text-align:right;font-size:11px;color:#64748B;font-weight:600;border-bottom:1px solid #F1F5F9;width:50px;">Cant.</th>
+          <th style="padding:10px 8px;text-align:right;font-size:11px;color:#64748B;font-weight:600;border-bottom:1px solid #F1F5F9;width:110px;">Total (Q)</th>
         </tr>
       </thead>
       <tbody>
         ${filasServicios}
       </tbody>
     </table>
-    <table width="100%" style="margin:16px 0;border-collapse:collapse;">
+    <table width="100%" style="margin:8px 0;border-collapse:collapse;">
       <tr>
-        <td style="padding:8px 12px;font-size:14px;color:#475569;">Subtotal</td>
-        <td style="padding:8px 12px;font-size:14px;color:#475569;text-align:right;">${fmtQ(subtotalCalc)}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#64748B;">Subtotal</td>
+        <td style="padding:8px 12px;font-size:13px;color:#334155;text-align:right;">${fmtQ(subtotalCalc)}</td>
       </tr>
       <tr>
-        <td style="padding:8px 12px;font-size:14px;color:#475569;">IVA (12%)</td>
-        <td style="padding:8px 12px;font-size:14px;color:#475569;text-align:right;">${fmtQ(ivaCalc)}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#64748B;">IVA (12%)</td>
+        <td style="padding:8px 12px;font-size:13px;color:#334155;text-align:right;">${fmtQ(ivaCalc)}</td>
       </tr>
-      <tr style="background:#f0fdfa;">
-        <td style="padding:10px 12px;font-size:15px;font-weight:700;color:#0f172a;">Total</td>
-        <td style="padding:10px 12px;font-size:15px;font-weight:700;color:#0f172a;text-align:right;">${fmtQ(totalCalc)}</td>
+      <tr>
+        <td colspan="2" style="padding:0 12px;"><hr style="border:none;border-top:1px solid #CBD5E1;margin:4px 0;" /></td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#0F172A;">TOTAL</td>
+        <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#0F172A;text-align:right;">${fmtQ(totalCalc)}</td>
       </tr>
       ${anticipoRow}
     </table>
-    ${vigenciaLine}
-    <table width="100%" style="margin:16px 0;background:#eff6ff;border-radius:8px;padding:16px;">
-      <tr><td>
-        <p style="margin:0 0 8px;font-size:14px;font-weight:600;">Cuentas para dep\u00f3sito:</p>
-        ${cuentasBancariasHTML()}
-      </td></tr>
-    </table>
-  `);
+    ${conditionsHtml}
+    ${bankHtml}
+  `, params.logoBase64);
 
   return {
     from: 'contador@papeleo.legal',
-    subject: `Cotizaci\u00f3n \u2014 ${fmtQ(totalCalc)}`,
+    subject: params.numeroCotizacion
+      ? `Cotizaci\u00f3n ${params.numeroCotizacion} \u2014 ${fmtQ(totalCalc)}`
+      : `Cotizaci\u00f3n \u2014 ${fmtQ(totalCalc)}`,
     html,
   };
 }
