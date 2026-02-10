@@ -63,20 +63,10 @@ export async function obtenerProveedor(id: string): Promise<Proveedor> {
 }
 
 export async function crearProveedor(input: ProveedorInsert): Promise<Proveedor> {
-  // Generar código
-  const { data: numData, error: numError } = await db()
-    // @ts-ignore
-    .schema('public').rpc('next_sequence', { p_tipo: 'PROV' });
-  if (numError) {
-    console.error('RPC ERROR:', numError.message ?? numError.code);
-    throw new ProveedorError('Error al generar código', numError);
-  }
-  const codigo = numData as string;
-
+  // El código PROV-XXXX se genera automáticamente vía trigger auto_codigo_proveedor
   const { data, error } = await db()
     .from('proveedores')
     .insert({
-      codigo,
       nombre: input.nombre,
       tipo: input.tipo ?? 'freelance',
       especialidad: input.especialidad ?? null,
