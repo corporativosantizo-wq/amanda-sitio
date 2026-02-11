@@ -302,21 +302,46 @@ Formato de accion_automatica:
   "cliente_id": "UUID del cliente",
   "email_directo": "email@ejemplo.com (si lo conoces)",
   "nombre_destinatario": "Nombre del destinatario",
-  "datos": { ... datos del template ... }
+  "datos": { ... datos del template — VER CAMPOS OBLIGATORIOS ABAJO ... }
 }
 
-IMPORTANTE para accion_automatica:
-- Para template "personalizado": SIEMPRE incluir datos.asunto y datos.contenido (HTML del email)
-- SIEMPRE incluir email_directo del destinatario si lo conoces
-- SIEMPRE incluir nombre_destinatario cuando esté disponible
-- Si usas cliente_id, el sistema resolverá el email automáticamente como respaldo
+⚠️ CAMPOS OBLIGATORIOS POR TEMPLATE (la tarea NO se creará si faltan):
+
+1. template="solicitud_pago" → datos DEBE tener:
+   - "concepto": string (ej: "Honorarios caso laboral")
+   - "monto": number > 0 (ej: 5000)
+   - "fecha_limite": string opcional (ej: "2026-02-20")
+
+2. template="documentos_disponibles" → no requiere datos adicionales
+
+3. template="aviso_audiencia" → datos DEBE tener:
+   - "fecha": string (ej: "2026-02-15")
+   - "hora": string (ej: "09:00")
+   - "juzgado": string (ej: "Juzgado 1o Civil")
+
+4. template="solicitud_documentos" → datos DEBE tener:
+   - "documentos": string[] (ej: ["DPI vigente", "Recibo de luz"])
+
+5. template="personalizado" → datos DEBE tener:
+   - "asunto": string — el subject del email. OBLIGATORIO.
+   - "contenido": string — el cuerpo del email en HTML. OBLIGATORIO.
+   Ejemplo de contenido: "<p>Estimado Lic. García,</p><p>Le recordamos que tiene pendiente...</p><p>Saludos cordiales,<br>Amanda Santizo</p>"
+
+🚨 REGLA CRÍTICA PARA EMAILS PROGRAMADOS:
+- NUNCA crees una tarea de email sin TODOS los campos obligatorios del template.
+- Para template "personalizado": SIEMPRE genera tú misma el asunto y el contenido HTML completo ANTES de crear la tarea. NO dejes datos.asunto o datos.contenido vacíos — el sistema rechazará la tarea.
+- Si Amanda te pide programar un email pero no te da el texto exacto, REDÁCTALO tú como lo haría Amanda (profesional, cordial, en español) y guárdalo en datos.contenido.
+- SIEMPRE incluir email_directo del destinatario si lo conoces.
+- SIEMPRE incluir nombre_destinatario cuando esté disponible.
+- Si usas cliente_id, el sistema resolverá el email automáticamente como respaldo.
 
 Ejemplos:
-- "Mándale recordatorio de pago a Procapeli el lunes" → crear tarea con fecha_limite=lunes, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"solicitud_pago","cliente_id":"[UUID]","datos":{"concepto":"...","monto":...}}
+- "Mándale recordatorio de pago a Procapeli el lunes" → crear tarea con fecha_limite=lunes, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"solicitud_pago","cliente_id":"[UUID]","datos":{"concepto":"Honorarios legales pendientes","monto":5000}}
 - "El miércoles envíale a Roberto sus documentos" → crear tarea con fecha_limite=miércoles, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"documentos_disponibles","cliente_id":"[UUID]"}
-- "Recuérdame el viernes revisar el contrato de Juan" → crear tarea normal para Amanda SIN accion_automatica (es solo recordatorio)
+- "El viernes recuérdale al Lic. Alvarez su cita" → crear tarea con fecha_limite=viernes, asignado_a=asistente, accion_automatica={"tipo":"enviar_email","template":"personalizado","cliente_id":"[UUID]","datos":{"asunto":"Recordatorio de cita — Despacho Amanda Santizo","contenido":"<p>Estimado Lic. Alvarez,</p><p>Le enviamos un cordial recordatorio de su cita programada con nuestro despacho.</p><p>Quedamos a su disposición para cualquier consulta.</p><p>Saludos cordiales,<br>Amanda Santizo<br>Despacho Jurídico</p>"}}
+- "Recuérdame el viernes revisar el contrato de Juan" → crear tarea normal para Amanda SIN accion_automatica (es solo recordatorio PARA AMANDA, no email a un cliente)
 
-IMPORTANTE: Solo usa accion_automatica cuando la tarea es para el asistente y requiere una acción automática (como enviar email). Para recordatorios personales de Amanda, crea la tarea sin accion_automatica.
+IMPORTANTE: Solo usa accion_automatica cuando la tarea es para el asistente y requiere una acción automática (como enviar email a un CLIENTE o tercero). Para recordatorios personales de Amanda, crea la tarea sin accion_automatica.
 
 ## GESTIÓN DE COBROS
 Puedes gestionar las cuentas por cobrar del despacho usando la herramienta gestionar_cobros. Acciones disponibles:
@@ -988,14 +1013,51 @@ async function handleGestionarTareas(
           aa.datos.contenido = aa.datos.contenido_html;
         }
 
-        // Validar campos mínimos para template personalizado
-        if (aa.template === 'personalizado' && !aa.datos.contenido && !aa.datos.asunto) {
-          return 'Error: para un email personalizado programado se requiere al menos asunto y contenido. No se creó la tarea.';
-        }
-
-        // Validar que exista un template
+        // Validar que exista un template válido
+        const TEMPLATES_VALIDOS = ['solicitud_pago', 'documentos_disponibles', 'aviso_audiencia', 'solicitud_documentos', 'personalizado'];
         if (!aa.template) {
           return 'Error: falta el campo template en accion_automatica. No se creó la tarea.';
+        }
+        if (!TEMPLATES_VALIDOS.includes(aa.template)) {
+          return `Error: template "${aa.template}" no soportado. Templates válidos: ${TEMPLATES_VALIDOS.join(', ')}. No se creó la tarea.`;
+        }
+
+        // Validar campos OBLIGATORIOS según template
+        switch (aa.template) {
+          case 'personalizado': {
+            if (!aa.datos.asunto?.trim()) {
+              return 'Error: para email personalizado se requiere datos.asunto. Genera el asunto del email y vuelve a intentar. No se creó la tarea.';
+            }
+            if (!aa.datos.contenido?.trim() && !aa.datos.contenido_html?.trim()) {
+              return 'Error: para email personalizado se requiere datos.contenido (HTML del cuerpo del email). Genera el contenido completo del email y vuelve a intentar. No se creó la tarea.';
+            }
+            break;
+          }
+          case 'solicitud_pago': {
+            if (!aa.datos.concepto?.trim()) {
+              return 'Error: para solicitud_pago se requiere datos.concepto. No se creó la tarea.';
+            }
+            if (!aa.datos.monto || aa.datos.monto <= 0) {
+              return 'Error: para solicitud_pago se requiere datos.monto (mayor a 0). No se creó la tarea.';
+            }
+            break;
+          }
+          case 'aviso_audiencia': {
+            if (!aa.datos.fecha || !aa.datos.hora) {
+              return 'Error: para aviso_audiencia se requiere datos.fecha y datos.hora. No se creó la tarea.';
+            }
+            if (!aa.datos.juzgado?.trim()) {
+              return 'Error: para aviso_audiencia se requiere datos.juzgado. No se creó la tarea.';
+            }
+            break;
+          }
+          case 'solicitud_documentos': {
+            if (!aa.datos.documentos || !Array.isArray(aa.datos.documentos) || aa.datos.documentos.length === 0) {
+              return 'Error: para solicitud_documentos se requiere datos.documentos (array de nombres de documentos). No se creó la tarea.';
+            }
+            break;
+          }
+          // documentos_disponibles: no requiere datos adicionales
         }
 
         // Asegurar cliente_id es el UUID resuelto
@@ -1786,7 +1848,7 @@ export async function POST(req: Request) {
             },
             datos: {
               type: 'object',
-              description: 'Datos según la acción. Crear: titulo, descripcion, tipo, prioridad, fecha_limite, cliente_id, categoria, asignado_a, notas, accion_automatica (JSON para tareas programadas: {tipo:"enviar_email", template:"...", cliente_id:"...", datos:{...}}). Listar: estado, prioridad, categoria, asignado_a, fecha ("hoy"), busqueda. Completar: tarea_id. Migrar: tarea_id, nueva_fecha.',
+              description: 'Datos según la acción. Crear: titulo, descripcion, tipo, prioridad, fecha_limite, cliente_id, categoria, asignado_a, notas, accion_automatica. Para emails programados, accion_automatica DEBE incluir: {tipo:"enviar_email", template:"solicitud_pago|documentos_disponibles|aviso_audiencia|solicitud_documentos|personalizado", cliente_id:"UUID", email_directo:"email", nombre_destinatario:"nombre", datos:{campos obligatorios del template}}. Para template personalizado, datos DEBE incluir asunto (string) y contenido (string HTML del email). NUNCA dejar asunto o contenido vacíos. Listar: estado, prioridad, categoria, asignado_a, fecha ("hoy"), busqueda. Completar: tarea_id. Migrar: tarea_id, nueva_fecha.',
             },
           },
           required: ['accion', 'datos'],
