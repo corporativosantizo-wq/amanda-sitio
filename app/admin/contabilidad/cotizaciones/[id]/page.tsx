@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
@@ -43,6 +43,7 @@ interface CotizacionDetalle {
     email: string;
     telefono: string;
   } | null;
+  pdf_url: string | null;
   factura_generada: boolean;
 }
 
@@ -102,6 +103,21 @@ export default function CotizacionDetallePage() {
       },
     });
   }, [id, mutate, router]);
+
+  const [descargando, setDescargando] = useState(false);
+  const descargarPdf = useCallback(async () => {
+    setDescargando(true);
+    try {
+      const res = await fetch(`/api/admin/contabilidad/cotizaciones/${id}/pdf`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Error al obtener PDF');
+      window.open(data.url, '_blank');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setDescargando(false);
+    }
+  }, [id]);
 
   // ── Loading / Error ─────────────────────────────────────────────────
 
@@ -199,6 +215,15 @@ export default function CotizacionDetallePage() {
           >
             📋 Duplicar
           </button>
+          {cot.pdf_url && (
+            <button
+              onClick={descargarPdf}
+              disabled={descargando}
+              className="px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              {descargando ? '⏳ Descargando...' : '📄 Descargar PDF'}
+            </button>
+          )}
         </div>
       </div>
 
