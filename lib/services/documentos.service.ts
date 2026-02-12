@@ -502,6 +502,24 @@ export async function extraerYGuardarTexto(docId: string, archivoUrl: string): P
   }
 }
 
+// ── Stats para Clasificador ─────────────────────────────────────────────────
+
+export async function obtenerStatsClasificador() {
+  const [sinCliente, pendientes, clasificados, total] = await Promise.all([
+    db().from('documentos').select('*', { count: 'exact', head: true }).is('cliente_id', null),
+    db().from('documentos').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+    db().from('documentos').select('*', { count: 'exact', head: true }).eq('estado', 'clasificado'),
+    db().from('documentos').select('*', { count: 'exact', head: true }),
+  ]);
+
+  return {
+    sin_cliente: sinCliente.count ?? 0,
+    pendientes: pendientes.count ?? 0,
+    clasificados: clasificados.count ?? 0,
+    total: total.count ?? 0,
+  };
+}
+
 // ── Error ───────────────────────────────────────────────────────────────────
 
 export class DocumentoError extends Error {

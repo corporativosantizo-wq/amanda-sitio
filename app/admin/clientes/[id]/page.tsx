@@ -57,6 +57,7 @@ interface DocRow {
   titulo: string | null;
   tipo: string;
   estado: string;
+  archivo_url: string;
   created_at: string;
 }
 
@@ -430,6 +431,26 @@ function TabCitas({ citas, clienteId }: { citas: CitaRow[]; clienteId: string })
 // ── Tab: Documentos ─────────────────────────────────────────────────────────
 
 function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const openSignedUrl = async (doc: DocRow, download = false) => {
+    setLoadingId(doc.id);
+    try {
+      const res = await fetch(`/api/admin/documentos/${doc.id}`);
+      const data = await res.json();
+      if (data.signed_url) {
+        const url = download
+          ? `${data.signed_url}&download=${encodeURIComponent(doc.nombre_archivo)}`
+          : data.signed_url;
+        window.open(url, '_blank');
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   if (!documentos.length) return (
     <EmptyState icon="📁" title="Sin documentos" description="No hay documentos clasificados para este cliente" />
   );
@@ -440,7 +461,7 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50/80 border-b border-slate-200">
-              {['Archivo', 'Título', 'Tipo', 'Estado', 'Fecha'].map(h => (
+              {['Archivo', 'Título', 'Tipo', 'Estado', 'Fecha', 'Acciones'].map(h => (
                 <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">{h}</th>
               ))}
             </tr>
@@ -448,12 +469,41 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
           <tbody className="divide-y divide-slate-100">
             {documentos.map((d: DocRow) => (
               <tr key={d.id} className="hover:bg-slate-50/50">
-                <td className="py-3 px-4 text-sm font-medium text-slate-900 max-w-[200px] truncate">{d.nombre_archivo}</td>
+                <td className="py-3 px-4 max-w-[200px]">
+                  <button
+                    onClick={() => openSignedUrl(d)}
+                    disabled={loadingId === d.id}
+                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate block max-w-full text-left disabled:opacity-50"
+                    title="Abrir vista previa"
+                  >
+                    {d.nombre_archivo}
+                  </button>
+                </td>
                 <td className="py-3 px-4 text-sm text-slate-600">{d.titulo ?? '—'}</td>
                 <td className="py-3 px-4 text-sm text-slate-600">{d.tipo ?? '—'}</td>
                 <td className="py-3 px-4"><Badge variant={d.estado as any}>{d.estado}</Badge></td>
                 <td className="py-3 px-4 text-sm text-slate-500">
                   {new Date(d.created_at).toLocaleDateString('es-GT')}
+                </td>
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => openSignedUrl(d)}
+                      disabled={loadingId === d.id}
+                      className="p-1.5 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      title="Ver documento"
+                    >
+                      <span className="text-base">👁</span>
+                    </button>
+                    <button
+                      onClick={() => openSignedUrl(d, true)}
+                      disabled={loadingId === d.id}
+                      className="p-1.5 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      title="Descargar"
+                    >
+                      <span className="text-base">📥</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

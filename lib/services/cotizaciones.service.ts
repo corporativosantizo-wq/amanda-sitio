@@ -14,6 +14,8 @@ import type {
 } from '@/lib/types';
 import { EstadoCotizacion } from '@/lib/types';
 import { calcularIVASobreSubtotal, calcularAnticipo } from '@/lib/utils';
+import { sendMail } from '@/lib/services/outlook.service';
+import { emailCotizacion } from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
 
@@ -274,8 +276,8 @@ export async function eliminarCotizacion(id: string): Promise<void> {
 // --- Acciones de Estado ---
 
 /**
- * Marca cotización como enviada. Registra fecha de envío.
- * En un siguiente paso, esto también enviará el email con PDF.
+ * Envía cotización por email al cliente y marca como enviada.
+ * Si el email falla, la cotización permanece en borrador.
  */
 export async function enviarCotizacion(id: string): Promise<Cotizacion> {
   const actual = await obtenerCotizacion(id);
@@ -284,6 +286,50 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     throw new CotizacionError('Solo se pueden enviar cotizaciones en estado borrador');
   }
 
+  const cliente = actual.cliente as any;
+  if (!cliente?.email) {
+    throw new CotizacionError('El cliente no tiene email registrado. Agrega un email antes de enviar.');
+  }
+
+  // Obtener configuración para datos bancarios en el template
+  const config = await obtenerConfiguracion();
+
+  // Generar email HTML
+  const items = (actual.items ?? []).map((item: any) => ({
+    descripcion: item.descripcion,
+    monto: item.total ?? item.cantidad * item.precio_unitario,
+  }));
+
+  const template = emailCotizacion({
+    clienteNombre: cliente.nombre,
+    servicios: items,
+    subtotal: actual.subtotal,
+    iva: actual.iva_monto,
+    total: actual.total,
+    anticipo: actual.anticipo_monto ?? 0,
+    anticipoPorcentaje: actual.anticipo_porcentaje ?? 60,
+    numeroCotizacion: actual.numero,
+    fechaEmision: actual.fecha_emision,
+    condiciones: actual.condiciones ?? undefined,
+    configuracion: config,
+  });
+
+  // Enviar email — si falla, NO cambiamos el estado
+  try {
+    await sendMail({
+      from: 'contador@papeleo.legal',
+      to: cliente.email,
+      subject: template.subject,
+      htmlBody: template.html,
+    });
+  } catch (err: any) {
+    throw new CotizacionError(
+      `Error al enviar email a ${cliente.email}: ${err.message ?? 'error desconocido'}`,
+      err.details
+    );
+  }
+
+  // Email enviado OK → actualizar estado
   const { data, error } = await db()
     .from('cotizaciones')
     .update({
@@ -295,11 +341,7 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     .select()
     .single();
 
-  if (error) throw new CotizacionError('Error al enviar cotización', error);
-
-  // TODO: Generar PDF y enviar email vía Proton SMTP
-  // await generarPDFCotizacion(id);
-  // await enviarEmailCotizacion(id, actual.cliente.email);
+  if (error) throw new CotizacionError('Error al actualizar estado de cotización', error);
 
   return data as Cotizacion;
 }

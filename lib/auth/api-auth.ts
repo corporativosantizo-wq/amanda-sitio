@@ -5,11 +5,13 @@
 
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import type { AdminUser } from '@/lib/rbac/permissions';
 
 /**
  * Verifica que el request viene de un usuario autenticado.
  * Retorna el userId o una respuesta 401.
- * 
+ *
  * Uso en API routes:
  * ```ts
  * export async function GET(req: NextRequest) {
@@ -39,22 +41,42 @@ export async function requireAuth(): Promise<
 }
 
 /**
- * Verifica autenticación + que el usuario sea admin.
- * Durante los primeros 4 meses (Amanda sola), solo verifica auth.
- * Cuando se agregue el equipo, descomentar la validación de rol.
+ * Verifica autenticación + que el usuario sea admin activo en usuarios_admin.
+ * Retorna { userId, email, adminUser } o 403.
  */
 export async function requireAdmin(): Promise<
-  { userId: string; email: string } | NextResponse
+  { userId: string; email: string; adminUser: AdminUser } | NextResponse
 > {
   const session = await requireAuth();
   if (session instanceof NextResponse) return session;
 
-  // TODO: Cuando se agreguen más usuarios, activar validación de rol:
-  // const { sessionClaims } = await auth();
-  // const role = sessionClaims?.metadata?.role;
-  // if (role !== 'admin' && role !== 'abogado') {
-  //   return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
-  // }
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('usuarios_admin')
+    .select('id, email, nombre, rol, modulos_permitidos, activo')
+    .eq('email', session.email)
+    .single();
 
-  return session;
+  if (error || !data) {
+    return NextResponse.json(
+      { error: 'Usuario no registrado como admin' },
+      { status: 403 }
+    );
+  }
+
+  if (data.rol !== 'admin') {
+    return NextResponse.json(
+      { error: 'Se requiere rol de administrador' },
+      { status: 403 }
+    );
+  }
+
+  if (!data.activo) {
+    return NextResponse.json(
+      { error: 'Usuario desactivado' },
+      { status: 403 }
+    );
+  }
+
+  return { userId: session.userId, email: session.email, adminUser: data };
 }

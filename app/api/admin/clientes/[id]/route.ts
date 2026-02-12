@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         .order('fecha', { ascending: false })
         .limit(20),
       db.from('documentos')
-        .select('id, nombre_archivo, titulo, tipo, estado, created_at')
+        .select('id, nombre_archivo, titulo, tipo, estado, archivo_url, created_at')
         .eq('cliente_id', id)
         .order('created_at', { ascending: false })
         .limit(50),

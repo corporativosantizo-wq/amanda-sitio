@@ -4,15 +4,45 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Analytics } from "@vercel/analytics/react"
+import { AdminUserProvider, useAdminUser } from '@/lib/rbac/admin-user-context'
+import type { Modulo } from '@/lib/rbac/permissions'
+
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  return (
+    <AdminUserProvider>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </AdminUserProvider>
+  )
+}
+
+// ── Role labels ─────────────────────────────────────────────────────────────
+
+const ROL_LABELS: Record<string, string> = {
+  admin: 'Administradora',
+  abogado: 'Abogado/a',
+  asistente: 'Asistente',
+  contador: 'Contador/a',
+  pasante: 'Pasante',
+}
+
+// ── Inner layout (has access to context) ────────────────────────────────────
+
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { user, loading, hasModule, isAdmin } = useAdminUser()
 
-  const navigation = [
+  const navigation: {
+    name: string
+    href: string
+    modulo?: Modulo
+    icon: React.ReactNode
+    children?: { name: string; href: string }[]
+  }[] = [
     {
       name: 'Dashboard',
       href: '/admin',
@@ -25,6 +55,7 @@ export default function AdminLayout({
     {
       name: 'Clientes',
       href: '/admin/clientes',
+      modulo: 'clientes',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -34,6 +65,7 @@ export default function AdminLayout({
     {
       name: 'Proveedores',
       href: '/admin/proveedores',
+      modulo: 'proveedores',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -43,6 +75,7 @@ export default function AdminLayout({
     {
       name: 'Calendario',
       href: '/admin/calendario',
+      modulo: 'calendario',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -52,6 +85,7 @@ export default function AdminLayout({
     {
       name: 'Tareas',
       href: '/admin/tareas',
+      modulo: 'tareas',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -71,6 +105,7 @@ export default function AdminLayout({
     {
       name: 'Documentos',
       href: '/admin/documentos',
+      modulo: 'documentos',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
@@ -78,8 +113,19 @@ export default function AdminLayout({
       ),
     },
     {
+      name: 'Clasificador',
+      href: '/admin/clasificador',
+      modulo: 'clasificador',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        </svg>
+      ),
+    },
+    {
       name: 'Plantillas',
       href: '/admin/plantillas',
+      modulo: 'plantillas',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
@@ -89,6 +135,7 @@ export default function AdminLayout({
     {
       name: 'Notariado',
       href: '/admin/notariado',
+      modulo: 'notariado',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -96,8 +143,19 @@ export default function AdminLayout({
       ),
     },
     {
+      name: 'Jurisprudencia',
+      href: '/admin/jurisprudencia',
+      modulo: 'jurisprudencia',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        </svg>
+      ),
+    },
+    {
       name: 'Contabilidad',
       href: '/admin/contabilidad',
+      modulo: 'contabilidad',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -115,6 +173,7 @@ export default function AdminLayout({
     {
       name: 'Posts',
       href: '/admin/posts',
+      modulo: 'posts',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
@@ -124,6 +183,7 @@ export default function AdminLayout({
     {
       name: 'Productos',
       href: '/admin/productos',
+      modulo: 'productos',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -133,13 +193,34 @@ export default function AdminLayout({
     {
       name: 'Mensajes',
       href: '/admin/mensajes',
+      modulo: 'mensajes',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
       ),
     },
+    // ── Configuracion ──
+    {
+      name: 'Configuracion',
+      href: '/admin/configuracion/usuarios',
+      modulo: 'configuracion',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      ),
+    },
   ]
+
+  // Filter navigation based on user permissions (while loading, show all to avoid flash)
+  const filteredNav = loading
+    ? navigation
+    : navigation.filter((item) => {
+        if (!item.modulo) return true // Dashboard, AI — always visible
+        return hasModule(item.modulo)
+      })
 
   const isActive = (href: string) => {
     if (href === '/admin') {
@@ -147,6 +228,9 @@ export default function AdminLayout({
     }
     return pathname.startsWith(href)
   }
+
+  const displayName = user?.nombre ?? 'Panel Admin'
+  const rolLabel = user ? (ROL_LABELS[user.rol] ?? user.rol) : 'Panel Admin'
 
   const sidebarContent = (
     <>
@@ -156,27 +240,47 @@ export default function AdminLayout({
           <span className="text-navy-dark font-bold text-lg">AS</span>
         </div>
         <div>
-          <div className="text-white font-semibold">Amanda Santizo</div>
-          <div className="text-cyan text-xs">Panel Admin</div>
+          <div className="text-white font-semibold">{displayName}</div>
+          <div className="text-cyan text-xs">{rolLabel}</div>
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="px-4 py-6 space-y-1 overflow-y-auto pb-20" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-        {navigation.map((item) => (
-          <Link
-            key={item.name}
-            href={item.href}
-            onClick={() => setSidebarOpen(false)}
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
-              isActive(item.href)
-                ? 'bg-cyan text-navy-dark font-semibold'
-                : 'text-slate-light hover:bg-navy-light hover:text-white'
-            }`}
-          >
-            {item.icon}
-            <span>{item.name}</span>
-          </Link>
+        {filteredNav.map((item) => (
+          <div key={item.name}>
+            <Link
+              href={item.href}
+              onClick={() => setSidebarOpen(false)}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
+                isActive(item.href)
+                  ? 'bg-cyan text-navy-dark font-semibold'
+                  : 'text-slate-light hover:bg-navy-light hover:text-white'
+              }`}
+            >
+              {item.icon}
+              <span>{item.name}</span>
+            </Link>
+            {/* Contabilidad sub-menu */}
+            {item.children && isActive(item.href) && (
+              <div className="ml-8 mt-1 space-y-1">
+                {item.children.map((child) => (
+                  <Link
+                    key={child.name}
+                    href={child.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
+                      pathname === child.href || pathname.startsWith(child.href + '/')
+                        ? 'text-cyan font-medium'
+                        : 'text-slate-light/70 hover:text-white'
+                    }`}
+                  >
+                    {child.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </nav>
 
@@ -202,7 +306,7 @@ export default function AdminLayout({
         <button
           onClick={() => setSidebarOpen(true)}
           className="p-2 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition-colors"
-          aria-label="Abrir menú"
+          aria-label="Abrir menu"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -234,7 +338,7 @@ export default function AdminLayout({
         <button
           onClick={() => setSidebarOpen(false)}
           className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition-colors md:hidden"
-          aria-label="Cerrar menú"
+          aria-label="Cerrar menu"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

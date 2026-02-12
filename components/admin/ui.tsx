@@ -64,7 +64,8 @@ type BadgeVariant =
   | 'pendiente' | 'pagada' | 'parcial' | 'anulada'
   | 'autorizada' | 'escaneada' | 'con_testimonio' | 'cancelada'
   | 'registrado' | 'confirmado'
-  | 'generado' | 'firmado' | 'entregado';
+  | 'generado' | 'firmado' | 'entregado'
+  | 'clasificado' | 'aprobado' | 'rechazado';
 
 const BADGE_STYLES: Record<string, string> = {
   default: 'bg-slate-100 text-slate-700',
@@ -95,6 +96,10 @@ const BADGE_STYLES: Record<string, string> = {
   generado: 'bg-blue-50 text-blue-700',
   firmado: 'bg-indigo-50 text-indigo-700',
   entregado: 'bg-emerald-50 text-emerald-700',
+  // Clasificador
+  clasificado: 'bg-blue-50 text-blue-700 border border-blue-200',
+  aprobado: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  rechazado: 'bg-red-50 text-red-700 border border-red-200',
 };
 
 interface BadgeProps {
