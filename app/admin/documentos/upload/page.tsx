@@ -9,7 +9,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
 const MAX_FILES = 100;
 const BATCH_SIZE = 5; // Concurrent uploads/classifications per batch
 const ALLOWED_TYPES: Record<string, string> = {
@@ -156,7 +156,7 @@ export default function UploadDocumentos() {
         continue;
       }
       if (f.size > MAX_FILE_SIZE) {
-        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 50MB.`);
+        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 1GB.`);
         continue;
       }
       newFiles.push({
@@ -488,7 +488,7 @@ export default function UploadDocumentos() {
               {dragOver ? 'Suelte los archivos aquí' : 'Arrastre sus archivos aquí'}
             </p>
             <p className="text-sm text-slate-400 mt-1">
-              o haga clic para seleccionar — PDF, DOCX, XLSX, JPG, PNG (máx. 100, 50MB c/u)
+              o haga clic para seleccionar — PDF, DOCX, XLSX, JPG, PNG (máx. 100, 1GB c/u)
             </p>
           </div>
 
