@@ -32,6 +32,12 @@ function getFileIcon(name: string): string {
   return '\u{1F4C4}';
 }
 
+interface UploadProgress {
+  loaded: number;
+  total: number;
+  startedAt: number;
+}
+
 interface FileEntry {
   id: string;
   file: File;
@@ -41,6 +47,37 @@ interface FileEntry {
   resultado?: any;
   error?: string;
   storagePath?: string;
+  uploadProgress?: UploadProgress;
+}
+
+function xhrUpload(
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress: (loaded: number, total: number) => void
+): Promise<{ ok: boolean; status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
+    xhr.onerror = () => reject(new Error('Error de conexión'));
+    xhr.send(file);
+  });
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
 }
 
 interface ClienteOption {
@@ -196,11 +233,11 @@ export default function UploadDocumentos() {
     );
   };
 
-  // Upload a single file to Storage and return metadata
+  // Upload a single file to Storage with progress tracking
   const uploadSingleFile = async (f: FileEntry): Promise<{
     id: string; storage_path: string; filename: string; filesize: number;
   } | null> => {
-    updateFile(f.id, { status: 'subiendo' });
+    updateFile(f.id, { status: 'subiendo', uploadProgress: { loaded: 0, total: f.file.size, startedAt: Date.now() } });
 
     try {
       const urlRes = await fetch('/api/admin/documentos/upload-url', {
@@ -215,19 +252,22 @@ export default function UploadDocumentos() {
         return null;
       }
 
-      const uploadRes = await fetch(urlData.signed_url, {
-        method: 'PUT',
-        headers: { 'Content-Type': f.file.type || 'application/octet-stream' },
-        body: f.file,
-      });
+      const startedAt = Date.now();
+      const uploadRes = await xhrUpload(
+        urlData.signed_url,
+        f.file,
+        f.file.type || 'application/octet-stream',
+        (loaded, total) => {
+          updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
+        }
+      );
 
       if (!uploadRes.ok) {
-        const errText = await uploadRes.text().catch(() => '');
-        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${errText.slice(0, 200)}` });
+        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
         return null;
       }
 
-      updateFile(f.id, { storagePath: urlData.storage_path });
+      updateFile(f.id, { storagePath: urlData.storage_path, uploadProgress: undefined });
       return { id: f.id, storage_path: urlData.storage_path, filename: f.file.name, filesize: f.file.size };
     } catch (err: any) {
       updateFile(f.id, { status: 'error', error: `Error de conexión: ${err.message ?? 'desconocido'}` });
@@ -584,34 +624,54 @@ export default function UploadDocumentos() {
           <div className="divide-y divide-slate-100">
             {files.map((f: FileEntry) => {
               const s = STATUS_ICON[f.status];
+              const p = f.uploadProgress;
+              const pct = p ? Math.round((p.loaded / p.total) * 100) : 0;
+              const elapsed = p ? (Date.now() - p.startedAt) / 1000 : 0;
+              const speed = p && elapsed > 0.5 ? p.loaded / elapsed : 0;
               return (
-                <div key={f.id} className="flex items-center justify-between px-5 py-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span style={{ color: s.color }} className="text-lg font-bold w-5 text-center">
-                      {(f.status === 'analizando' || f.status === 'subiendo') ? (
-                        <span className="inline-block w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
-                      ) : (
-                        s.icon
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-900 truncate">{f.nombre}</p>
-                      {f.status === 'clasificado' && f.resultado?.tipo ? (
-                        <p className="text-xs" style={{ color: s.color }}>
-                          {s.text}: {f.resultado.titulo ?? f.resultado.tipo}
-                        </p>
-                      ) : f.status === 'error' && f.error ? (
-                        <p className="text-xs text-red-600 break-words whitespace-pre-wrap max-w-lg">
-                          {f.error}
-                        </p>
-                      ) : (
-                        <p className="text-xs" style={{ color: s.color }}>
-                          {s.text}
-                        </p>
-                      )}
+                <div key={f.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span style={{ color: s.color }} className="text-lg font-bold w-5 text-center">
+                        {(f.status === 'analizando' || f.status === 'subiendo') ? (
+                          <span className="inline-block w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+                        ) : (
+                          s.icon
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900 truncate">{f.nombre}</p>
+                        {f.status === 'subiendo' && p ? (
+                          <p className="text-xs text-blue-600">
+                            {formatBytes(p.loaded)} / {formatBytes(p.total)} ({pct}%)
+                            {speed > 0 && ` — ${formatSpeed(speed)}`}
+                          </p>
+                        ) : f.status === 'clasificado' && f.resultado?.tipo ? (
+                          <p className="text-xs" style={{ color: s.color }}>
+                            {s.text}: {f.resultado.titulo ?? f.resultado.tipo}
+                          </p>
+                        ) : f.status === 'error' && f.error ? (
+                          <p className="text-xs text-red-600 break-words whitespace-pre-wrap max-w-lg">
+                            {f.error}
+                          </p>
+                        ) : (
+                          <p className="text-xs" style={{ color: s.color }}>
+                            {s.text}
+                          </p>
+                        )}
+                      </div>
                     </div>
+                    <span className="text-xs text-slate-400 shrink-0">{f.tamano}</span>
                   </div>
-                  <span className="text-xs text-slate-400 shrink-0">{f.tamano}</span>
+                  {/* Progress bar */}
+                  {f.status === 'subiendo' && p && (
+                    <div className="mt-2 ml-8 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-200"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

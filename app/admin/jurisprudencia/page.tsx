@@ -35,6 +35,38 @@ interface ListResponse {
   totalPages: number;
 }
 
+// ── Upload helper ───────────────────────────────────────────────────────────
+
+function xhrUpload(
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress: (loaded: number, total: number) => void
+): Promise<{ ok: boolean; status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
+    xhr.onerror = () => reject(new Error('Error de conexión'));
+    xhr.send(file);
+  });
+}
+
+function formatBytesShort(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatSpeedShort(bytesPerSec: number): string {
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function limpiarNombreArchivo(filename: string): string {
@@ -259,6 +291,7 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
   const [subcategoriaId, setSubcategoriaId] = useState('');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [byteProgress, setByteProgress] = useState({ loaded: 0, total: 0, startedAt: 0 });
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -355,12 +388,15 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
         const urlData = await urlRes.json();
         if (!urlRes.ok) throw new Error(urlData.error ?? 'Error al obtener URL de subida');
 
-        // 2. Upload file to signed URL
-        const uploadRes = await fetch(urlData.signed_url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/pdf' },
-          body: file,
-        });
+        // 2. Upload file to signed URL with progress
+        const uploadStart = Date.now();
+        setByteProgress({ loaded: 0, total: file.size, startedAt: uploadStart });
+        const uploadRes = await xhrUpload(
+          urlData.signed_url,
+          file,
+          'application/pdf',
+          (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart })
+        );
         if (!uploadRes.ok) throw new Error('Error al subir archivo al almacenamiento');
 
         // 3. Register tomo in DB
@@ -514,22 +550,33 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
           </div>
 
           {/* Progress */}
-          {uploading && (
-            <div>
-              <div className="flex items-center justify-between text-sm mb-1.5">
-                <span className="text-slate-600">Subiendo...</span>
-                <span className="font-medium text-slate-900">
-                  {progress.current} / {progress.total}
-                </span>
+          {uploading && (() => {
+            const pct = byteProgress.total > 0 ? Math.round((byteProgress.loaded / byteProgress.total) * 100) : 0;
+            const elapsed = byteProgress.startedAt > 0 ? (Date.now() - byteProgress.startedAt) / 1000 : 0;
+            const speed = elapsed > 0.5 ? byteProgress.loaded / elapsed : 0;
+            return (
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-slate-600">
+                    Archivo {progress.current} de {progress.total}
+                  </span>
+                  <span className="font-medium text-slate-900">{pct}%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-1.5">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-200"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {byteProgress.total > 0 && (
+                  <p className="text-xs text-slate-400">
+                    {formatBytesShort(byteProgress.loaded)} / {formatBytesShort(byteProgress.total)}
+                    {speed > 0 && ` — ${formatSpeedShort(speed)}`}
+                  </p>
+                )}
               </div>
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-300"
-                  style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Error */}
           {error && (
