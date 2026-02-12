@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
 
 export async function POST(req: NextRequest) {
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     if (filesize > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'El archivo es demasiado grande. Máximo 50MB.' },
+        { error: 'El archivo es demasiado grande. Máximo 1GB.' },
         { status: 400 }
       );
     }
