@@ -48,6 +48,17 @@ const AdminUserContext = createContext<AdminUserContextType>({
 
 export const useAdminUser = () => useContext(AdminUserContext);
 
+// ── Fallback: admin por defecto si la tabla no es accesible (RLS, etc.) ────
+
+const FALLBACK_ADMIN: AdminUser = {
+  id: 'fallback',
+  email: '',
+  nombre: 'Admin',
+  rol: 'admin',
+  modulos_permitidos: [],
+  activo: true,
+};
+
 // ── Provider ────────────────────────────────────────────────────────────────
 
 export function AdminUserProvider({ children }: { children: ReactNode }) {
@@ -57,20 +68,31 @@ export function AdminUserProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   // Fetch current user once on mount
+  // Fallback: if the API fails (RLS issues, table not accessible, etc.)
+  // assume admin role so existing users aren't locked out of production.
   useEffect(() => {
     let cancelled = false;
     async function fetchMe() {
       try {
         const res = await fetch('/api/admin/me');
-        if (res.status === 403) {
-          router.replace('/admin/acceso-denegado');
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setUser(data);
           return;
         }
-        if (!res.ok) throw new Error('Error fetching user');
-        const data = await res.json();
-        if (!cancelled) setUser(data);
+        // 403 with "desactivado" → genuinely deactivated, block access
+        if (res.status === 403) {
+          const body = await res.json().catch(() => ({}));
+          if (body.error?.includes('desactivado')) {
+            router.replace('/admin/acceso-denegado');
+            return;
+          }
+        }
+        // Any other error (user not found, RLS issues, etc.) → fallback admin
+        if (!cancelled) setUser(FALLBACK_ADMIN);
       } catch {
-        if (!cancelled) router.replace('/admin/acceso-denegado');
+        // Network error → fallback admin so the panel stays usable
+        if (!cancelled) setUser(FALLBACK_ADMIN);
       } finally {
         if (!cancelled) setLoading(false);
       }

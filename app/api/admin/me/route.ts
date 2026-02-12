@@ -18,7 +18,15 @@ export async function GET() {
     .eq('email', session.email)
     .single();
 
-  if (error || !data) {
+  if (error) {
+    console.error('[/api/admin/me] Supabase error:', error.message, error.code, error.details);
+    return NextResponse.json(
+      { error: 'Usuario no registrado en el sistema', detail: error.message },
+      { status: 403 }
+    );
+  }
+
+  if (!data) {
     return NextResponse.json(
       { error: 'Usuario no registrado en el sistema' },
       { status: 403 }
