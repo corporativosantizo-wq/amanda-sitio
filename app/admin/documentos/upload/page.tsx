@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
 
 const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
 const MAX_FILES = 100;
@@ -234,12 +235,15 @@ export default function UploadDocumentos() {
   };
 
   // Upload a single file to Storage with progress tracking
+  // Files >50MB use TUS (resumable), smaller files use standard XHR
   const uploadSingleFile = async (f: FileEntry): Promise<{
     id: string; storage_path: string; filename: string; filesize: number;
   } | null> => {
-    updateFile(f.id, { status: 'subiendo', uploadProgress: { loaded: 0, total: f.file.size, startedAt: Date.now() } });
+    const startedAt = Date.now();
+    updateFile(f.id, { status: 'subiendo', uploadProgress: { loaded: 0, total: f.file.size, startedAt } });
 
     try {
+      // Get storage path from server
       const urlRes = await fetch('/api/admin/documentos/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,25 +256,37 @@ export default function UploadDocumentos() {
         return null;
       }
 
-      const startedAt = Date.now();
-      const uploadRes = await xhrUpload(
-        urlData.signed_url,
-        f.file,
-        f.file.type || 'application/octet-stream',
-        (loaded, total) => {
-          updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-        }
-      );
+      if (f.file.size > TUS_THRESHOLD) {
+        // TUS resumable upload for large files
+        await tusUpload({
+          file: f.file,
+          bucketName: 'documentos',
+          objectName: urlData.storage_path,
+          onProgress: (loaded, total) => {
+            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
+          },
+        });
+      } else {
+        // Standard XHR upload for small files
+        const uploadRes = await xhrUpload(
+          urlData.signed_url,
+          f.file,
+          f.file.type || 'application/octet-stream',
+          (loaded, total) => {
+            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
+          }
+        );
 
-      if (!uploadRes.ok) {
-        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
-        return null;
+        if (!uploadRes.ok) {
+          updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
+          return null;
+        }
       }
 
       updateFile(f.id, { storagePath: urlData.storage_path, uploadProgress: undefined });
       return { id: f.id, storage_path: urlData.storage_path, filename: f.file.name, filesize: f.file.size };
     } catch (err: any) {
-      updateFile(f.id, { status: 'error', error: `Error de conexión: ${err.message ?? 'desconocido'}` });
+      updateFile(f.id, { status: 'error', error: `Error: ${err.message ?? 'desconocido'}` });
       return null;
     }
   };
