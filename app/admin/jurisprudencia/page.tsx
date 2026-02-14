@@ -2,8 +2,16 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
-import { PageHeader, Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
+import { Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
 import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
+
+// ── Toast system ─────────────────────────────────────────────────────────────
+
+interface Toast {
+  id: string;
+  type: 'success' | 'warning' | 'error';
+  message: string;
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +101,18 @@ export default function JurisprudenciaPage() {
   const [showModal, setShowModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Processing state
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [processingAll, setProcessingAll] = useState(false);
+
+  // Toast state
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const addToast = (type: Toast['type'], message: string) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+  };
+
   // Data
   const listUrl = `/api/admin/jurisprudencia?page=${page}&limit=20`;
   const { data: listData, loading, refetch } = useFetch<ListResponse>(listUrl);
@@ -104,6 +124,62 @@ export default function JurisprudenciaPage() {
   const carpetas = carpetasData?.carpetas ?? [];
   const tomos = listData?.data ?? [];
   const totalPages = listData?.totalPages ?? 1;
+
+  const pendingTomos = tomos.filter((t: Tomo) => !t.procesado);
+
+  // ── Process handler ─────────────────────────────────────────────────────
+
+  const handleProcesar = async (tomoId: string) => {
+    setProcessingIds((prev) => new Set(prev).add(tomoId));
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 min
+
+      const res = await fetch('/api/admin/jurisprudencia/procesar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tomo_id: tomoId }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        addToast('error', data.error ?? 'Error al procesar tomo');
+        return;
+      }
+
+      if (data.warning) {
+        addToast('warning', data.warning);
+      } else {
+        const msg = `Procesado: ${data.pages ?? '?'} págs, ${data.fragmentos ?? '?'} fragmentos, ${data.embeddings ?? '?'} embeddings`;
+        addToast('success', msg);
+      }
+
+      await refetch();
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        addToast('error', 'Tiempo de espera agotado (6 min)');
+      } else {
+        addToast('error', err.message ?? 'Error al procesar tomo');
+      }
+    } finally {
+      setProcessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(tomoId);
+        return next;
+      });
+    }
+  };
+
+  const handleProcesarTodos = async () => {
+    setProcessingAll(true);
+    for (const tomo of pendingTomos) {
+      await handleProcesar(tomo.id);
+    }
+    setProcessingAll(false);
+  };
 
   // ── Delete handler ────────────────────────────────────────────────────────
 
@@ -129,11 +205,31 @@ export default function JurisprudenciaPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <PageHeader
-        title="Jurisprudencia — Tomos"
-        description="Gestión de tomos de jurisprudencia para consulta con IA"
-        action={{ label: 'Subir Tomo', onClick: () => setShowModal(true), icon: '+' }}
-      />
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Jurisprudencia — Tomos</h1>
+          <p className="text-sm text-slate-500 mt-1">Gestión de tomos de jurisprudencia para consulta con IA</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {pendingTomos.length > 0 && (
+            <button
+              onClick={handleProcesarTodos}
+              disabled={processingAll || processingIds.size > 0}
+              className="px-4 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processingAll ? 'Procesando...' : `Procesar Todos (${pendingTomos.length})`}
+            </button>
+          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="px-4 py-2.5 text-sm rounded-lg bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white font-medium hover:shadow-lg hover:shadow-blue-900/20 transition-all flex items-center gap-2"
+          >
+            <span className="text-lg leading-none">+</span>
+            Subir Tomo
+          </button>
+        </div>
+      </div>
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -188,6 +284,25 @@ export default function JurisprudenciaPage() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {!tomo.procesado && (
+                          <button
+                            onClick={() => handleProcesar(tomo.id)}
+                            disabled={processingIds.has(tomo.id) || processingAll}
+                            className="text-xs px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                          >
+                            {processingIds.has(tomo.id) ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                Procesando...
+                              </>
+                            ) : (
+                              'Procesar'
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleView(tomo.id)}
                           className="text-xs px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
@@ -259,6 +374,32 @@ export default function JurisprudenciaPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Toast Container ──────────────────────────────────────────────── */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`animate-slideUp px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-start gap-3 ${
+                toast.type === 'success'
+                  ? 'bg-emerald-600 text-white'
+                  : toast.type === 'warning'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+            >
+              <span className="flex-1">{toast.message}</span>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+              >
+                &times;
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
