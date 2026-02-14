@@ -329,6 +329,18 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     );
   }
 
+  // Copia a Amanda (no bloquea si falla)
+  try {
+    await sendMail({
+      from: 'contador@papeleo.legal',
+      to: 'amanda@papeleo.legal',
+      subject: `[Copia] Cotización ${actual.numero} enviada a ${cliente.nombre}`,
+      htmlBody: template.html,
+    });
+  } catch (e) {
+    console.error('Error enviando copia a Amanda:', e);
+  }
+
   // Email enviado OK → actualizar estado
   const { data, error } = await db()
     .from('cotizaciones')
