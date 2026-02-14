@@ -378,6 +378,7 @@ export function emailCotizacion(params: {
   condiciones?: string;
   logoBase64?: string;
   configuracion?: Record<string, any>;
+  tokenRespuesta?: string;
 }): EmailTemplate {
   const subtotalCalc = params.subtotal ?? params.servicios.reduce((sum, s) => sum + s.monto, 0);
   const ivaCalc = params.iva ?? subtotalCalc * 0.12;
@@ -489,6 +490,27 @@ export function emailCotizacion(params: {
       </tr>
       ${anticipoRow}
     </table>
+    ${params.tokenRespuesta ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr><td align="center">
+        <p style="font-size:14px;color:#64748B;margin:0 0 16px;">¿Desea proceder con los servicios cotizados?</p>
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="padding:0 6px;">
+            <a href="https://amandasantizo.com/cotizacion/respuesta?token=${params.tokenRespuesta}&accion=aceptar"
+               style="display:inline-block;background-color:#16a34a;color:#ffffff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
+              ✓ Aceptar Cotización
+            </a>
+          </td>
+          <td style="padding:0 6px;">
+            <a href="https://amandasantizo.com/cotizacion/respuesta?token=${params.tokenRespuesta}&accion=dudas"
+               style="display:inline-block;background-color:#2563EB;color:#ffffff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
+              ? Tengo Dudas
+            </a>
+          </td>
+        </tr></table>
+        <p style="font-size:11px;color:#94A3B8;margin:12px 0 0;">También puede responder directamente a este correo.</p>
+      </td></tr>
+    </table>` : ''}
     ${conditionsHtml}
     ${bankHtml}
   `, params.logoBase64);

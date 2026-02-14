@@ -40,6 +40,10 @@ export interface Cotizacion {
   enviada_at: string | null;
   aceptada_at: string | null;
 
+  token_respuesta: string | null;
+  respondida_at: string | null;
+  respuesta_notas: string | null;
+
   created_by: string | null;
   created_at: string;
   updated_at: string;

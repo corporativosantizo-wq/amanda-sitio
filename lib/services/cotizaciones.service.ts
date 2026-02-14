@@ -322,6 +322,7 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     fechaEmision: actual.fecha_emision,
     condiciones: actual.condiciones ?? undefined,
     configuracion: config,
+    tokenRespuesta: actual.token_respuesta ?? undefined,
   });
 
   // Enviar email — si falla, NO cambiamos el estado
