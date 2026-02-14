@@ -1,6 +1,6 @@
 // ============================================================================
 // app/admin/notariado/escrituras/[id]/page.tsx
-// Vista de detalle de escritura con carpetas de documentos
+// Vista de detalle de escritura con carpetas de documentos + drag & drop
 // ============================================================================
 
 'use client';
@@ -47,17 +47,17 @@ interface Documento {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const CARPETAS = [
-  { key: 'borrador_docx', label: 'Borradores', icon: '📝', accept: '.docx,.doc', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { key: 'testimonio', label: 'Testimonios', icon: '📜', accept: '.pdf', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { key: 'aviso_trimestral', label: 'Avisos Trimestrales', icon: '📅', accept: '.pdf', color: 'bg-green-50 text-green-700 border-green-200' },
-  { key: 'aviso_general', label: 'Avisos Generales', icon: '📋', accept: '.pdf', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { key: 'borrador_docx', label: 'Borrador DOCX', icon: '📝', accept: '.docx,.doc', desc: 'Archivos .docx y .doc' },
+  { key: 'testimonio', label: 'Testimonios', icon: '📜', accept: '.pdf', desc: 'Archivos PDF' },
+  { key: 'aviso_trimestral', label: 'Avisos Trimestrales', icon: '📅', accept: '.pdf', desc: 'Archivos PDF' },
+  { key: 'aviso_general', label: 'Avisos Generales', icon: '📋', accept: '.pdf,.docx', desc: 'Archivos PDF o DOCX' },
 ];
 
 const SUBCATEGORIAS_AVISO = [
+  { value: 'cancelacion', label: 'Cancelación' },
   { value: 'aclaracion', label: 'Aclaración' },
   { value: 'ampliacion', label: 'Ampliación' },
   { value: 'modificacion', label: 'Modificación' },
-  { value: 'cancelacion', label: 'Cancelación' },
   { value: 'rescision', label: 'Rescisión' },
 ];
 
@@ -83,8 +83,10 @@ export default function EscrituraDetallePage() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showAvisoModal, setShowAvisoModal] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   // Fetch escritura
   useEffect(() => {
@@ -139,6 +141,38 @@ export default function EscrituraDetallePage() {
     setUploading(false);
   };
 
+  // Drag & drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false when leaving the drop zone (not entering children)
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleUpload(files[0]);
+    }
+  };
+
   // Download
   const handleDownload = async (doc: Documento) => {
     try {
@@ -185,7 +219,13 @@ export default function EscrituraDetallePage() {
     <div className="p-8">
       <div className="animate-pulse space-y-4">
         <div className="h-8 bg-slate-200 rounded w-1/3" />
-        <div className="h-64 bg-slate-100 rounded-xl" />
+        <div className="h-4 bg-slate-200 rounded w-1/4" />
+        <div className="grid grid-cols-3 gap-4 mt-6">
+          <div className="h-32 bg-slate-100 rounded-xl" />
+          <div className="h-32 bg-slate-100 rounded-xl" />
+          <div className="h-32 bg-slate-100 rounded-xl" />
+        </div>
+        <div className="h-64 bg-slate-100 rounded-xl mt-4" />
       </div>
     </div>
   );
@@ -208,17 +248,9 @@ export default function EscrituraDetallePage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{escritura.tipo_instrumento_texto}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${ESTADO_BADGES[escritura.estado] ?? 'bg-slate-100'}`}>
-            {escritura.estado}
-          </span>
-          <button
-            onClick={() => setShowAvisoModal(true)}
-            className="px-3 py-1.5 text-sm bg-[#1a2744] text-white rounded-lg hover:bg-[#243456] transition-colors"
-          >
-            Generar Aviso
-          </button>
-        </div>
+        <span className={`px-3 py-1 rounded-full text-xs font-medium ${ESTADO_BADGES[escritura.estado] ?? 'bg-slate-100'}`}>
+          {escritura.estado}
+        </span>
       </div>
 
       {/* Info Cards */}
@@ -226,35 +258,54 @@ export default function EscrituraDetallePage() {
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Datos Generales</p>
           <div className="space-y-1.5 text-sm">
+            <p><span className="text-slate-500">Número:</span> <span className="font-medium font-mono">{escritura.numero}</span></p>
             <p><span className="text-slate-500">Fecha:</span> <span className="font-medium">{new Date(escritura.fecha_autorizacion + 'T12:00:00').toLocaleDateString('es-GT', { dateStyle: 'long', timeZone: 'America/Guatemala' })}</span></p>
             <p><span className="text-slate-500">Lugar:</span> <span className="font-medium">{escritura.lugar_autorizacion}</span></p>
             <p><span className="text-slate-500">Departamento:</span> <span className="font-medium">{escritura.departamento}</span></p>
+            <p><span className="text-slate-500">Tipo:</span> <span className="font-medium">{escritura.tipo_instrumento_texto}</span></p>
             {escritura.hojas_protocolo && <p><span className="text-slate-500">Hojas:</span> <span className="font-medium">{escritura.hojas_protocolo}</span></p>}
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Comparecientes</p>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {escritura.comparecientes.map((c: any, i: number) => (
-              <p key={i} className="text-sm">
-                <span className="font-medium">{c.nombre}</span>
-                {c.calidad && <span className="text-slate-500 text-xs ml-1">({c.calidad})</span>}
-              </p>
+              <div key={i} className="text-sm">
+                <p className="font-medium text-slate-900">{c.nombre}</p>
+                {(c.calidad || c.dpi) && (
+                  <p className="text-xs text-slate-500">
+                    {c.calidad && <span>{c.calidad}</span>}
+                    {c.dpi && <span className="ml-2">DPI: {c.dpi}</span>}
+                  </p>
+                )}
+                {c.representacion && <p className="text-xs text-slate-400">Rep: {c.representacion}</p>}
+              </div>
             ))}
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Notas</p>
-          <p className="text-sm text-slate-600">{escritura.descripcion || escritura.notas || 'Sin notas'}</p>
-          {escritura.cliente && (
-            <p className="text-sm mt-2"><span className="text-slate-500">Cliente:</span> <span className="font-medium">{escritura.cliente.nombre}</span></p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Información Adicional</p>
+          <div className="space-y-1.5 text-sm">
+            {escritura.cliente && (
+              <p><span className="text-slate-500">Cliente:</span> <span className="font-medium">{escritura.cliente.nombre}</span></p>
+            )}
+            {escritura.protocolo && (
+              <p><span className="text-slate-500">Protocolo:</span> <span className="font-medium">{escritura.protocolo.anio}</span></p>
+            )}
+            <p><span className="text-slate-500">Estado:</span> <span className="font-medium capitalize">{escritura.estado}</span></p>
+          </div>
+          {(escritura.descripcion || escritura.notas) && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">Notas</p>
+              <p className="text-sm text-slate-600">{escritura.descripcion || escritura.notas}</p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Document Folders */}
+      {/* ── Document Folders ──────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="border-b border-slate-200 px-4 pt-4 pb-0">
           <h2 className="text-lg font-semibold text-slate-900 mb-3">Documentos</h2>
@@ -277,79 +328,126 @@ export default function EscrituraDetallePage() {
         </div>
 
         <div className="p-4">
-          {/* Upload area */}
+          {/* Upload area + tab actions */}
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-slate-500">
-              {carpetaActiva.key === 'borrador_docx' ? 'Archivos .docx y .doc' : 'Archivos PDF'}
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="px-4 py-2 text-sm bg-[#2d6bcf] text-white rounded-lg hover:bg-[#2558a8] disabled:bg-slate-300 transition-colors font-medium"
-            >
-              {uploading ? 'Subiendo...' : 'Subir archivo'}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={carpetaActiva.accept}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleUpload(file);
-                e.target.value = '';
-              }}
-            />
+            <p className="text-sm text-slate-500">{carpetaActiva.desc}</p>
+            <div className="flex items-center gap-2">
+              {/* "Generar Aviso" button only on the Avisos Generales tab */}
+              {tabActiva === 'aviso_general' && (
+                <button
+                  onClick={() => setShowAvisoModal(true)}
+                  className="px-4 py-2 text-sm bg-[#1a2744] text-white rounded-lg hover:bg-[#243456] transition-colors font-medium flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Generar Aviso
+                </button>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="px-4 py-2 text-sm bg-[#2d6bcf] text-white rounded-lg hover:bg-[#2558a8] disabled:bg-slate-300 transition-colors font-medium flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                {uploading ? 'Subiendo...' : 'Subir archivo'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={carpetaActiva.accept}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUpload(file);
+                  e.target.value = '';
+                }}
+              />
+            </div>
           </div>
 
-          {/* File list */}
-          {docsLoading ? (
-            <div className="py-8 text-center text-sm text-slate-400">Cargando...</div>
-          ) : documentos.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-3xl mb-2">{carpetaActiva.icon}</p>
-              <p className="text-sm text-slate-500">No hay archivos en esta carpeta</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {documentos.map((doc: Documento) => (
-                <div key={doc.id} className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <span className="text-lg">
-                      {doc.nombre_archivo.endsWith('.docx') || doc.nombre_archivo.endsWith('.doc') ? '📘' : '📄'}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{doc.nombre_archivo}</p>
-                      <p className="text-xs text-slate-400">
-                        {fmtSize(doc.tamano_bytes)} — {fmtDate(doc.created_at)}
-                        {doc.subcategoria && <span className="ml-2 px-1.5 py-0.5 bg-slate-100 rounded text-slate-600">{doc.subcategoria}</span>}
-                      </p>
-                    </div>
+          {/* Drag & drop zone + file list */}
+          <div
+            ref={dropZoneRef}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`rounded-lg border-2 border-dashed transition-colors ${
+              dragging
+                ? 'border-[#2d6bcf] bg-blue-50/50'
+                : 'border-slate-200 bg-transparent'
+            }`}
+          >
+            {/* Drag overlay */}
+            {dragging && (
+              <div className="py-8 text-center">
+                <svg className="w-10 h-10 mx-auto text-[#2d6bcf] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p className="text-sm font-medium text-[#2d6bcf]">Soltar archivo aquí</p>
+                <p className="text-xs text-slate-400 mt-1">{carpetaActiva.desc}</p>
+              </div>
+            )}
+
+            {/* File list */}
+            {!dragging && (
+              <>
+                {docsLoading ? (
+                  <div className="py-8 text-center text-sm text-slate-400">Cargando...</div>
+                ) : documentos.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <p className="text-3xl mb-2">{carpetaActiva.icon}</p>
+                    <p className="text-sm text-slate-500">No hay archivos en esta carpeta</p>
+                    <p className="text-xs text-slate-400 mt-1">Arrastra un archivo o usa el botón &quot;Subir archivo&quot;</p>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-                    <button
-                      onClick={() => handleDownload(doc)}
-                      className="p-2 text-slate-400 hover:text-[#2d6bcf] hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Descargar"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(doc)}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Eliminar"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {documentos.map((doc: Documento) => (
+                      <div key={doc.id} className="flex items-center justify-between py-3 px-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="text-lg shrink-0">
+                            {doc.nombre_archivo.endsWith('.docx') || doc.nombre_archivo.endsWith('.doc') ? '📘' : '📄'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 truncate">{doc.nombre_archivo}</p>
+                            <p className="text-xs text-slate-400">
+                              {fmtSize(doc.tamano_bytes)} — {fmtDate(doc.created_at)}
+                              {doc.subcategoria && (
+                                <span className="ml-2 px-1.5 py-0.5 bg-slate-100 rounded text-slate-600">{doc.subcategoria}</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <button
+                            onClick={() => handleDownload(doc)}
+                            className="p-2 text-slate-400 hover:text-[#2d6bcf] hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Descargar"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(doc)}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -433,7 +531,10 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">Generar Aviso General</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-slate-900">Generar Aviso General</h3>
+          <p className="text-xs text-slate-400">Esc. {escritura.numero}</p>
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -441,7 +542,7 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
             <select
               value={tipoAviso}
               onChange={(e) => setTipoAviso(e.target.value as TipoAviso)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30 focus:border-[#2d6bcf]"
             >
               {SUBCATEGORIAS_AVISO.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
@@ -456,7 +557,7 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
               onChange={(e) => setMotivo(e.target.value)}
               rows={3}
               placeholder='Ej: "por haber incurrido en errores en su redacción"'
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30 resize-none"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30 resize-none"
             />
           </div>
 
@@ -466,7 +567,7 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
               type="date"
               value={fechaAviso}
               onChange={(e) => setFechaAviso(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/30"
             />
           </div>
         </div>
@@ -475,9 +576,16 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
           <button
             onClick={handleGenerar}
             disabled={generando}
-            className="flex-1 px-4 py-2.5 bg-[#1a2744] text-white text-sm font-medium rounded-lg hover:bg-[#243456] disabled:bg-slate-300 transition-colors"
+            className="flex-1 px-4 py-2.5 bg-[#1a2744] text-white text-sm font-medium rounded-lg hover:bg-[#243456] disabled:bg-slate-300 transition-colors flex items-center justify-center gap-2"
           >
-            {generando ? 'Generando...' : 'Generar y Descargar DOCX'}
+            {generando ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                Generando...
+              </>
+            ) : (
+              'Generar y Descargar DOCX'
+            )}
           </button>
           <button
             onClick={onClose}

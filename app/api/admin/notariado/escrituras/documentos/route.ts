@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
       if (!['docx', 'doc'].includes(ext)) {
         return NextResponse.json({ error: 'Solo se permiten archivos .docx y .doc' }, { status: 400 });
       }
+    } else if (categoria === 'aviso_general') {
+      if (!['pdf', 'docx'].includes(ext)) {
+        return NextResponse.json({ error: 'Solo se permiten archivos PDF o DOCX' }, { status: 400 });
+      }
     } else {
       if (ext !== 'pdf') {
         return NextResponse.json({ error: 'Solo se permiten archivos PDF' }, { status: 400 });
