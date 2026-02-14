@@ -178,6 +178,9 @@ export interface EscrituraResumen {
   cliente_nombre: string | null;
   pdf_escritura_url: string | null;
   testimonios_pendientes: number;
+  descripcion: string | null;
+  tiene_escritura_pdf: boolean;
+  tiene_escritura_docx: boolean;
 }
 
 // --- Plantillas de Razón ---

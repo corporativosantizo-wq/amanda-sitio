@@ -85,7 +85,15 @@ export default function EscrituraDetallePage() {
   const [showAvisoModal, setShowAvisoModal] = useState(false);
   const [dragging, setDragging] = useState(false);
 
+  // Archivos de la Escritura (PDF firmado + DOCX editable)
+  const [archivoPdf, setArchivoPdf] = useState<Documento | null>(null);
+  const [archivoDocx, setArchivoDocx] = useState<Documento | null>(null);
+  const [archivosLoading, setArchivosLoading] = useState(true);
+  const [uploadingArchivo, setUploadingArchivo] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const archivoInputRef = useRef<HTMLInputElement>(null);
+  const pendingArchivo = useRef<string | null>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   // Fetch escritura
@@ -99,6 +107,86 @@ export default function EscrituraDetallePage() {
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Fetch archivos principales (escritura_pdf, escritura_docx)
+  const fetchArchivos = useCallback(async () => {
+    setArchivosLoading(true);
+    try {
+      const [pdfRes, docxRes] = await Promise.all([
+        fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_pdf`),
+        fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_docx`),
+      ]);
+      if (pdfRes.ok) {
+        const pdfDocs = await pdfRes.json();
+        setArchivoPdf(pdfDocs.length > 0 ? pdfDocs[0] : null);
+      }
+      if (docxRes.ok) {
+        const docxDocs = await docxRes.json();
+        setArchivoDocx(docxDocs.length > 0 ? docxDocs[0] : null);
+      }
+    } catch { /* ignore */ }
+    setArchivosLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetchArchivos(); }, [fetchArchivos]);
+
+  // Upload archivo principal
+  const handleUploadArchivo = async (file: File, categoria: string) => {
+    setUploadingArchivo(categoria);
+    try {
+      const formData = new FormData();
+      formData.append('archivo', file);
+      formData.append('escritura_id', id);
+      formData.append('categoria', categoria);
+
+      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || 'Error al subir');
+      } else {
+        fetchArchivos();
+      }
+    } catch {
+      alert('Error al subir archivo');
+    }
+    setUploadingArchivo(null);
+  };
+
+  const triggerArchivoUpload = (categoria: string) => {
+    pendingArchivo.current = categoria;
+    if (archivoInputRef.current) {
+      archivoInputRef.current.accept = categoria === 'escritura_pdf' ? '.pdf' : '.docx,.doc';
+      archivoInputRef.current.click();
+    }
+  };
+
+  const handleArchivoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && pendingArchivo.current) {
+      handleUploadArchivo(file, pendingArchivo.current);
+      pendingArchivo.current = null;
+    }
+    e.target.value = '';
+  };
+
+  const handleDeleteArchivo = async (doc: Documento) => {
+    if (!confirm(`¿Eliminar "${doc.nombre_archivo}"?`)) return;
+    try {
+      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: doc.id }),
+      });
+      if (res.ok) fetchArchivos();
+      else alert('Error al eliminar');
+    } catch {
+      alert('Error al eliminar');
+    }
+  };
 
   // Fetch documents for active tab
   const fetchDocumentos = useCallback(async () => {
@@ -305,6 +393,45 @@ export default function EscrituraDetallePage() {
         </div>
       </div>
 
+      {/* ── Archivos de la Escritura ──────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Archivos de la Escritura</h2>
+        <input ref={archivoInputRef} type="file" className="hidden" onChange={handleArchivoFileChange} />
+        {archivosLoading ? (
+          <div className="flex gap-4">
+            <div className="flex-1 h-20 bg-slate-100 rounded-lg animate-pulse" />
+            <div className="flex-1 h-20 bg-slate-100 rounded-lg animate-pulse" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* PDF Card */}
+            <ArchivoCard
+              tipo="pdf"
+              label="PDF Firmado"
+              desc="Escritura escaneada con firmas"
+              doc={archivoPdf}
+              isUploading={uploadingArchivo === 'escritura_pdf'}
+              onUpload={() => triggerArchivoUpload('escritura_pdf')}
+              onDownload={() => archivoPdf && handleDownload(archivoPdf)}
+              onReplace={() => triggerArchivoUpload('escritura_pdf')}
+              onDelete={() => archivoPdf && handleDeleteArchivo(archivoPdf)}
+            />
+            {/* DOCX Card */}
+            <ArchivoCard
+              tipo="docx"
+              label="DOCX Editable"
+              desc="Escritura en formato editable"
+              doc={archivoDocx}
+              isUploading={uploadingArchivo === 'escritura_docx'}
+              onUpload={() => triggerArchivoUpload('escritura_docx')}
+              onDownload={() => archivoDocx && handleDownload(archivoDocx)}
+              onReplace={() => triggerArchivoUpload('escritura_docx')}
+              onDelete={() => archivoDocx && handleDeleteArchivo(archivoDocx)}
+            />
+          </div>
+        )}
+      </div>
+
       {/* ── Document Folders ──────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="border-b border-slate-200 px-4 pt-4 pb-0">
@@ -461,6 +588,98 @@ export default function EscrituraDetallePage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Archivo Card (PDF/DOCX principal) ─────────────────────────────────
+
+function ArchivoCard({
+  tipo, label, desc, doc, isUploading,
+  onUpload, onDownload, onReplace, onDelete,
+}: {
+  tipo: 'pdf' | 'docx';
+  label: string;
+  desc: string;
+  doc: Documento | null;
+  isUploading: boolean;
+  onUpload: () => void;
+  onDownload: () => void;
+  onReplace: () => void;
+  onDelete: () => void;
+}) {
+  const isPdf = tipo === 'pdf';
+  const hasFile = !!doc;
+
+  const fmtSize = (bytes: number | null) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  };
+
+  if (isUploading) {
+    return (
+      <div className={`border-2 border-dashed rounded-lg p-4 flex items-center justify-center gap-2 ${isPdf ? 'border-red-300 bg-red-50/50' : 'border-blue-300 bg-blue-50/50'}`}>
+        <svg className={`animate-spin h-5 w-5 ${isPdf ? 'text-red-500' : 'text-blue-500'}`} viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+        <span className={`text-sm font-medium ${isPdf ? 'text-red-600' : 'text-blue-600'}`}>Subiendo...</span>
+      </div>
+    );
+  }
+
+  if (!hasFile) {
+    return (
+      <button
+        onClick={onUpload}
+        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+          isPdf ? 'border-red-200 hover:border-red-400 hover:bg-red-50/50' : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50/50'
+        }`}
+      >
+        <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg mb-2 ${isPdf ? 'bg-red-100' : 'bg-blue-100'}`}>
+          {isPdf ? (
+            <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-6h2v3H8v-3zm3 0h2v3h-2v-3zm3 0h2v3h-2v-3z"/></svg>
+          ) : (
+            <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-6h1.5l1 2.5L11.5 14H13l-1.75 3.5L13 21h-1.5l-1-2.5L9.5 21H8l1.75-3.5L8 14z"/></svg>
+          )}
+        </div>
+        <p className={`text-sm font-medium ${isPdf ? 'text-red-700' : 'text-blue-700'}`}>{label}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+        <p className={`text-xs mt-2 ${isPdf ? 'text-red-400' : 'text-blue-400'}`}>Click para subir</p>
+      </button>
+    );
+  }
+
+  return (
+    <div className={`border rounded-lg p-4 ${isPdf ? 'border-red-200 bg-red-50/30' : 'border-blue-200 bg-blue-50/30'}`}>
+      <div className="flex items-start gap-3">
+        <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg shrink-0 ${isPdf ? 'bg-red-100' : 'bg-blue-100'}`}>
+          {isPdf ? (
+            <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-6h2v3H8v-3zm3 0h2v3h-2v-3zm3 0h2v3h-2v-3z"/></svg>
+          ) : (
+            <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-6h1.5l1 2.5L11.5 14H13l-1.75 3.5L13 21h-1.5l-1-2.5L9.5 21H8l1.75-3.5L8 14z"/></svg>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-900 truncate">{doc.nombre_archivo}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{fmtSize(doc.tamano_bytes)}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <button onClick={onDownload}
+          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            isPdf ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}>
+          Descargar
+        </button>
+        <button onClick={onReplace}
+          className="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">
+          Reemplazar
+        </button>
+        <button onClick={onDelete}
+          className="px-2 py-1.5 text-xs rounded-md text-red-500 hover:bg-red-50 transition-colors" title="Eliminar">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>
+      </div>
     </div>
   );
 }

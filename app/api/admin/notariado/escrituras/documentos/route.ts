@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate file type
-    const validCategories = ['borrador_docx', 'testimonio', 'aviso_trimestral', 'aviso_general'];
+    const validCategories = ['borrador_docx', 'testimonio', 'aviso_trimestral', 'aviso_general', 'escritura_pdf', 'escritura_docx'];
     if (!validCategories.includes(categoria)) {
       return NextResponse.json({ error: 'Categoría inválida' }, { status: 400 });
     }
@@ -79,22 +79,43 @@ export async function POST(request: NextRequest) {
       if (!['pdf', 'docx'].includes(ext)) {
         return NextResponse.json({ error: 'Solo se permiten archivos PDF o DOCX' }, { status: 400 });
       }
+    } else if (categoria === 'escritura_pdf') {
+      if (ext !== 'pdf') {
+        return NextResponse.json({ error: 'Solo se permiten archivos PDF' }, { status: 400 });
+      }
+    } else if (categoria === 'escritura_docx') {
+      if (!['docx', 'doc'].includes(ext)) {
+        return NextResponse.json({ error: 'Solo se permiten archivos .docx y .doc' }, { status: 400 });
+      }
     } else {
       if (ext !== 'pdf') {
         return NextResponse.json({ error: 'Solo se permiten archivos PDF' }, { status: 400 });
       }
     }
 
-    // Build storage path
+    // Build storage path — escritura_pdf and escritura_docx use fixed filenames
     const carpetaMap: Record<string, string> = {
       borrador_docx: 'borradores',
       testimonio: 'testimonios',
       aviso_trimestral: 'avisos-trimestrales',
       aviso_general: 'avisos-generales',
+      escritura_pdf: '',
+      escritura_docx: '',
     };
-    const timestamp = Date.now();
-    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `escrituras/${escrituraId}/${carpetaMap[categoria]}/${timestamp}_${safeFilename}`;
+
+    let storagePath: string;
+    if (categoria === 'escritura_pdf') {
+      storagePath = `escrituras/${escrituraId}/escritura-firmada.pdf`;
+    } else if (categoria === 'escritura_docx') {
+      storagePath = `escrituras/${escrituraId}/escritura-editable.docx`;
+    } else {
+      const timestamp = Date.now();
+      const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      storagePath = `escrituras/${escrituraId}/${carpetaMap[categoria]}/${timestamp}_${safeFilename}`;
+    }
+
+    // For escritura_pdf/escritura_docx, upsert (replace) the file
+    const isFixedFile = categoria === 'escritura_pdf' || categoria === 'escritura_docx';
 
     // Upload to storage
     const storage = storageClient();
@@ -104,12 +125,21 @@ export async function POST(request: NextRequest) {
       .from('notariado')
       .upload(storagePath, buffer, {
         contentType: file.type,
-        upsert: false,
+        upsert: isFixedFile,
       });
 
     if (uploadError) {
       console.error('Storage upload error:', uploadError);
       return NextResponse.json({ error: 'Error al subir archivo' }, { status: 500 });
+    }
+
+    // For fixed-path categories, delete existing DB record before inserting new one
+    if (isFixedFile) {
+      await db()
+        .from('escritura_documentos')
+        .delete()
+        .eq('escritura_id', escrituraId)
+        .eq('categoria', categoria);
     }
 
     // Save metadata to DB

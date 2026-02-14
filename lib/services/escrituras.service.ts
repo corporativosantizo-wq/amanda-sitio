@@ -97,20 +97,34 @@ export async function listarEscrituras(params: ListParams = {}) {
   const { data, error, count } = await query;
   if (error) throw new EscrituraError('Error al listar escrituras', error);
 
-  // Contar testimonios pendientes por cada escritura
+  // Contar testimonios pendientes y docs (escritura_pdf/escritura_docx) por escritura
   const escrituraIds = (data ?? []).map((e: any) => e.id);
   let testimoniosPendientesPorEsc: Record<string, number> = {};
+  const tieneEscrituraPdf: Set<string> = new Set();
+  const tieneEscrituraDocx: Set<string> = new Set();
 
   if (escrituraIds.length > 0) {
-    const { data: pendientes } = await db()
-      .from('testimonios')
-      .select('escritura_id')
-      .in('escritura_id', escrituraIds)
-      .neq('estado', 'entregado');
+    const [{ data: pendientes }, { data: docFiles }] = await Promise.all([
+      db()
+        .from('testimonios')
+        .select('escritura_id')
+        .in('escritura_id', escrituraIds)
+        .neq('estado', 'entregado'),
+      db()
+        .from('escritura_documentos')
+        .select('escritura_id, categoria')
+        .in('escritura_id', escrituraIds)
+        .in('categoria', ['escritura_pdf', 'escritura_docx']),
+    ]);
 
     for (const t of pendientes ?? []) {
       testimoniosPendientesPorEsc[t.escritura_id] =
         (testimoniosPendientesPorEsc[t.escritura_id] ?? 0) + 1;
+    }
+
+    for (const d of docFiles ?? []) {
+      if (d.categoria === 'escritura_pdf') tieneEscrituraPdf.add(d.escritura_id);
+      if (d.categoria === 'escritura_docx') tieneEscrituraDocx.add(d.escritura_id);
     }
   }
 
@@ -126,6 +140,8 @@ export async function listarEscrituras(params: ListParams = {}) {
     pdf_escritura_url: esc.pdf_escritura_url,
     cliente_nombre: esc.cliente?.nombre ?? null,
     testimonios_pendientes: testimoniosPendientesPorEsc[esc.id] ?? 0,
+    tiene_escritura_pdf: tieneEscrituraPdf.has(esc.id),
+    tiene_escritura_docx: tieneEscrituraDocx.has(esc.id),
   }));
 
   return {
