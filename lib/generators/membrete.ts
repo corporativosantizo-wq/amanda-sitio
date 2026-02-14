@@ -8,9 +8,10 @@ import {
 } from 'docx';
 
 export interface MembreteConfig {
-  headerImageBase64?: string; // base64-encoded PNG/JPG
-  headerImageWidth?: number;  // px, default 600
-  headerImageHeight?: number; // px, default 100
+  headerImageBase64?: string;  // base64-encoded PNG/JPG
+  headerImageWidth?: number;   // px, default 600
+  headerImageHeight?: number;  // px, default 100
+  headerImageType?: 'png' | 'jpg'; // default 'png'
 }
 
 /**
@@ -21,6 +22,7 @@ export function buildHeader(config?: MembreteConfig): { default: Header } | unde
 
   const width = config.headerImageWidth ?? 600;
   const height = config.headerImageHeight ?? 100;
+  const imgType = config.headerImageType ?? 'png';
 
   return {
     default: new Header({
@@ -31,7 +33,7 @@ export function buildHeader(config?: MembreteConfig): { default: Header } | unde
             new ImageRun({
               data: Buffer.from(config.headerImageBase64, 'base64'),
               transformation: { width, height },
-              type: 'png',
+              type: imgType,
             }),
           ],
         }),

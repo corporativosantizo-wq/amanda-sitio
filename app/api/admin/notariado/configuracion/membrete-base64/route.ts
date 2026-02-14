@@ -47,11 +47,14 @@ export async function GET() {
     const arrayBuffer = await fileData.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString('base64');
 
+    const isPng = config.membrete_path.endsWith('.png');
+
     return NextResponse.json({
       membrete: {
         headerImageBase64: base64,
         headerImageWidth: Number(config.membrete_width ?? '600'),
         headerImageHeight: Number(config.membrete_height ?? '100'),
+        headerImageType: isPng ? 'png' : 'jpg',
       },
     });
   } catch (err: any) {

@@ -358,6 +358,9 @@ export default function EscrituraDetallePage() {
         <AvisoGeneralModal
           escritura={escritura}
           onClose={() => setShowAvisoModal(false)}
+          onCreated={() => {
+            if (tabActiva === 'aviso_general') fetchDocumentos();
+          }}
         />
       )}
     </div>
@@ -366,7 +369,7 @@ export default function EscrituraDetallePage() {
 
 // ── Aviso General Modal ────────────────────────────────────────────────
 
-function AvisoGeneralModal({ escritura, onClose }: { escritura: Escritura; onClose: () => void }) {
+function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escritura; onClose: () => void; onCreated: () => void }) {
   const [tipoAviso, setTipoAviso] = useState<TipoAviso>('cancelacion');
   const [motivo, setMotivo] = useState('');
   const [fechaAviso, setFechaAviso] = useState(new Date().toISOString().split('T')[0]);
@@ -399,7 +402,26 @@ function AvisoGeneralModal({ escritura, onClose }: { escritura: Escritura; onClo
       });
 
       const tipoLabel = tipoAviso.charAt(0).toUpperCase() + tipoAviso.slice(1);
-      saveAs(blob, `Aviso-${tipoLabel}-Esc${escritura.numero}.docx`);
+      const filename = `Aviso-${tipoLabel}-Esc${escritura.numero}.docx`;
+      saveAs(blob, filename);
+
+      // Save to DB for history
+      try {
+        const formData = new FormData();
+        formData.append('archivo', new File([blob], filename, {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }));
+        formData.append('escritura_id', escritura.id);
+        formData.append('subcategoria', tipoAviso);
+        formData.append('notas', motivo || `Aviso de ${tipoLabel}`);
+
+        await fetch('/api/admin/notariado/avisos-generales', {
+          method: 'POST',
+          body: formData,
+        });
+        onCreated();
+      } catch { /* ignore save error, file was already downloaded */ }
+
       onClose();
     } catch (err) {
       alert('Error al generar aviso');
