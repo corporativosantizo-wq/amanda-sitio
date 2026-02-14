@@ -163,7 +163,7 @@ export default function CotizacionesPage() {
                         <Badge variant={cot.estado}>{cot.estado}</Badge>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <span className="text-sm text-slate-500">{cot.created_at?.slice(0, 10)}</span>
+                        <span className="text-sm text-slate-500">{cot.created_at ? new Date(cot.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' }) : '—'}</span>
                       </td>
                       <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
                         <RowActions

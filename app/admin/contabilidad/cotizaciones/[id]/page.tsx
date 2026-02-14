@@ -427,7 +427,7 @@ function TimelineItem({ icon, label, date, active }: {
         {date && (
           <p className="text-xs text-slate-400 mt-0.5">
             {new Date(date).toLocaleDateString('es-GT', {
-              day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala',
             })}
           </p>
         )}

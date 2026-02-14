@@ -19,6 +19,16 @@ import { emailCotizacion } from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
 
+/** Devuelve la fecha actual en Guatemala como YYYY-MM-DD */
+function fechaHoyGT(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+}
+
+/** Convierte un Date a YYYY-MM-DD en zona Guatemala */
+function fechaGT(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+}
+
 // --- Helpers ---
 
 interface ListParams {
@@ -122,10 +132,10 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
   const { anticipo } = calcularAnticipo(total, anticipoPorcentaje);
 
   // 5. Calcular fecha de vencimiento
-  const fechaEmision = input.fecha_emision ?? new Date().toISOString().split('T')[0];
+  const fechaEmision = input.fecha_emision ?? fechaHoyGT();
   const vencimiento = new Date(fechaEmision + 'T12:00:00');
   vencimiento.setDate(vencimiento.getDate() + config.validez_cotizacion_dias);
-  const fechaVencimiento = vencimiento.toISOString().split('T')[0];
+  const fechaVencimiento = fechaGT(vencimiento);
 
   // 6. Condiciones default
   const condiciones = input.condiciones ?? generarCondicionesDefault(config);
@@ -471,7 +481,7 @@ function generarCondicionesDefault(config: Record<string, unknown>): string {
  * Resumen de cotizaciones para el dashboard.
  */
 export async function resumenCotizaciones() {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = fechaHoyGT();
   const inicioMes = hoy.slice(0, 7) + '-01';
 
   const [activas, porVencer, mesActual] = await Promise.all([
@@ -513,7 +523,7 @@ export async function resumenCotizaciones() {
 function sumarDias(fecha: string, dias: number): string {
   const d = new Date(fecha + 'T12:00:00');
   d.setDate(d.getDate() + dias);
-  return d.toISOString().split('T')[0];
+  return fechaGT(d);
 }
 
 // --- Error class ---
