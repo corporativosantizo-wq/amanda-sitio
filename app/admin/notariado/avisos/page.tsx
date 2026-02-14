@@ -54,6 +54,16 @@ export default function AvisosPage() {
 
       const canceladas = escrituras.filter((e: any) => e.estado === 'cancelada').length;
 
+      // Fetch membrete config
+      let membrete;
+      try {
+        const memRes = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+        if (memRes.ok) {
+          const memJson = await memRes.json();
+          membrete = memJson.membrete ?? undefined;
+        }
+      } catch { /* sin membrete */ }
+
       // Generate DOCX
       const blob = await generarAvisoTrimestral({
         trimestre,
@@ -67,6 +77,7 @@ export default function AvisosPage() {
           fecha_autorizacion: e.fecha_autorizacion,
           estado: e.estado,
         })),
+        membrete,
       });
 
       const trimestreLabel = `Q${trimestre}`;

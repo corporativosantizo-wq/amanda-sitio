@@ -8,6 +8,7 @@ import {
   AlignmentType, PageOrientation, convertMillimetersToTwip,
 } from 'docx';
 import { numeroALetras, fechaATextoLegal } from '@/lib/utils';
+import { buildHeader, buildFooter, type MembreteConfig } from './membrete';
 
 export type TipoAviso = 'cancelacion' | 'aclaracion' | 'ampliacion' | 'modificacion' | 'rescision';
 
@@ -21,6 +22,7 @@ interface AvisoGeneralParams {
     lugar_autorizacion: string;
     departamento: string;
   };
+  membrete?: MembreteConfig;
 }
 
 const NOTARIA = {
@@ -57,7 +59,7 @@ function emptyLine(): Paragraph {
 }
 
 export async function generarAvisoGeneral(params: AvisoGeneralParams): Promise<Blob> {
-  const { tipoAviso, motivo, fechaAviso, escritura } = params;
+  const { tipoAviso, motivo, fechaAviso, escritura, membrete } = params;
 
   const fechaAvisoTexto = fechaATextoLegal(fechaAviso);
   const numLetras = numeroALetras(escritura.numero);
@@ -111,19 +113,24 @@ export async function generarAvisoGeneral(params: AvisoGeneralParams): Promise<B
   children.push(emptyLine());
   children.push(new Paragraph({ children: [txt(`Clave: ${NOTARIA.clave}`, { bold: true })] }));
 
+  const headers = buildHeader(membrete);
+  const hasHeader = !!headers;
+
   const doc = new Document({
     sections: [{
       properties: {
         page: {
           size: { width: 12240, height: 15840, orientation: PageOrientation.PORTRAIT },
           margin: {
-            top: convertMillimetersToTwip(25.4),
+            top: convertMillimetersToTwip(hasHeader ? 35 : 25.4),
             right: convertMillimetersToTwip(25.4),
             bottom: convertMillimetersToTwip(25.4),
             left: convertMillimetersToTwip(25.4),
           },
         },
       },
+      headers,
+      footers: hasHeader ? buildFooter() : undefined,
       children,
     }],
   });

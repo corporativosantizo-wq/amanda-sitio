@@ -9,6 +9,7 @@ import {
   convertMillimetersToTwip, ShadingType,
 } from 'docx';
 import { numeroALetras, fechaATextoLegal } from '@/lib/utils';
+import { buildHeader, buildFooter, type MembreteConfig } from './membrete';
 
 interface EscrituraIndice {
   numero: number;
@@ -26,6 +27,7 @@ interface IndiceParams {
   escrituras: EscrituraIndice[];
   incluirRazon: boolean;
   fechaCierre?: string;
+  membrete?: MembreteConfig;
 }
 
 const NOTARIA = {
@@ -61,7 +63,7 @@ function cell(
 }
 
 export async function generarIndiceProtocolo(params: IndiceParams): Promise<Blob> {
-  const { anio, escrituras, incluirRazon, fechaCierre } = params;
+  const { anio, escrituras, incluirRazon, fechaCierre, membrete } = params;
 
   const children: Paragraph[] = [];
 
@@ -159,19 +161,24 @@ export async function generarIndiceProtocolo(params: IndiceParams): Promise<Blob
     razonParagraphs.push(new Paragraph({ children: [txt(`Clave: ${NOTARIA.clave}`)] }));
   }
 
+  const headers = buildHeader(membrete);
+  const hasHeader = !!headers;
+
   const doc = new Document({
     sections: [{
       properties: {
         page: {
           size: { width: 15840, height: 12240, orientation: PageOrientation.LANDSCAPE },
           margin: {
-            top: convertMillimetersToTwip(20),
+            top: convertMillimetersToTwip(hasHeader ? 30 : 20),
             right: convertMillimetersToTwip(20),
             bottom: convertMillimetersToTwip(20),
             left: convertMillimetersToTwip(20),
           },
         },
       },
+      headers,
+      footers: hasHeader ? buildFooter() : undefined,
       children: [...children, table, ...razonParagraphs],
     }],
   });

@@ -375,6 +375,16 @@ function AvisoGeneralModal({ escritura, onClose }: { escritura: Escritura; onClo
   const handleGenerar = async () => {
     setGenerando(true);
     try {
+      // Fetch membrete config
+      let membrete;
+      try {
+        const memRes = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+        if (memRes.ok) {
+          const memJson = await memRes.json();
+          membrete = memJson.membrete ?? undefined;
+        }
+      } catch { /* sin membrete */ }
+
       const blob = await generarAvisoGeneral({
         tipoAviso,
         motivo,
@@ -385,6 +395,7 @@ function AvisoGeneralModal({ escritura, onClose }: { escritura: Escritura; onClo
           lugar_autorizacion: escritura.lugar_autorizacion,
           departamento: escritura.departamento,
         },
+        membrete,
       });
 
       const tipoLabel = tipoAviso.charAt(0).toUpperCase() + tipoAviso.slice(1);

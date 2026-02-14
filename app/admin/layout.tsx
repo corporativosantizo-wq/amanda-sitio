@@ -144,6 +144,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       children: [
         { name: 'Avisos', href: '/admin/notariado/avisos' },
         { name: 'Índice', href: '/admin/notariado/indice' },
+        { name: 'Plantilla', href: '/admin/notariado/configuracion' },
       ],
     },
     {

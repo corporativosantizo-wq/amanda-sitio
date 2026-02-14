@@ -45,10 +45,21 @@ export default function IndicePage() {
   const handleDescargar = async () => {
     setGenerando(true);
     try {
+      // Fetch membrete config
+      let membrete;
+      try {
+        const memRes = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+        if (memRes.ok) {
+          const memJson = await memRes.json();
+          membrete = memJson.membrete ?? undefined;
+        }
+      } catch { /* sin membrete */ }
+
       const blob = await generarIndiceProtocolo({
         anio,
         escrituras,
         incluirRazon,
+        membrete,
       });
       saveAs(blob, `Indice-Protocolo-${anio}.docx`);
     } catch (err) {

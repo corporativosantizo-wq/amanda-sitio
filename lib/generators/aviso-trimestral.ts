@@ -8,6 +8,7 @@ import {
   AlignmentType, PageOrientation, convertMillimetersToTwip,
 } from 'docx';
 import { numeroALetras, fechaATextoLegal, nombreTrimestre } from '@/lib/utils';
+import { buildHeader, buildFooter, type MembreteConfig } from './membrete';
 
 interface EscrituraAviso {
   numero: number;
@@ -23,6 +24,7 @@ interface AvisoTrimestralParams {
   trimestre: 1 | 2 | 3 | 4;
   anio: number;
   escrituras: EscrituraAviso[];
+  membrete?: MembreteConfig;
 }
 
 const NOTARIA = {
@@ -43,7 +45,7 @@ function emptyLine(): Paragraph {
 }
 
 export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Promise<Blob> {
-  const { trimestre, anio, escrituras } = params;
+  const { trimestre, anio, escrituras, membrete } = params;
   const hoy = new Date();
   const fechaHoy = fechaATextoLegal(hoy);
 
@@ -76,7 +78,6 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
   children.push(emptyLine());
 
   if (cantidad === 0 && canceladas.length === 0) {
-    // No instruments
     children.push(new Paragraph({
       spacing: { after: 200 },
       children: [
@@ -84,7 +85,6 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
       ],
     }));
   } else {
-    // Intro paragraph
     const numeros = autorizadas.map((e: EscrituraAviso) => String(e.numero));
     const numerosTexto = numeros.join(', ');
     const cantidadTexto = numeroALetras(cantidad);
@@ -97,7 +97,6 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
       ],
     }));
 
-    // List each escritura
     for (const esc of autorizadas) {
       const numLetras = numeroALetras(esc.numero);
       const tipoMayus = esc.tipo_instrumento_texto.toUpperCase();
@@ -112,7 +111,6 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
       }));
     }
 
-    // Cancelled escrituras
     if (canceladas.length > 0) {
       children.push(emptyLine());
       const numsCanceladas = canceladas.map((e: EscrituraAviso) => String(e.numero)).join(', ');
@@ -136,17 +134,14 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
   children.push(emptyLine());
 
   // Signature
-  children.push(new Paragraph({
-    children: [txt(NOTARIA.nombre, { bold: true })],
-  }));
+  children.push(new Paragraph({ children: [txt(NOTARIA.nombre, { bold: true })] }));
   children.push(emptyLine());
-  children.push(new Paragraph({
-    children: [txt(`COLEGIADO: ${NOTARIA.colegiado}`, { bold: true })],
-  }));
+  children.push(new Paragraph({ children: [txt(`COLEGIADO: ${NOTARIA.colegiado}`, { bold: true })] }));
   children.push(emptyLine());
-  children.push(new Paragraph({
-    children: [txt(`Clave: ${NOTARIA.clave}`, { bold: true })],
-  }));
+  children.push(new Paragraph({ children: [txt(`Clave: ${NOTARIA.clave}`, { bold: true })] }));
+
+  const headers = buildHeader(membrete);
+  const hasHeader = !!headers;
 
   const doc = new Document({
     sections: [{
@@ -154,13 +149,15 @@ export async function generarAvisoTrimestral(params: AvisoTrimestralParams): Pro
         page: {
           size: { width: 12240, height: 15840, orientation: PageOrientation.PORTRAIT },
           margin: {
-            top: convertMillimetersToTwip(25.4),
+            top: convertMillimetersToTwip(hasHeader ? 35 : 25.4),
             right: convertMillimetersToTwip(25.4),
             bottom: convertMillimetersToTwip(25.4),
             left: convertMillimetersToTwip(25.4),
           },
         },
       },
+      headers,
+      footers: hasHeader ? buildFooter() : undefined,
       children,
     }],
   });
