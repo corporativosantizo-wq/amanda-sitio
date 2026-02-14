@@ -470,7 +470,7 @@ function generarCondicionesDefault(config: Record<string, unknown>): string {
     `Enviar comprobante de pago y número de NIT para facturación al correo: ${emailContador}`,
     `Los servicios contratados son exclusivamente los descritos en esta cotización.`,
     `Esta cotización tiene una validez de ${validez} días a partir de la fecha de emisión.`,
-    `Las consultas incluidas son vía Microsoft Teams (grabadas) con duración de 15 minutos cada una.`,
+    `Si los servicios cotizados son trámites notariales o mercantiles, la cotización incluye dos consultas de seguimiento o dudas vía Teams (virtual).`,
     `Consultas adicionales tienen un costo de Q100.00 cada una.`,
   ].join('\n');
 }

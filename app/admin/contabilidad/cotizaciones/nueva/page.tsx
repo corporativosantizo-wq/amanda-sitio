@@ -38,7 +38,7 @@ interface ClienteBusqueda {
 
 const CONDICIONES_DEFAULT = `TÉRMINOS Y CONDICIONES
 
-1. Esta cotización incluye 2 consultas de 15 minutos vía Teams (grabadas).
+1. Si los servicios cotizados son trámites notariales o mercantiles, la cotización incluye dos consultas de seguimiento o dudas vía Teams (virtual).
 2. Consultas adicionales: Q100.00 cada una.
 3. NO incluye consultas ilimitadas ni asesoría fuera del alcance contratado.
 4. Honorarios no incluyen gastos de registro, timbres fiscales ni aranceles.
