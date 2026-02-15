@@ -5,13 +5,27 @@
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
+import type { CargoRepresentante } from '@/lib/types';
+import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 
 // ── Types ───────────────────────────────────────────────────────────────────
+
+interface RepresentanteDetalle {
+  cargo: CargoRepresentante;
+  representante: { id: string; nombre_completo: string; email: string | null };
+  otras_empresas: { id: string; codigo: string; nombre: string; cargo: CargoRepresentante }[];
+}
+
+interface GrupoEmpresarialDetalle {
+  id: string;
+  nombre: string;
+  empresas: { id: string; codigo: string; nombre: string }[];
+}
 
 interface ClienteDetalle {
   id: string;
@@ -26,6 +40,7 @@ interface ClienteDetalle {
   razon_social_facturacion: string;
   nit_facturacion: string;
   direccion_facturacion: string;
+  grupo_empresarial_id: string | null;
   notas: string | null;
   activo: boolean;
   created_at: string;
@@ -38,6 +53,8 @@ interface ClienteDetalle {
   documentos: DocRow[];
   pagos: PagoRow[];
   cotizaciones: CotizacionRow[];
+  representantes: RepresentanteDetalle[];
+  grupo_empresarial: GrupoEmpresarialDetalle | null;
 }
 
 interface CitaRow {
@@ -110,6 +127,16 @@ export default function ClienteDetallePage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Representante edit state
+  const [editCargoDireccion, setEditCargoDireccion] = useState<CargoRepresentante>('administrador_unico');
+  const [editRepDireccionNombre, setEditRepDireccionNombre] = useState('');
+  const [editRepDireccionEmail, setEditRepDireccionEmail] = useState('');
+  const [editRepDireccionId, setEditRepDireccionId] = useState<string | null>(null);
+  const [editCargoGestion, setEditCargoGestion] = useState<CargoRepresentante>('gerente_general');
+  const [editRepGestionNombre, setEditRepGestionNombre] = useState('');
+  const [editRepGestionEmail, setEditRepGestionEmail] = useState('');
+  const [editRepGestionId, setEditRepGestionId] = useState<string | null>(null);
+
   const startEdit = useCallback(() => {
     if (!c) return;
     setForm({
@@ -123,6 +150,35 @@ export default function ClienteDetallePage() {
       nit_facturacion: c.nit_facturacion ?? '',
       direccion_facturacion: c.direccion_facturacion ?? '',
     });
+
+    // Initialize representante edit state from current data
+    const repDireccion = (c.representantes ?? []).find(r => CARGOS_DIRECCION.includes(r.cargo));
+    const repGestion = (c.representantes ?? []).find(r => CARGOS_GESTION.includes(r.cargo));
+
+    if (repDireccion) {
+      setEditCargoDireccion(repDireccion.cargo);
+      setEditRepDireccionNombre(repDireccion.representante.nombre_completo);
+      setEditRepDireccionEmail(repDireccion.representante.email ?? '');
+      setEditRepDireccionId(repDireccion.representante.id);
+    } else {
+      setEditCargoDireccion('administrador_unico');
+      setEditRepDireccionNombre('');
+      setEditRepDireccionEmail('');
+      setEditRepDireccionId(null);
+    }
+
+    if (repGestion) {
+      setEditCargoGestion(repGestion.cargo);
+      setEditRepGestionNombre(repGestion.representante.nombre_completo);
+      setEditRepGestionEmail(repGestion.representante.email ?? '');
+      setEditRepGestionId(repGestion.representante.id);
+    } else {
+      setEditCargoGestion('gerente_general');
+      setEditRepGestionNombre('');
+      setEditRepGestionEmail('');
+      setEditRepGestionId(null);
+    }
+
     setEditing(true);
     setSaveError(null);
   }, [c]);
@@ -136,6 +192,21 @@ export default function ClienteDetallePage() {
     setSaveError(null);
     if (!form.nombre?.trim()) { setSaveError('El nombre es obligatorio'); return; }
 
+    const representantes = c?.tipo === 'empresa' ? [
+      ...(editRepDireccionNombre.trim() ? [{
+        cargo: editCargoDireccion,
+        nombre_completo: editRepDireccionNombre.trim(),
+        email: editRepDireccionEmail.trim() || null,
+        representante_id: editRepDireccionId || undefined,
+      }] : []),
+      ...(editRepGestionNombre.trim() ? [{
+        cargo: editCargoGestion,
+        nombre_completo: editRepGestionNombre.trim(),
+        email: editRepGestionEmail.trim() || null,
+        representante_id: editRepGestionId || undefined,
+      }] : []),
+    ] : undefined;
+
     await mutate(`/api/admin/clientes/${id}`, {
       method: 'PATCH',
       body: {
@@ -148,11 +219,12 @@ export default function ClienteDetallePage() {
         razon_social_facturacion: form.razon_social_facturacion.trim() || form.nombre.trim(),
         nit_facturacion: form.nit_facturacion.trim() || form.nit.trim() || 'CF',
         direccion_facturacion: form.direccion_facturacion.trim() || 'Ciudad',
+        representantes,
       },
       onSuccess: () => { setEditing(false); refetch(); },
       onError: (err) => setSaveError(err),
     });
-  }, [form, id, mutate, refetch]);
+  }, [form, id, mutate, refetch, c?.tipo, editCargoDireccion, editRepDireccionNombre, editRepDireccionEmail, editRepDireccionId, editCargoGestion, editRepGestionNombre, editRepGestionEmail, editRepGestionId]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }));
@@ -207,6 +279,11 @@ export default function ClienteDetallePage() {
               <p className="text-sm text-slate-500">
                 {c.codigo} · NIT: {c.nit} · {c.tipo === 'empresa' ? 'Empresa' : 'Individual'}
                 {!c.activo && <Badge variant="danger" className="ml-2">Inactivo</Badge>}
+                {c.grupo_empresarial && (
+                  <span className="ml-2 text-xs px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded-full">
+                    {c.grupo_empresarial.nombre}
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -276,7 +353,16 @@ export default function ClienteDetallePage() {
       {tab === 'datos' && (
         <TabDatos c={c} editing={editing} form={form} set={set}
           onStartEdit={startEdit} onCancel={cancelEdit} onSave={saveEdit}
-          saving={saving} saveError={saveError} />
+          saving={saving} saveError={saveError} clienteId={id}
+          editCargoDireccion={editCargoDireccion} setEditCargoDireccion={setEditCargoDireccion}
+          editRepDireccionNombre={editRepDireccionNombre} setEditRepDireccionNombre={setEditRepDireccionNombre}
+          editRepDireccionEmail={editRepDireccionEmail} setEditRepDireccionEmail={setEditRepDireccionEmail}
+          editRepDireccionId={editRepDireccionId} setEditRepDireccionId={setEditRepDireccionId}
+          editCargoGestion={editCargoGestion} setEditCargoGestion={setEditCargoGestion}
+          editRepGestionNombre={editRepGestionNombre} setEditRepGestionNombre={setEditRepGestionNombre}
+          editRepGestionEmail={editRepGestionEmail} setEditRepGestionEmail={setEditRepGestionEmail}
+          editRepGestionId={editRepGestionId} setEditRepGestionId={setEditRepGestionId}
+        />
       )}
       {tab === 'citas' && <TabCitas citas={c.citas} clienteId={id} />}
       {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
@@ -312,7 +398,23 @@ export default function ClienteDetallePage() {
 
 // ── Tab: Datos generales ────────────────────────────────────────────────────
 
-function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving, saveError }: {
+interface RepSugerencia {
+  id: string;
+  nombre_completo: string;
+  email: string | null;
+  empresas: { id: string; codigo: string; nombre: string; cargo: CargoRepresentante }[];
+}
+
+function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving, saveError, clienteId,
+  editCargoDireccion, setEditCargoDireccion,
+  editRepDireccionNombre, setEditRepDireccionNombre,
+  editRepDireccionEmail, setEditRepDireccionEmail,
+  editRepDireccionId, setEditRepDireccionId,
+  editCargoGestion, setEditCargoGestion,
+  editRepGestionNombre, setEditRepGestionNombre,
+  editRepGestionEmail, setEditRepGestionEmail,
+  editRepGestionId, setEditRepGestionId,
+}: {
   c: ClienteDetalle;
   editing: boolean;
   form: Record<string, string>;
@@ -322,14 +424,83 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
   onSave: () => void;
   saving: boolean;
   saveError: string | null;
+  clienteId: string;
+  editCargoDireccion: CargoRepresentante;
+  setEditCargoDireccion: (v: CargoRepresentante) => void;
+  editRepDireccionNombre: string;
+  setEditRepDireccionNombre: (v: string) => void;
+  editRepDireccionEmail: string;
+  setEditRepDireccionEmail: (v: string) => void;
+  editRepDireccionId: string | null;
+  setEditRepDireccionId: (v: string | null) => void;
+  editCargoGestion: CargoRepresentante;
+  setEditCargoGestion: (v: CargoRepresentante) => void;
+  editRepGestionNombre: string;
+  setEditRepGestionNombre: (v: string) => void;
+  editRepGestionEmail: string;
+  setEditRepGestionEmail: (v: string) => void;
+  editRepGestionId: string | null;
+  setEditRepGestionId: (v: string | null) => void;
 }) {
+  // Autocomplete for representantes in edit mode
+  const [sugerenciasDireccion, setSugerenciasDireccion] = useState<RepSugerencia[]>([]);
+  const [sugerenciasGestion, setSugerenciasGestion] = useState<RepSugerencia[]>([]);
+  const [showDireccionDropdown, setShowDireccionDropdown] = useState(false);
+  const [showGestionDropdown, setShowGestionDropdown] = useState(false);
+  const direccionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gestionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const direccionDropdownRef = useRef<HTMLDivElement>(null);
+  const gestionDropdownRef = useRef<HTMLDivElement>(null);
+
+  const buscarRep = useCallback((valor: string, setter: typeof setSugerenciasDireccion, timerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>, showSetter: typeof setShowDireccionDropdown) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!valor.trim() || valor.trim().length < 2) { setter([]); showSetter(false); return; }
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/clientes/representantes?q=${encodeURIComponent(valor.trim())}`);
+        const json = await res.json();
+        const reps = json.representantes ?? [];
+        setter(reps);
+        showSetter(reps.length > 0);
+      } catch { setter([]); showSetter(false); }
+    }, 300);
+  }, []);
+
+  useEffect(() => {
+    if (editing && c.tipo === 'empresa' && !editRepDireccionId) {
+      buscarRep(editRepDireccionNombre, setSugerenciasDireccion, direccionTimer, setShowDireccionDropdown);
+    } else {
+      setShowDireccionDropdown(false);
+    }
+  }, [editRepDireccionNombre, editing, c.tipo, editRepDireccionId, buscarRep]);
+
+  useEffect(() => {
+    if (editing && c.tipo === 'empresa' && !editRepGestionId) {
+      buscarRep(editRepGestionNombre, setSugerenciasGestion, gestionTimer, setShowGestionDropdown);
+    } else {
+      setShowGestionDropdown(false);
+    }
+  }, [editRepGestionNombre, editing, c.tipo, editRepGestionId, buscarRep]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (direccionDropdownRef.current && !direccionDropdownRef.current.contains(e.target as Node)) setShowDireccionDropdown(false);
+      if (gestionDropdownRef.current && !gestionDropdownRef.current.contains(e.target as Node)) setShowGestionDropdown(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const repDireccion = (c.representantes ?? []).find(r => CARGOS_DIRECCION.includes(r.cargo));
+  const repGestion = (c.representantes ?? []).find(r => CARGOS_GESTION.includes(r.cargo));
+
   return (
     <div className="space-y-5">
       <div className="flex justify-end">
         {!editing ? (
           <button onClick={onStartEdit}
             className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-            ✏️ Editar datos
+            Editar datos
           </button>
         ) : (
           <div className="flex gap-2">
@@ -377,6 +548,177 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
           </div>
         </Section>
       </div>
+
+      {/* Representacion legal (solo empresa) */}
+      {c.tipo === 'empresa' && (
+        <Section title="Representacion legal">
+          {!editing ? (
+            /* View mode */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500">
+                  {repDireccion ? CARGO_LABELS[repDireccion.cargo] : 'Representante de Direccion'}
+                </p>
+                <p className="text-sm text-slate-900">
+                  {repDireccion?.representante.nombre_completo || <span className="text-slate-400">—</span>}
+                </p>
+                {repDireccion?.representante.email && (
+                  <p className="text-xs text-slate-500">{repDireccion.representante.email}</p>
+                )}
+                {repDireccion && repDireccion.otras_empresas.length > 0 && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-800 mb-1">Tambien vinculado con:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {repDireccion.otras_empresas.map(e => (
+                        <Link key={e.id} href={`/admin/clientes/${e.id}`}
+                          className="text-xs px-2 py-0.5 bg-amber-100 text-amber-900 rounded hover:bg-amber-200">
+                          {e.codigo} · {e.nombre}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500">
+                  {repGestion ? CARGO_LABELS[repGestion.cargo] : 'Representante de Gestion'}
+                </p>
+                <p className="text-sm text-slate-900">
+                  {repGestion?.representante.nombre_completo || <span className="text-slate-400">—</span>}
+                </p>
+                {repGestion?.representante.email && (
+                  <p className="text-xs text-slate-500">{repGestion.representante.email}</p>
+                )}
+                {repGestion && repGestion.otras_empresas.length > 0 && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-800 mb-1">Tambien vinculado con:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {repGestion.otras_empresas.map(e => (
+                        <Link key={e.id} href={`/admin/clientes/${e.id}`}
+                          className="text-xs px-2 py-0.5 bg-amber-100 text-amber-900 rounded hover:bg-amber-200">
+                          {e.codigo} · {e.nombre}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Edit mode */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {/* Direccion */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Cargo de Direccion</label>
+                  <select value={editCargoDireccion}
+                    onChange={e => setEditCargoDireccion(e.target.value as CargoRepresentante)}
+                    className={INPUT}>
+                    {CARGOS_DIRECCION.map(c => (
+                      <option key={c} value={c}>{CARGO_LABELS[c]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="relative" ref={direccionDropdownRef}>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
+                  <input type="text" value={editRepDireccionNombre}
+                    onChange={e => { setEditRepDireccionNombre(e.target.value); setEditRepDireccionId(null); }}
+                    className={INPUT} placeholder="Nombre del representante" />
+                  {showDireccionDropdown && sugerenciasDireccion.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {sugerenciasDireccion.map(rep => (
+                        <button key={rep.id} onClick={() => {
+                          setEditRepDireccionNombre(rep.nombre_completo);
+                          setEditRepDireccionEmail(rep.email ?? '');
+                          setEditRepDireccionId(rep.id);
+                          setShowDireccionDropdown(false);
+                        }}
+                          className="w-full text-left px-4 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                          <p className="text-sm font-medium text-slate-900">{rep.nombre_completo}</p>
+                          {rep.empresas.length > 0 && (
+                            <p className="text-xs text-amber-600">Vinculado con: {rep.empresas.map(e => e.nombre).join(', ')}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                  <input type="email" value={editRepDireccionEmail}
+                    onChange={e => setEditRepDireccionEmail(e.target.value)}
+                    className={INPUT} placeholder="email@representante.com" />
+                </div>
+              </div>
+
+              {/* Gestion */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Cargo de Gestion</label>
+                  <select value={editCargoGestion}
+                    onChange={e => setEditCargoGestion(e.target.value as CargoRepresentante)}
+                    className={INPUT}>
+                    {CARGOS_GESTION.map(c => (
+                      <option key={c} value={c}>{CARGO_LABELS[c]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="relative" ref={gestionDropdownRef}>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
+                  <input type="text" value={editRepGestionNombre}
+                    onChange={e => { setEditRepGestionNombre(e.target.value); setEditRepGestionId(null); }}
+                    className={INPUT} placeholder="Nombre del representante" />
+                  {showGestionDropdown && sugerenciasGestion.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {sugerenciasGestion.map(rep => (
+                        <button key={rep.id} onClick={() => {
+                          setEditRepGestionNombre(rep.nombre_completo);
+                          setEditRepGestionEmail(rep.email ?? '');
+                          setEditRepGestionId(rep.id);
+                          setShowGestionDropdown(false);
+                        }}
+                          className="w-full text-left px-4 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                          <p className="text-sm font-medium text-slate-900">{rep.nombre_completo}</p>
+                          {rep.empresas.length > 0 && (
+                            <p className="text-xs text-amber-600">Vinculado con: {rep.empresas.map(e => e.nombre).join(', ')}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                  <input type="email" value={editRepGestionEmail}
+                    onChange={e => setEditRepGestionEmail(e.target.value)}
+                    className={INPUT} placeholder="email@representante.com" />
+                </div>
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {/* Grupo Empresarial (solo empresa) */}
+      {c.tipo === 'empresa' && c.grupo_empresarial && (
+        <Section title="Grupo Empresarial">
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-slate-900">{c.grupo_empresarial.nombre}</p>
+            <div className="flex flex-wrap gap-2">
+              {c.grupo_empresarial.empresas.map(e => (
+                <Link key={e.id} href={`/admin/clientes/${e.id}`}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    e.id === c.id
+                      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}>
+                  {e.codigo} · {e.nombre}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </Section>
+      )}
 
       {/* Meta */}
       <div className="text-xs text-slate-400 flex gap-4">

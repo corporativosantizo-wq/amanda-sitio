@@ -12,3 +12,4 @@ export * from './notariado';
 export * from './citas';
 export * from './tareas';
 export * from './proveedor';
+export * from './representantes';

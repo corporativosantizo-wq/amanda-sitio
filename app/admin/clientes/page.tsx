@@ -5,9 +5,11 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ExcelJS from 'exceljs';
+import { Download, Upload } from 'lucide-react';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import {
   PageHeader, Badge, Q, EmptyState, TableSkeleton,
@@ -27,8 +29,17 @@ interface ClienteRow {
   nit: string;
   email: string | null;
   telefono: string | null;
+  administrador_unico_nombre: string | null;
+  gerente_general_nombre: string | null;
+  grupo_empresarial: { id: string; nombre: string } | null;
   activo: boolean;
   created_at: string;
+}
+
+interface GrupoOption {
+  id: string;
+  nombre: string;
+  num_empresas: number;
 }
 
 export default function ClientesListPage() {
@@ -36,6 +47,17 @@ export default function ClientesListPage() {
   const [tab, setTab] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState(false);
+  const [grupoFilter, setGrupoFilter] = useState('');
+  const [grupos, setGrupos] = useState<GrupoOption[]>([]);
+
+  // Fetch grupos for filter dropdown
+  useEffect(() => {
+    fetch('/api/admin/clientes/grupos')
+      .then(r => r.json())
+      .then(d => setGrupos(d.grupos ?? []))
+      .catch(() => {});
+  }, []);
 
   const params = new URLSearchParams();
   if (tab) params.set('tipo', tab);
@@ -48,7 +70,77 @@ export default function ClientesListPage() {
     data: ClienteRow[]; total: number; totalPages: number;
   }>(`/api/admin/clientes?${params}`);
 
-  const clientes = data?.data ?? [];
+  // Filter by grupo on client-side (since API doesn't support it directly)
+  const allClientes = data?.data ?? [];
+  const clientes = grupoFilter
+    ? allClientes.filter(c => c.grupo_empresarial?.id === grupoFilter)
+    : allClientes;
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const exportParams = new URLSearchParams();
+      if (tab) exportParams.set('tipo', tab);
+      if (search) exportParams.set('q', search);
+      exportParams.set('activo', 'true');
+      exportParams.set('page', '1');
+      exportParams.set('limit', '10000');
+
+      const res = await fetch(`/api/admin/clientes?${exportParams}`);
+      const json = await res.json();
+      const rows: ClienteRow[] = json.data ?? [];
+
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Clientes');
+
+      ws.columns = [
+        { header: 'Código', key: 'codigo', width: 14 },
+        { header: 'Nombre', key: 'nombre', width: 32 },
+        { header: 'Tipo', key: 'tipo', width: 14 },
+        { header: 'NIT', key: 'nit', width: 16 },
+        { header: 'Email', key: 'email', width: 28 },
+        { header: 'Teléfono', key: 'telefono', width: 16 },
+        { header: 'Rep. Direccion', key: 'rep_direccion', width: 28 },
+        { header: 'Rep. Gestion', key: 'rep_gestion', width: 28 },
+        { header: 'Grupo Empresarial', key: 'grupo', width: 24 },
+      ];
+
+      // Style header row
+      ws.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+        cell.alignment = { vertical: 'middle' };
+      });
+
+      rows.forEach(c => {
+        ws.addRow({
+          codigo: c.codigo,
+          nombre: c.nombre,
+          tipo: c.tipo === 'empresa' ? 'Empresa' : 'Individual',
+          nit: c.nit,
+          email: c.email ?? '',
+          telefono: c.telefono ?? '',
+          rep_direccion: c.administrador_unico_nombre ?? '',
+          rep_gestion: c.gerente_general_nombre ?? '',
+          grupo: c.grupo_empresarial?.nombre ?? '',
+        });
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const fecha = new Date().toISOString().slice(0, 10);
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Clientes_${fecha}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al descargar clientes:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -58,11 +150,19 @@ export default function ClientesListPage() {
           <p className="text-sm text-slate-500 mt-0.5">{data?.total ?? 0} clientes activos</p>
         </div>
         <div className="flex gap-2 shrink-0">
+          <button
+            onClick={handleDownload}
+            disabled={downloading || clientes.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            <Download size={16} />
+            {downloading ? 'Descargando…' : 'Descargar Clientes'}
+          </button>
           <Link
             href="/admin/clientes/importar"
             className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
           >
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+            <Upload size={16} />
             Importar Excel
           </Link>
           <button
@@ -74,14 +174,29 @@ export default function ClientesListPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key); setPage(1); }}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
-              tab === t.key ? 'bg-[#1E40AF] text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}>{t.label}</button>
-        ))}
+      {/* Tabs + Grupo Filter */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1">
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => { setTab(t.key); setPage(1); }}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                tab === t.key ? 'bg-[#1E40AF] text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}>{t.label}</button>
+          ))}
+        </div>
+
+        {grupos.length > 0 && (
+          <select
+            value={grupoFilter}
+            onChange={e => { setGrupoFilter(e.target.value); setPage(1); }}
+            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20"
+          >
+            <option value="">Todos los grupos</option>
+            {grupos.map(g => (
+              <option key={g.id} value={g.id}>{g.nombre} ({g.num_empresas})</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Search */}
@@ -113,7 +228,10 @@ export default function ClientesListPage() {
                     <td className="py-3 px-4">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                         c.tipo === 'empresa' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
-                      }`}>{c.tipo === 'empresa' ? '🏢 Empresa' : '👤 Individual'}</span>
+                      }`}>{c.tipo === 'empresa' ? 'Empresa' : 'Individual'}</span>
+                      {c.grupo_empresarial && (
+                        <span className="ml-1 text-xs px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded-full">Grupo</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600 font-mono">{c.nit}</td>
                     <td className="py-3 px-4 text-sm text-slate-500">{c.email ?? '—'}</td>

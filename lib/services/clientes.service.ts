@@ -166,6 +166,7 @@ export async function actualizarCliente(
   if (input.razon_social_facturacion !== undefined) updates.razon_social_facturacion = input.razon_social_facturacion;
   if (input.nit_facturacion !== undefined) updates.nit_facturacion = input.nit_facturacion;
   if (input.direccion_facturacion !== undefined) updates.direccion_facturacion = input.direccion_facturacion;
+  if (input.grupo_empresarial_id !== undefined) updates.grupo_empresarial_id = input.grupo_empresarial_id;
   if (input.notas !== undefined) updates.notas = input.notas;
   if (input.activo !== undefined) updates.activo = input.activo;
 

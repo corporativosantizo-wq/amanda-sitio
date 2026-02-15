@@ -8,6 +8,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   obtenerCliente, actualizarCliente, desactivarCliente, ClienteError,
 } from '@/lib/services/clientes.service';
+import {
+  obtenerRepresentantesEmpresa, sincronizarRepresentantes, RepresentanteError,
+} from '@/lib/services/representantes.service';
+import { obtenerGrupo } from '@/lib/services/grupos.service';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -42,12 +46,30 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         .limit(20),
     ]);
 
+    // Fetch representantes (only for empresa)
+    let representantes: any[] = [];
+    let grupo_empresarial: any = null;
+
+    if ((cliente as any).tipo === 'empresa') {
+      representantes = await obtenerRepresentantesEmpresa(id);
+
+      if ((cliente as any).grupo_empresarial_id) {
+        try {
+          grupo_empresarial = await obtenerGrupo((cliente as any).grupo_empresarial_id);
+        } catch {
+          // grupo not found, ignore
+        }
+      }
+    }
+
     return NextResponse.json({
       ...cliente,
       citas: citasRes.data ?? [],
       documentos: docsRes.data ?? [],
       pagos: pagosRes.data ?? [],
       cotizaciones: cotizacionesRes.data ?? [],
+      representantes,
+      grupo_empresarial,
     });
   } catch (err) {
     const msg = err instanceof ClienteError ? err.message : 'Error interno';
@@ -60,10 +82,22 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const body = await req.json();
-    const cliente = await actualizarCliente(id, body);
+
+    // Extract representantes from body (handled separately)
+    const { representantes, ...clienteData } = body;
+
+    const cliente = await actualizarCliente(id, clienteData);
+
+    // Sync representantes if provided
+    if (Array.isArray(representantes)) {
+      await sincronizarRepresentantes(id, representantes);
+    }
+
     return NextResponse.json(cliente);
   } catch (err) {
-    const msg = err instanceof ClienteError ? err.message : 'Error al actualizar';
+    const msg = err instanceof ClienteError ? err.message
+      : err instanceof RepresentanteError ? err.message
+      : 'Error al actualizar';
     const status = msg.includes('Ya existe') ? 409 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

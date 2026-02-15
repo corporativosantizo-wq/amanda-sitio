@@ -30,6 +30,8 @@ export interface Cliente {
   nit_facturacion: string | null;
   direccion_facturacion: string | null;
 
+  grupo_empresarial_id: string | null;
+
   datos_sensibles_encrypted: Record<string, unknown> | null;
   notas: string | null;
 
@@ -52,6 +54,7 @@ export interface ClienteInsert {
   razon_social_facturacion?: string | null;
   nit_facturacion?: string | null;
   direccion_facturacion?: string | null;
+  grupo_empresarial_id?: string | null;
   notas?: string | null;
   activo?: boolean;
 }
