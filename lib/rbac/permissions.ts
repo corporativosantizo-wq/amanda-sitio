@@ -9,6 +9,7 @@ export type Rol = 'admin' | 'abogado' | 'asistente' | 'contador' | 'pasante';
 
 export type Modulo =
   | 'clientes'
+  | 'expedientes'
   | 'proveedores'
   | 'calendario'
   | 'tareas'
@@ -36,6 +37,7 @@ export interface AdminUser {
 
 export const MODULE_ROUTE_MAP: Record<Modulo, string> = {
   clientes: '/admin/clientes',
+  expedientes: '/admin/expedientes',
   proveedores: '/admin/proveedores',
   calendario: '/admin/calendario',
   tareas: '/admin/tareas',
