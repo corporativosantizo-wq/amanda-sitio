@@ -13,6 +13,7 @@ import {
   isOutlookConnected,
   getCalendarEvents,
 } from '@/lib/services/outlook.service';
+import { actuacionesCalendario } from '@/lib/services/expedientes.service';
 import type { TipoCita, EstadoCita } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -110,8 +111,41 @@ export async function GET(req: NextRequest) {
       console.error('[Calendario] Stack:', outlookErr.stack ?? 'N/A');
     }
 
-    // 3. Merge and sort by date + hora_inicio
-    const merged = [...result.data, ...outlookEvents].sort((a: any, b: any) => {
+    // 3. Fetch audiencias/diligencias from expedientes
+    let expedienteEvents: any[] = [];
+    if (fechaInicio && fechaFin) {
+      try {
+        const audiencias = await actuacionesCalendario(fechaInicio, fechaFin);
+        for (const a of audiencias) {
+          const exp = (a as any).expediente;
+          const numero = exp?.numero_expediente ?? exp?.numero_mp ?? exp?.numero_administrativo ?? '';
+          const clienteNombre = exp?.cliente?.nombre ?? '';
+          expedienteEvents.push({
+            id: `exp_${a.id}`,
+            tipo: 'audiencia_expediente',
+            titulo: `${a.tipo === 'audiencia' ? 'Audiencia' : 'Diligencia'}: ${numero}`,
+            descripcion: a.descripcion,
+            fecha: a.fecha,
+            hora_inicio: '09:00',
+            hora_fin: '10:00',
+            duracion_minutos: 60,
+            estado: 'expediente',
+            costo: 0,
+            teams_link: null,
+            notas: clienteNombre ? `Cliente: ${clienteNombre}` : null,
+            cliente: exp?.cliente ?? null,
+            _source: 'expediente',
+            isAllDay: false,
+            expediente_id: exp?.id,
+          });
+        }
+      } catch (expErr: any) {
+        console.error('[Calendario] Error al obtener audiencias:', expErr.message ?? expErr);
+      }
+    }
+
+    // 4. Merge and sort by date + hora_inicio
+    const merged = [...result.data, ...outlookEvents, ...expedienteEvents].sort((a: any, b: any) => {
       const cmp = a.fecha.localeCompare(b.fecha);
       if (cmp !== 0) return cmp;
       return a.hora_inicio.localeCompare(b.hora_inicio);
@@ -119,7 +153,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       data: merged,
-      total: result.total + outlookEvents.length,
+      total: result.total + outlookEvents.length + expedienteEvents.length,
       outlook_connected: outlookConnected,
     });
   } catch (err) {

@@ -12,7 +12,7 @@ import Link from 'next/link';
 
 interface CitaItem {
   id: string;
-  tipo: 'consulta_nueva' | 'seguimiento' | 'outlook';
+  tipo: 'consulta_nueva' | 'seguimiento' | 'outlook' | 'audiencia_expediente';
   titulo: string;
   descripcion: string | null;
   fecha: string;
@@ -24,8 +24,9 @@ interface CitaItem {
   teams_link: string | null;
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
-  _source?: 'outlook';
+  _source?: 'outlook' | 'expediente';
   isAllDay?: boolean;
+  expediente_id?: string;
 }
 
 interface SlotItem {
@@ -47,6 +48,7 @@ const TIPO_COLORS: Record<string, { bg: string; border: string; text: string }> 
   consulta_nueva: { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-800' },
   seguimiento: { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-800' },
   outlook: { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-800' },
+  audiencia_expediente: { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-800' },
 };
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
@@ -56,6 +58,7 @@ const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   cancelada: { label: 'Cancelada', color: 'bg-red-100 text-red-700' },
   no_asistio: { label: 'No asistió', color: 'bg-gray-100 text-gray-700' },
   outlook: { label: 'Outlook', color: 'bg-purple-100 text-purple-700' },
+  expediente: { label: 'Expediente', color: 'bg-amber-100 text-amber-700' },
 };
 
 // Grid: 06:00 – 21:00 (31 half-hour slots)
@@ -527,7 +530,8 @@ function DetailModal({
 }) {
   const estado = ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente;
   const isOutlook = cita._source === 'outlook';
-  const activo = !isOutlook && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
+  const isExpediente = cita._source === 'expediente';
+  const activo = !isOutlook && !isExpediente && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -547,7 +551,7 @@ function DetailModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <span className="text-xs text-gray-500 uppercase">Tipo</span>
-              <p className="font-medium">{cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : cita.tipo === 'seguimiento' ? 'Seguimiento' : 'Outlook'}</p>
+              <p className="font-medium">{cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : cita.tipo === 'seguimiento' ? 'Seguimiento' : cita.tipo === 'audiencia_expediente' ? 'Audiencia/Diligencia' : 'Outlook'}</p>
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Estado</span>
@@ -591,6 +595,15 @@ function DetailModal({
                 <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
               </svg>
               Unirse a Teams
+            </a>
+          )}
+
+          {isExpediente && cita.expediente_id && (
+            <a
+              href={`/admin/expedientes/${cita.expediente_id}`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
+            >
+              Ver expediente
             </a>
           )}
 
