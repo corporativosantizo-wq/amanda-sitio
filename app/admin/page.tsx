@@ -1,8 +1,21 @@
 'use client'
 
 import Link from 'next/link'
+import { useFetch } from '@/lib/hooks/use-fetch'
+import { Scale, Shield, Building2, AlertTriangle } from 'lucide-react'
+import {
+  ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL,
+  type OrigenExpediente,
+} from '@/lib/types/expedientes'
 
 const secciones = [
+  {
+    titulo: 'Expedientes',
+    descripcion: 'Casos judiciales, fiscales y administrativos',
+    href: '/admin/expedientes',
+    icon: '⚖️',
+    color: 'bg-sky-50 border-sky-200',
+  },
   {
     titulo: 'Cotizaciones',
     descripcion: 'Crear y gestionar cotizaciones',
@@ -75,14 +88,170 @@ const secciones = [
   },
 ]
 
+interface ExpedientesStats {
+  stats: {
+    por_estado: Record<string, number>;
+    por_origen: Record<string, number>;
+    total_activos: number;
+    total_suspendidos: number;
+    recientes: {
+      id: string;
+      numero_expediente: string | null;
+      numero_mp: string | null;
+      numero_administrativo: string | null;
+      origen: OrigenExpediente;
+      tipo_proceso: string;
+      fecha_ultima_actuacion: string | null;
+      cliente: { id: string; nombre: string };
+    }[];
+  };
+  plazos_proximos: {
+    id: string;
+    descripcion: string;
+    fecha_vencimiento: string;
+    dias_restantes: number;
+    expediente: {
+      id: string;
+      numero_expediente: string | null;
+      numero_mp: string | null;
+      numero_administrativo: string | null;
+      origen: OrigenExpediente;
+      cliente: { id: string; nombre: string };
+    };
+  }[];
+  plazos_vencidos: {
+    id: string;
+    descripcion: string;
+    fecha_vencimiento: string;
+    expediente: {
+      id: string;
+      numero_expediente: string | null;
+      origen: OrigenExpediente;
+      cliente: { id: string; nombre: string };
+    };
+  }[];
+}
+
+const OrigenIcon = ({ origen }: { origen: OrigenExpediente }) => {
+  const cls = 'w-3.5 h-3.5';
+  switch (origen) {
+    case 'judicial': return <Scale className={cls} />;
+    case 'fiscal': return <Shield className={cls} />;
+    case 'administrativo': return <Building2 className={cls} />;
+  }
+};
+
+function getNumero(e: { numero_expediente: string | null; numero_mp?: string | null; numero_administrativo?: string | null }): string {
+  return e.numero_expediente ?? e.numero_mp ?? e.numero_administrativo ?? '—';
+}
+
 export default function AdminDashboard() {
+  const { data } = useFetch<ExpedientesStats>('/api/admin/expedientes/stats?dias=7');
+
+  const stats = data?.stats;
+  const plazosProximos = data?.plazos_proximos ?? [];
+  const plazosVencidos = data?.plazos_vencidos ?? [];
+  const totalPlazosUrgentes = plazosProximos.length + plazosVencidos.length;
+
   return (
-    <div className="p-8">
-      <div className="mb-8">
+    <div className="p-8 space-y-8">
+      <div>
         <h1 className="text-3xl font-bold text-gray-900">Panel de Administración</h1>
         <p className="text-gray-500 mt-1">IURISLEX — Sistema de Gestión Legal</p>
       </div>
 
+      {/* Expedientes summary widget */}
+      {stats && (stats.total_activos > 0 || totalPlazosUrgentes > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 gap-3 lg:col-span-1">
+            <div className="rounded-xl p-4 bg-gradient-to-br from-[#1E40AF] to-[#0891B2] text-white shadow-lg shadow-blue-900/20">
+              <p className="text-xs font-medium text-blue-100 uppercase tracking-wider">Activos</p>
+              <p className="text-2xl font-bold mt-1">{stats.total_activos}</p>
+              <p className="text-xs text-blue-100 mt-1">expedientes</p>
+            </div>
+            <div className={`rounded-xl p-4 border ${
+              plazosVencidos.length > 0 ? 'bg-red-50 border-red-200' :
+              plazosProximos.length > 0 ? 'bg-amber-50 border-amber-200' :
+              'bg-white border-slate-200'
+            } shadow-sm`}>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Plazos urgentes</p>
+              <p className={`text-2xl font-bold mt-1 ${
+                plazosVencidos.length > 0 ? 'text-red-700' :
+                plazosProximos.length > 0 ? 'text-amber-700' :
+                'text-slate-900'
+              }`}>{totalPlazosUrgentes}</p>
+              {plazosVencidos.length > 0 && (
+                <p className="text-xs text-red-600 mt-1">{plazosVencidos.length} vencido{plazosVencidos.length > 1 ? 's' : ''}</p>
+              )}
+            </div>
+            {/* By origen */}
+            {Object.entries(stats.por_origen).map(([origen, count]) => (
+              <div key={origen} className={`rounded-xl p-4 border border-slate-200 bg-white shadow-sm`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded ${ORIGEN_COLOR[origen as OrigenExpediente]}`}>
+                    <OrigenIcon origen={origen as OrigenExpediente} />
+                  </span>
+                  <p className="text-xs font-medium text-slate-500">{ORIGEN_LABEL[origen as OrigenExpediente]}</p>
+                </div>
+                <p className="text-xl font-bold text-slate-900 mt-1">{count}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Plazos urgentes list */}
+          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900 text-sm">Plazos próximos (7 días)</h3>
+              <Link href="/admin/expedientes" className="text-xs text-[#0891B2] hover:text-[#1E40AF] font-medium">
+                Ver todos →
+              </Link>
+            </div>
+            {totalPlazosUrgentes === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-400">
+                Sin plazos urgentes esta semana
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                {/* Vencidos first */}
+                {plazosVencidos.map(p => (
+                  <Link key={p.id} href={`/admin/expedientes/${p.expediente.id}`}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-red-50/50 transition-colors">
+                    <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{p.descripcion}</p>
+                      <p className="text-xs text-slate-500">{getNumero(p.expediente)} · {p.expediente.cliente.nombre}</p>
+                    </div>
+                    <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0">
+                      Vencido
+                    </span>
+                  </Link>
+                ))}
+                {/* Próximos */}
+                {plazosProximos.map(p => (
+                  <Link key={p.id} href={`/admin/expedientes/${p.expediente.id}`}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                    <span className={`inline-flex items-center justify-center w-2 h-2 rounded-full shrink-0 ${
+                      p.dias_restantes <= 2 ? 'bg-red-500' : 'bg-amber-500'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{p.descripcion}</p>
+                      <p className="text-xs text-slate-500">{getNumero(p.expediente)} · {p.expediente.cliente.nombre}</p>
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                      p.dias_restantes <= 2 ? 'text-red-600 bg-red-100' : 'text-amber-600 bg-amber-100'
+                    }`}>
+                      {p.dias_restantes}d
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {secciones.map((sec) => (
           <Link
