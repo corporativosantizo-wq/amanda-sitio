@@ -10,8 +10,14 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
+import { Scale, Shield, Building2, AlertTriangle } from 'lucide-react';
 import type { CargoRepresentante } from '@/lib/types';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
+import {
+  type OrigenExpediente,
+  ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL, FASE_LABEL,
+  ESTADO_EXPEDIENTE_LABEL, ESTADO_EXPEDIENTE_COLOR,
+} from '@/lib/types/expedientes';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +56,7 @@ interface ClienteDetalle {
     total_pagado: number;
   };
   citas: CitaRow[];
+  expedientes: ExpedienteRow[];
   documentos: DocRow[];
   pagos: PagoRow[];
   cotizaciones: CotizacionRow[];
@@ -96,11 +103,29 @@ interface PagoRow {
   metodo: string | null;
 }
 
-type TabKey = 'datos' | 'citas' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
+interface ExpedienteRow {
+  id: string;
+  numero_expediente: string | null;
+  numero_mp: string | null;
+  numero_administrativo: string | null;
+  origen: OrigenExpediente;
+  tipo_proceso: string;
+  fase_actual: string;
+  estado: string;
+  fecha_inicio: string;
+  fecha_ultima_actuacion: string | null;
+  juzgado: string | null;
+  fiscalia: string | null;
+  entidad_administrativa: string | null;
+  plazo_proximo?: { fecha_vencimiento: string; descripcion: string; dias_restantes: number } | null;
+}
+
+type TabKey = 'datos' | 'citas' | 'expedientes' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'datos', label: 'Datos generales', icon: '👤' },
   { key: 'citas', label: 'Citas', icon: '📅' },
+  { key: 'expedientes', label: 'Expedientes', icon: '⚖️' },
   { key: 'documentos', label: 'Documentos', icon: '📁' },
   { key: 'cotizaciones', label: 'Cotizaciones', icon: '📋' },
   { key: 'pagos', label: 'Pagos', icon: '💰' },
@@ -336,6 +361,9 @@ export default function ClienteDetallePage() {
             {t.key === 'citas' && c.citas.length > 0 && (
               <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.citas.length}</span>
             )}
+            {t.key === 'expedientes' && (c.expedientes ?? []).length > 0 && (
+              <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.expedientes.length}</span>
+            )}
             {t.key === 'documentos' && c.documentos.length > 0 && (
               <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{c.documentos.length}</span>
             )}
@@ -365,6 +393,7 @@ export default function ClienteDetallePage() {
         />
       )}
       {tab === 'citas' && <TabCitas citas={c.citas} clienteId={id} />}
+      {tab === 'expedientes' && <TabExpedientes expedientes={c.expedientes ?? []} clienteId={id} />}
       {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
       {tab === 'cotizaciones' && <TabCotizaciones cotizaciones={c.cotizaciones} clienteNombre={c.nombre} />}
       {tab === 'pagos' && <TabPagos pagos={c.pagos} clienteId={id} />}
@@ -767,6 +796,108 @@ function TabCitas({ citas, clienteId }: { citas: CitaRow[]; clienteId: string })
         </table>
       </div>
     </Section>
+  );
+}
+
+// ── Tab: Expedientes ────────────────────────────────────────────────────────
+
+const OrigenIcon = ({ origen }: { origen: OrigenExpediente }) => {
+  const cls = 'w-4 h-4';
+  switch (origen) {
+    case 'judicial': return <Scale className={cls} />;
+    case 'fiscal': return <Shield className={cls} />;
+    case 'administrativo': return <Building2 className={cls} />;
+  }
+};
+
+function getExpedienteNumero(e: ExpedienteRow): string {
+  const nums: string[] = [];
+  if (e.numero_expediente) nums.push(e.numero_expediente);
+  if (e.numero_mp) nums.push(`MP: ${e.numero_mp}`);
+  if (e.numero_administrativo) nums.push(`Admin: ${e.numero_administrativo}`);
+  return nums.join(' / ') || '—';
+}
+
+function getExpedienteSede(e: ExpedienteRow): string {
+  return e.juzgado ?? e.fiscalia ?? e.entidad_administrativa ?? '—';
+}
+
+function TabExpedientes({ expedientes, clienteId }: { expedientes: ExpedienteRow[]; clienteId: string }) {
+  const router = useRouter();
+
+  if (!expedientes.length) return (
+    <EmptyState icon="⚖️" title="Sin expedientes" description="Este cliente no tiene expedientes registrados"
+      action={{ label: '+ Nuevo Expediente', onClick: () => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`) }} />
+  );
+
+  const activos = expedientes.filter(e => e.estado === 'activo').length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">{activos} activo{activos !== 1 ? 's' : ''} de {expedientes.length} total</p>
+        <button onClick={() => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
+          + Nuevo
+        </button>
+      </div>
+
+      <Section title={`Expedientes (${expedientes.length})`} noPadding>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200">
+                {['', 'Número(s)', 'Tipo', 'Sede', 'Fase', 'Estado', 'Plazos'].map(h => (
+                  <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {expedientes.map(exp => (
+                <tr key={exp.id} onClick={() => router.push(`/admin/expedientes/${exp.id}`)}
+                  className="hover:bg-slate-50/50 cursor-pointer transition-colors">
+                  <td className="py-3 px-4 pl-5">
+                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${ORIGEN_COLOR[exp.origen]}`}>
+                      <OrigenIcon origen={exp.origen} />
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="text-sm font-medium text-slate-900 font-mono">{getExpedienteNumero(exp)}</div>
+                    {exp.fecha_ultima_actuacion && (
+                      <div className="text-xs text-slate-400 mt-0.5">Últ. actuación: {exp.fecha_ultima_actuacion}</div>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-slate-600">{TIPO_PROCESO_LABEL[exp.tipo_proceso as keyof typeof TIPO_PROCESO_LABEL] ?? exp.tipo_proceso}</td>
+                  <td className="py-3 px-4 text-sm text-slate-500 max-w-[160px] truncate">{getExpedienteSede(exp)}</td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {FASE_LABEL[exp.fase_actual as keyof typeof FASE_LABEL] ?? exp.fase_actual}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_EXPEDIENTE_COLOR[exp.estado] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {ESTADO_EXPEDIENTE_LABEL[exp.estado] ?? exp.estado}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 pr-5">
+                    {exp.plazo_proximo && exp.plazo_proximo.dias_restantes <= 5 && (
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                        exp.plazo_proximo.dias_restantes <= 2
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        <AlertTriangle size={12} />
+                        {exp.plazo_proximo.dias_restantes}d
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
   );
 }
 

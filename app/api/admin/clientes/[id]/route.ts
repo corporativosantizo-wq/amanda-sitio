@@ -12,6 +12,7 @@ import {
   obtenerRepresentantesEmpresa, sincronizarRepresentantes, RepresentanteError,
 } from '@/lib/services/representantes.service';
 import { obtenerGrupo } from '@/lib/services/grupos.service';
+import { expedientesPorCliente } from '@/lib/services/expedientes.service';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -23,7 +24,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const db = createAdminClient();
 
     // Fetch related data in parallel
-    const [citasRes, docsRes, pagosRes, cotizacionesRes] = await Promise.all([
+    const [citasRes, docsRes, pagosRes, cotizacionesRes, expedientes] = await Promise.all([
       db.from('citas')
         .select('id, tipo, titulo, fecha, hora_inicio, hora_fin, estado, costo')
         .eq('cliente_id', id)
@@ -44,6 +45,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         .eq('cliente_id', id)
         .order('fecha_emision', { ascending: false })
         .limit(20),
+      expedientesPorCliente(id),
     ]);
 
     // Fetch representantes (only for empresa)
@@ -65,6 +67,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     return NextResponse.json({
       ...cliente,
       citas: citasRes.data ?? [],
+      expedientes,
       documentos: docsRes.data ?? [],
       pagos: pagosRes.data ?? [],
       cotizaciones: cotizacionesRes.data ?? [],
