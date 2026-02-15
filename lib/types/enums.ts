@@ -17,17 +17,10 @@ export enum EstadoCliente {
 }
 
 export enum EstadoExpediente {
-  ANALISIS = 'analisis',
-  EN_TRAMITE = 'en_tramite',
-  EN_ESPERA = 'en_espera',
+  ACTIVO = 'activo',
+  SUSPENDIDO = 'suspendido',
   ARCHIVADO = 'archivado',
-  CERRADO = 'cerrado',
-}
-
-export enum Prioridad {
-  ALTA = 'alta',
-  MEDIA = 'media',
-  BAJA = 'baja',
+  FINALIZADO = 'finalizado',
 }
 
 // --- Contabilidad ---

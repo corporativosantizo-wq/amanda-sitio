@@ -13,3 +13,4 @@ export * from './citas';
 export * from './tareas';
 export * from './proveedor';
 export * from './representantes';
+export * from './expedientes';

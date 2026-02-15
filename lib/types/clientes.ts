@@ -5,8 +5,6 @@
 import type {
   TipoPersona,
   EstadoCliente,
-  EstadoExpediente,
-  Prioridad,
 } from './enums';
 
 // --- Clientes ---
@@ -83,26 +81,3 @@ export interface CatalogoServicio {
   updated_at: string;
 }
 
-// --- Expedientes ---
-
-export interface Expediente {
-  id: string;
-  numero_expediente: string;
-  cliente_id: string;
-  tipo_caso: string;
-  materia: string | null;
-  tribunal: string | null;
-  fecha_apertura: string;
-  estado: EstadoExpediente;
-  prioridad: Prioridad;
-  abogado_responsable: string;
-  contraparte: string | null;
-  notas: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// Con joins
-export interface ExpedienteConCliente extends Expediente {
-  cliente: Pick<Cliente, 'id' | 'codigo' | 'nombre' | 'nit'>;
-}
