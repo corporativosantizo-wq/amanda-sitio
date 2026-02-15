@@ -160,6 +160,8 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       requiere_anticipo: input.requiere_anticipo ?? true,
       anticipo_porcentaje: anticipoPorcentaje,
       anticipo_monto: anticipo,
+      envio_programado: input.envio_programado ?? false,
+      envio_programado_fecha: input.envio_programado_fecha ?? null,
     })
     .select()
     .single();
@@ -444,6 +446,88 @@ export async function duplicarCotizacion(id: string, nuevoClienteId?: string): P
     anticipo_porcentaje: original.anticipo_porcentaje,
     items,
   });
+}
+
+// --- Envío programado ---
+
+/**
+ * Programa el envío automático de una cotización en borrador.
+ */
+export async function programarEnvio(id: string, fecha: string): Promise<Cotizacion> {
+  const actual = await obtenerCotizacion(id);
+
+  if (actual.estado !== EstadoCotizacion.BORRADOR) {
+    throw new CotizacionError('Solo se puede programar el envío de cotizaciones en borrador');
+  }
+
+  const { data, error } = await db()
+    .from('cotizaciones')
+    .update({
+      envio_programado: true,
+      envio_programado_fecha: fecha,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new CotizacionError('Error al programar envío', error);
+  return data as Cotizacion;
+}
+
+/**
+ * Cancela el envío programado de una cotización.
+ */
+export async function cancelarEnvioProgramado(id: string): Promise<Cotizacion> {
+  const { data, error } = await db()
+    .from('cotizaciones')
+    .update({
+      envio_programado: false,
+      envio_programado_fecha: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new CotizacionError('Error al cancelar envío programado', error);
+  return data as Cotizacion;
+}
+
+/**
+ * Envía todas las cotizaciones con envío programado vencido.
+ * Llamado por el cron endpoint.
+ */
+export async function enviarCotizacionesProgramadas(): Promise<{ enviadas: number; errores: number }> {
+  const { data: pendientes, error } = await db()
+    .from('cotizaciones')
+    .select('id')
+    .eq('envio_programado', true)
+    .eq('estado', EstadoCotizacion.BORRADOR)
+    .lte('envio_programado_fecha', new Date().toISOString());
+
+  if (error) throw new CotizacionError('Error al consultar cotizaciones programadas', error);
+  if (!pendientes || pendientes.length === 0) return { enviadas: 0, errores: 0 };
+
+  let enviadas = 0;
+  let errores = 0;
+
+  for (const cot of pendientes) {
+    try {
+      await enviarCotizacion(cot.id);
+      // Limpiar flag de envío programado
+      await db()
+        .from('cotizaciones')
+        .update({ envio_programado: false, envio_programado_fecha: null })
+        .eq('id', cot.id);
+      enviadas++;
+    } catch (err: any) {
+      console.error(`[CronCotizaciones] Error enviando ${cot.id}:`, err.message);
+      errores++;
+    }
+  }
+
+  return { enviadas, errores };
 }
 
 // --- Helpers internos ---

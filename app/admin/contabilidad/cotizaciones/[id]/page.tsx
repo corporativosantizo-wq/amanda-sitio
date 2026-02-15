@@ -28,6 +28,8 @@ interface CotizacionDetalle {
   total: number;
   condiciones: string;
   notas: string | null;
+  envio_programado: boolean;
+  envio_programado_fecha: string | null;
   items: Array<{
     id: string;
     descripcion: string;
@@ -104,6 +106,17 @@ export default function CotizacionDetallePage() {
     });
   }, [id, mutate, router]);
 
+  const [showProgramarModal, setShowProgramarModal] = useState(false);
+
+  const cancelarEnvioProgramado = useCallback(async () => {
+    if (!confirm('¿Cancelar el envío programado?')) return;
+    await mutate(`/api/admin/contabilidad/cotizaciones/${id}/acciones`, {
+      body: { accion: 'cancelar_envio' },
+      onSuccess: () => refetch(),
+      onError: (err: any) => alert(`Error: ${err}`),
+    });
+  }, [id, mutate, refetch]);
+
   const [descargando, setDescargando] = useState(false);
   const descargarPdf = useCallback(async () => {
     setDescargando(true);
@@ -160,6 +173,18 @@ export default function CotizacionDetallePage() {
             <Badge variant={cot.estado as any}>{estado.label}</Badge>
           </div>
           <p className="text-sm text-slate-500 mt-1">{estado.icon} {estado.description}</p>
+          {cot.envio_programado && cot.envio_programado_fecha && (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <span className="text-amber-600 text-sm">🕐</span>
+              <span className="text-sm font-medium text-amber-800">
+                Envío programado:{' '}
+                {new Date(cot.envio_programado_fecha).toLocaleDateString('es-GT', {
+                  day: 'numeric', month: 'short', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala',
+                })}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}
@@ -172,6 +197,23 @@ export default function CotizacionDetallePage() {
               >
                 ✏️ Editar
               </button>
+              {cot.envio_programado ? (
+                <button
+                  onClick={cancelarEnvioProgramado}
+                  disabled={actuando}
+                  className="px-3 py-2 text-sm font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
+                >
+                  🕐 Cancelar envío programado
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowProgramarModal(true)}
+                  disabled={actuando}
+                  className="px-3 py-2 text-sm font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
+                >
+                  🕐 Programar envío
+                </button>
+              )}
               <button
                 onClick={() => ejecutarAccion('enviar')}
                 disabled={actuando}
@@ -377,7 +419,15 @@ export default function CotizacionDetallePage() {
                   active
                 />
               )}
-              {!cot.fecha_envio && cot.estado === 'borrador' && (
+              {cot.envio_programado && cot.envio_programado_fecha && (
+                <TimelineItem
+                  icon="🕐"
+                  label="Envío programado"
+                  date={cot.envio_programado_fecha}
+                  active
+                />
+              )}
+              {!cot.fecha_envio && cot.estado === 'borrador' && !cot.envio_programado && (
                 <TimelineItem
                   icon="📤"
                   label="Pendiente de envío"
@@ -405,6 +455,94 @@ export default function CotizacionDetallePage() {
               </div>
             </div>
           </Section>
+        </div>
+      </div>
+
+      {/* Modal programar envío */}
+      {showProgramarModal && (
+        <ProgramarEnvioModal
+          cotizacionId={id}
+          onClose={() => setShowProgramarModal(false)}
+          onSuccess={() => { setShowProgramarModal(false); refetch(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── ProgramarEnvioModal ─────────────────────────────────────────────────
+
+function ProgramarEnvioModal({ cotizacionId, onClose, onSuccess }: {
+  cotizacionId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { mutate, loading } = useMutate();
+  const [fecha, setFecha] = useState('');
+  const [hora, setHora] = useState('08:00');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleProgramar = async () => {
+    setError(null);
+    if (!fecha || !hora) { setError('Selecciona fecha y hora'); return; }
+    const fechaProgramada = new Date(`${fecha}T${hora}:00`);
+    if (fechaProgramada <= new Date()) { setError('La fecha debe ser futura'); return; }
+
+    await mutate(`/api/admin/contabilidad/cotizaciones/${cotizacionId}/acciones`, {
+      body: { accion: 'programar_envio', fecha: fechaProgramada.toISOString() },
+      onSuccess: () => onSuccess(),
+      onError: (err: any) => setError(String(err)),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+        <h3 className="text-lg font-semibold text-slate-900 mb-4">Programar envío</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          La cotización se enviará automáticamente en la fecha y hora seleccionadas.
+        </p>
+
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
+            <input
+              type="date"
+              value={fecha}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={e => setFecha(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+            />
+          </div>
+          <div className="w-28">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Hora</label>
+            <input
+              type="time"
+              value={hora}
+              onChange={e => setHora(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 mb-3">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleProgramar}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Programando...' : '🕐 Programar envío'}
+          </button>
         </div>
       </div>
     </div>

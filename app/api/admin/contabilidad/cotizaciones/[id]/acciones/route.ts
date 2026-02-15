@@ -10,14 +10,16 @@ import {
   aceptarCotizacion,
   rechazarCotizacion,
   duplicarCotizacion,
+  programarEnvio,
+  cancelarEnvioProgramado,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar';
+type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio';
 
-const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar'];
+const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -51,6 +53,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       case 'duplicar':
         resultado = await duplicarCotizacion(id, body.nuevo_cliente_id);
+        break;
+
+      case 'programar_envio': {
+        const fecha = body.fecha;
+        if (!fecha || isNaN(Date.parse(fecha)) || new Date(fecha) <= new Date()) {
+          return NextResponse.json(
+            { error: 'Se requiere una fecha futura válida en formato ISO' },
+            { status: 400 }
+          );
+        }
+        resultado = await programarEnvio(id, fecha);
+        break;
+      }
+
+      case 'cancelar_envio':
+        resultado = await cancelarEnvioProgramado(id);
         break;
     }
 

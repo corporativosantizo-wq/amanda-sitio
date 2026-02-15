@@ -17,6 +17,7 @@ const isProtectedRoute = createRouteMatcher([
 const isCronEndpoint = createRouteMatcher([
   '/api/admin/email/send',
   '/api/admin/email/resumen-semanal',
+  '/api/admin/cron/enviar-cotizaciones',
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

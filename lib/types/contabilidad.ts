@@ -79,6 +79,8 @@ export interface CotizacionInsert {
   duracion_consulta_min?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;
+  envio_programado?: boolean;
+  envio_programado_fecha?: string | null;
   items: CotizacionItemInsert[];
 }
 

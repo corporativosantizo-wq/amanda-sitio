@@ -73,6 +73,11 @@ export default function NuevaCotizacionPage() {
   const [condiciones, setCondiciones] = useState(CONDICIONES_DEFAULT);
   const [notas, setNotas] = useState('');
 
+  // Scheduled sending
+  const [programarEnvio, setProgramarEnvio] = useState(false);
+  const [envioFecha, setEnvioFecha] = useState('');
+  const [envioHora, setEnvioHora] = useState('08:00');
+
   // Client search
   const clienteUrl = clienteBusqueda.length >= 2
     ? `/api/admin/clientes?q=${encodeURIComponent(clienteBusqueda)}&limit=5`
@@ -150,16 +155,30 @@ export default function NuevaCotizacionPage() {
     setShowClienteDropdown(false);
   }, []);
 
-  // ── Save ────────────────────────────────────────────────────────────
+  // ── Validation errors ────────────────────────────────────────────────
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const guardar = useCallback(async (enviar: boolean) => {
-    if (!clienteId) return alert('Selecciona un cliente');
-    if (items.length === 0) return alert('Agrega al menos un servicio');
+  // ── Save (3 modes: borrador, borrador+programar, enviar ahora) ────
+
+  const guardar = useCallback(async (modo: 'borrador' | 'programar' | 'enviar') => {
+    setFormError(null);
+
+    if (!clienteId) { setFormError('Selecciona un cliente'); return; }
+    if (items.length === 0) { setFormError('Agrega al menos un servicio'); return; }
     if (items.some(i => !i.descripcion.trim() || i.precio_unitario <= 0)) {
-      return alert('Todos los items necesitan descripción y precio');
+      setFormError('Todos los items necesitan descripción y precio'); return;
+    }
+    if (modo === 'programar') {
+      if (!envioFecha || !envioHora) {
+        setFormError('Selecciona fecha y hora para el envío programado'); return;
+      }
+      const fechaProgramada = new Date(`${envioFecha}T${envioHora}:00`);
+      if (fechaProgramada <= new Date()) {
+        setFormError('La fecha de envío programado debe ser futura'); return;
+      }
     }
 
-    const body = {
+    const body: Record<string, any> = {
       cliente_id: clienteId,
       items: items.map(i => ({
         descripcion: i.descripcion,
@@ -171,19 +190,24 @@ export default function NuevaCotizacionPage() {
       notas: notas || null,
     };
 
-    const result = await mutate('/api/admin/contabilidad/cotizaciones', {
+    if (modo === 'programar') {
+      body.envio_programado = true;
+      body.envio_programado_fecha = new Date(`${envioFecha}T${envioHora}:00`).toISOString();
+    }
+
+    await mutate('/api/admin/contabilidad/cotizaciones', {
       body,
       onSuccess: async (data: any) => {
-        if (enviar && data?.id) {
+        if (modo === 'enviar' && data?.id) {
           await mutate(`/api/admin/contabilidad/cotizaciones/${data.id}/acciones`, {
             body: { accion: 'enviar' },
           });
         }
         router.push(`/admin/contabilidad/cotizaciones/${data?.id ?? ''}`);
       },
-      onError: (err) => alert(`Error: ${err}`),
+      onError: (err: any) => setFormError(String(err)),
     });
-  }, [clienteId, items, condiciones, notas, mutate, router]);
+  }, [clienteId, items, condiciones, notas, envioFecha, envioHora, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -544,6 +568,52 @@ export default function NuevaCotizacionPage() {
         />
       </section>
 
+      {/* ══════════ 5. PROGRAMAR ENVÍO ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">5. Programar envío</h3>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={programarEnvio}
+              onChange={e => setProgramarEnvio(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0891B2]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500" />
+            <span className="ml-2 text-sm text-slate-600">Programar envío automático</span>
+          </label>
+        </div>
+
+        {programarEnvio && (
+          <div className="flex flex-col sm:flex-row gap-3 mt-3 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-amber-800 mb-1">Fecha</label>
+              <input
+                type="date"
+                value={envioFecha}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => setEnvioFecha(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+              />
+            </div>
+            <div className="w-32">
+              <label className="block text-xs font-medium text-amber-800 mb-1">Hora</label>
+              <input
+                type="time"
+                value={envioHora}
+                onChange={e => setEnvioHora(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+              />
+            </div>
+            <div className="flex items-end">
+              <p className="text-xs text-amber-700">
+                La cotización se enviará automáticamente en la fecha y hora seleccionadas.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* ══════════ ACTIONS ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -568,25 +638,35 @@ export default function NuevaCotizacionPage() {
               Cancelar
             </button>
             <button
-              onClick={() => guardar(false)}
+              onClick={() => guardar('borrador')}
               disabled={guardando || items.length === 0}
               className="px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-30"
             >
               {guardando ? 'Guardando...' : '💾 Guardar borrador'}
             </button>
-            <button
-              onClick={() => guardar(true)}
-              disabled={guardando || !clienteId || items.length === 0}
-              className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {guardando ? 'Enviando...' : '📤 Guardar y enviar'}
-            </button>
+            {programarEnvio ? (
+              <button
+                onClick={() => guardar('programar')}
+                disabled={guardando || !clienteId || items.length === 0}
+                className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg hover:shadow-lg hover:shadow-amber-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {guardando ? 'Guardando...' : '🕐 Guardar y programar envío'}
+              </button>
+            ) : (
+              <button
+                onClick={() => guardar('enviar')}
+                disabled={guardando || !clienteId || items.length === 0}
+                className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {guardando ? 'Enviando...' : '📤 Guardar y enviar'}
+              </button>
+            )}
           </div>
         </div>
 
-        {errorGuardar && (
+        {(formError || errorGuardar) && (
           <div className="mt-3 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
-            {errorGuardar}
+            {formError || errorGuardar}
           </div>
         )}
       </section>
