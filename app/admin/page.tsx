@@ -52,6 +52,20 @@ const secciones = [
     color: 'bg-purple-50 border-purple-200',
   },
   {
+    titulo: 'Cumplimiento Mercantil',
+    descripcion: 'Patentes, inscripciones y asambleas',
+    href: '/admin/mercantil',
+    icon: '🏢',
+    color: 'bg-teal-50 border-teal-200',
+  },
+  {
+    titulo: 'Cumplimiento Laboral',
+    descripcion: 'Contratos, registros IGT y reglamentos',
+    href: '/admin/laboral',
+    icon: '👷',
+    color: 'bg-violet-50 border-violet-200',
+  },
+  {
     titulo: 'Escrituras',
     descripcion: 'Protocolo notarial',
     href: '/admin/notariado/escrituras',
@@ -145,8 +159,16 @@ function getNumero(e: { numero_expediente: string | null; numero_mp?: string | n
   return e.numero_expediente ?? e.numero_mp ?? e.numero_administrativo ?? '—';
 }
 
+interface CumplimientoStats {
+  stats: { total: number; por_vencer: number; vencidos: number };
+  por_vencer: { id: string; categoria: string; fecha_vencimiento?: string; fecha_fin?: string; dias_restantes: number; cliente: { id: string; nombre: string } }[];
+  vencidos: { id: string; categoria: string; fecha_vencimiento?: string; fecha_fin?: string; cliente: { id: string; nombre: string } }[];
+}
+
 export default function AdminDashboard() {
   const { data } = useFetch<ExpedientesStats>('/api/admin/expedientes/stats?dias=7');
+  const { data: mercData } = useFetch<CumplimientoStats>('/api/admin/mercantil/stats?dias=30');
+  const { data: labData } = useFetch<CumplimientoStats>('/api/admin/laboral/stats?dias=30');
 
   const stats = data?.stats;
   const plazosProximos = data?.plazos_proximos ?? [];
@@ -248,6 +270,75 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Cumplimiento widgets */}
+      {((mercData?.stats?.por_vencer ?? 0) > 0 || (mercData?.stats?.vencidos ?? 0) > 0 ||
+        (labData?.stats?.por_vencer ?? 0) > 0 || (labData?.stats?.vencidos ?? 0) > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Mercantil */}
+          {((mercData?.stats?.por_vencer ?? 0) > 0 || (mercData?.stats?.vencidos ?? 0) > 0) && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900 text-sm">Mercantil — Alertas</h3>
+                <Link href="/admin/mercantil" className="text-xs text-[#0891B2] hover:text-[#1E40AF] font-medium">Ver todos →</Link>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {(mercData?.vencidos ?? []).slice(0, 5).map(t => (
+                  <Link key={t.id} href={`/admin/mercantil/${t.id}`}
+                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-red-50/50 transition-colors">
+                    <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{t.categoria} · {t.cliente?.nombre}</p>
+                    </div>
+                    <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0">Vencido</span>
+                  </Link>
+                ))}
+                {(mercData?.por_vencer ?? []).slice(0, 5).map(t => (
+                  <Link key={t.id} href={`/admin/mercantil/${t.id}`}
+                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{t.categoria} · {t.cliente?.nombre}</p>
+                    </div>
+                    <span className="text-xs font-medium text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">{t.dias_restantes}d</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Laboral */}
+          {((labData?.stats?.por_vencer ?? 0) > 0 || (labData?.stats?.vencidos ?? 0) > 0) && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900 text-sm">Laboral — Alertas</h3>
+                <Link href="/admin/laboral" className="text-xs text-[#0891B2] hover:text-[#1E40AF] font-medium">Ver todos →</Link>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {(labData?.vencidos ?? []).slice(0, 5).map(t => (
+                  <Link key={t.id} href={`/admin/laboral/${t.id}`}
+                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-red-50/50 transition-colors">
+                    <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{t.categoria} · {t.cliente?.nombre}</p>
+                    </div>
+                    <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0">Vencido</span>
+                  </Link>
+                ))}
+                {(labData?.por_vencer ?? []).slice(0, 5).map(t => (
+                  <Link key={t.id} href={`/admin/laboral/${t.id}`}
+                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{t.categoria} · {t.cliente?.nombre}</p>
+                    </div>
+                    <span className="text-xs font-medium text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">{t.dias_restantes}d</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
