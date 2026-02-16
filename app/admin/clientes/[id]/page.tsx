@@ -9,8 +9,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import ExcelJS from 'exceljs';
 import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
-import { Scale, Shield, Building2, AlertTriangle } from 'lucide-react';
+import { Scale, Shield, Building2, AlertTriangle, Download } from 'lucide-react';
 import type { CargoRepresentante } from '@/lib/types';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 import {
@@ -18,6 +19,16 @@ import {
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL, FASE_LABEL,
   ESTADO_EXPEDIENTE_LABEL, ESTADO_EXPEDIENTE_COLOR,
 } from '@/lib/types/expedientes';
+import {
+  type TramiteMercantil,
+  CATEGORIA_MERCANTIL_SHORT, ESTADO_MERCANTIL_LABEL, ESTADO_MERCANTIL_COLOR,
+  getSemaforoMercantil, SEMAFORO_DOT,
+} from '@/lib/types/mercantil';
+import {
+  type TramiteLaboral,
+  CATEGORIA_LABORAL_SHORT, ESTADO_LABORAL_LABEL, ESTADO_LABORAL_COLOR,
+  getSemaforoLaboral, SEMAFORO_LABORAL_DOT,
+} from '@/lib/types/laboral';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -120,12 +131,14 @@ interface ExpedienteRow {
   plazo_proximo?: { fecha_vencimiento: string; descripcion: string; dias_restantes: number } | null;
 }
 
-type TabKey = 'datos' | 'citas' | 'expedientes' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
+type TabKey = 'datos' | 'citas' | 'expedientes' | 'mercantil' | 'laboral' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'datos', label: 'Datos generales', icon: '👤' },
   { key: 'citas', label: 'Citas', icon: '📅' },
   { key: 'expedientes', label: 'Expedientes', icon: '⚖️' },
+  { key: 'mercantil', label: 'Mercantil', icon: '🏢' },
+  { key: 'laboral', label: 'Laboral', icon: '👷' },
   { key: 'documentos', label: 'Documentos', icon: '📁' },
   { key: 'cotizaciones', label: 'Cotizaciones', icon: '📋' },
   { key: 'pagos', label: 'Pagos', icon: '💰' },
@@ -393,7 +406,9 @@ export default function ClienteDetallePage() {
         />
       )}
       {tab === 'citas' && <TabCitas citas={c.citas} clienteId={id} />}
-      {tab === 'expedientes' && <TabExpedientes expedientes={c.expedientes ?? []} clienteId={id} />}
+      {tab === 'expedientes' && <TabExpedientes expedientes={c.expedientes ?? []} clienteId={id} clienteNombre={c.nombre} grupoEmpresas={c.grupo_empresarial?.empresas ?? null} />}
+      {tab === 'mercantil' && <TabMercantil clienteId={id} />}
+      {tab === 'laboral' && <TabLaboral clienteId={id} />}
       {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
       {tab === 'cotizaciones' && <TabCotizaciones cotizaciones={c.cotizaciones} clienteNombre={c.nombre} />}
       {tab === 'pagos' && <TabPagos pagos={c.pagos} clienteId={id} />}
@@ -822,8 +837,101 @@ function getExpedienteSede(e: ExpedienteRow): string {
   return e.juzgado ?? e.fiscalia ?? e.entidad_administrativa ?? '—';
 }
 
-function TabExpedientes({ expedientes, clienteId }: { expedientes: ExpedienteRow[]; clienteId: string }) {
+function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }: {
+  expedientes: ExpedienteRow[];
+  clienteId: string;
+  clienteNombre: string;
+  grupoEmpresas: { id: string; codigo: string; nombre: string }[] | null;
+}) {
   const router = useRouter();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadingGrupo, setDownloadingGrupo] = useState(false);
+
+  async function buildExcel(
+    rows: (ExpedienteRow & { empresa?: string })[],
+    filename: string,
+    includeEmpresa = false,
+  ) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Expedientes');
+
+    const cols: Partial<ExcelJS.Column>[] = [];
+    if (includeEmpresa) cols.push({ header: 'Empresa', key: 'empresa', width: 28 });
+    cols.push(
+      { header: 'No. Expediente', key: 'numero', width: 24 },
+      { header: 'Origen', key: 'origen', width: 14 },
+      { header: 'Tipo Proceso', key: 'tipo', width: 24 },
+      { header: 'Juzgado/Tribunal', key: 'sede', width: 28 },
+      { header: 'Fase Actual', key: 'fase', width: 24 },
+      { header: 'Estado', key: 'estado', width: 14 },
+      { header: 'Fecha Inicio', key: 'fecha', width: 14 },
+      { header: 'Última Actuación', key: 'ultima', width: 14 },
+    );
+    ws.columns = cols;
+
+    ws.getRow(1).eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+      cell.alignment = { vertical: 'middle' };
+    });
+
+    rows.forEach(r => {
+      const row: Record<string, string> = {
+        numero: getExpedienteNumero(r),
+        origen: ORIGEN_LABEL[r.origen],
+        tipo: TIPO_PROCESO_LABEL[r.tipo_proceso as keyof typeof TIPO_PROCESO_LABEL] ?? r.tipo_proceso,
+        sede: r.juzgado ?? r.fiscalia ?? r.entidad_administrativa ?? '',
+        fase: FASE_LABEL[r.fase_actual as keyof typeof FASE_LABEL] ?? r.fase_actual,
+        estado: ESTADO_EXPEDIENTE_LABEL[r.estado] ?? r.estado,
+        fecha: r.fecha_inicio,
+        ultima: r.fecha_ultima_actuacion ?? '',
+      };
+      if (includeEmpresa) row.empresa = r.empresa ?? '';
+      ws.addRow(row);
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const fecha = new Date().toISOString().slice(0, 10);
+      await buildExcel(expedientes, `Expedientes_${clienteNombre.replace(/\s+/g, '_')}_${fecha}.xlsx`);
+    } catch (err) {
+      console.error('Error al descargar expedientes:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleDownloadGrupo() {
+    if (!grupoEmpresas) return;
+    setDownloadingGrupo(true);
+    try {
+      const results = await Promise.all(
+        grupoEmpresas.map(async emp => {
+          const res = await fetch(`/api/admin/clientes/${emp.id}`);
+          const json = await res.json();
+          return ((json.expedientes ?? []) as ExpedienteRow[]).map(e => ({ ...e, empresa: emp.nombre }));
+        })
+      );
+      const combined = results.flat();
+      const fecha = new Date().toISOString().slice(0, 10);
+      await buildExcel(combined, `Expedientes_Grupo_${fecha}.xlsx`, true);
+    } catch (err) {
+      console.error('Error al descargar expedientes del grupo:', err);
+    } finally {
+      setDownloadingGrupo(false);
+    }
+  }
 
   if (!expedientes.length) return (
     <EmptyState icon="⚖️" title="Sin expedientes" description="Este cliente no tiene expedientes registrados"
@@ -836,10 +944,24 @@ function TabExpedientes({ expedientes, clienteId }: { expedientes: ExpedienteRow
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">{activos} activo{activos !== 1 ? 's' : ''} de {expedientes.length} total</p>
-        <button onClick={() => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
-          + Nuevo
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleDownload} disabled={downloading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all">
+            <Download size={14} />
+            {downloading ? 'Descargando…' : 'Descargar'}
+          </button>
+          {grupoEmpresas && grupoEmpresas.length > 1 && (
+            <button onClick={handleDownloadGrupo} disabled={downloadingGrupo}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all">
+              <Download size={14} />
+              {downloadingGrupo ? 'Descargando…' : 'Grupo'}
+            </button>
+          )}
+          <button onClick={() => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
+            + Nuevo
+          </button>
+        </div>
       </div>
 
       <Section title={`Expedientes (${expedientes.length})`} noPadding>
@@ -1136,6 +1258,112 @@ function TabNotas({ c, id, mutate, refetch }: {
           </button>
           {saved && <span className="text-sm text-emerald-600 font-medium">Guardado</span>}
         </div>
+      </div>
+    </Section>
+  );
+}
+
+// ── Tab: Mercantil ──────────────────────────────────────────────────────────
+
+function TabMercantil({ clienteId }: { clienteId: string }) {
+  const router = useRouter();
+  const { data, loading } = useFetch<{ data: TramiteMercantil[] }>(
+    `/api/admin/mercantil?cliente_id=${clienteId}&limit=100`
+  );
+  const tramites = data?.data ?? [];
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-lg animate-pulse" />)}</div>;
+
+  if (tramites.length === 0) {
+    return (
+      <EmptyState icon="🏢" title="Sin trámites mercantiles" description="Este cliente no tiene trámites de cumplimiento mercantil"
+        action={{ label: '+ Nuevo Trámite', onClick: () => router.push(`/admin/mercantil/nuevo`) }} />
+    );
+  }
+
+  return (
+    <Section title={`Trámites Mercantiles (${tramites.length})`}>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-200">
+              {['', 'Categoría', 'No. Registro', 'Vencimiento', 'Estado'].map((h, i) => (
+                <th key={i} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-2.5 px-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {tramites.map(t => {
+              const sem = getSemaforoMercantil(t.fecha_vencimiento, t.estado, t.alerta_dias_antes);
+              return (
+                <tr key={t.id} onClick={() => router.push(`/admin/mercantil/${t.id}`)} className="hover:bg-slate-50/50 cursor-pointer transition-colors">
+                  <td className="py-2.5 px-3"><span className={`inline-block w-2 h-2 rounded-full ${SEMAFORO_DOT[sem]}`} /></td>
+                  <td className="py-2.5 px-3 text-sm text-slate-900">{CATEGORIA_MERCANTIL_SHORT[t.categoria]}</td>
+                  <td className="py-2.5 px-3 text-sm text-slate-600 font-mono">{t.numero_registro || '—'}</td>
+                  <td className="py-2.5 px-3 text-sm text-slate-600">{t.fecha_vencimiento || '—'}</td>
+                  <td className="py-2.5 px-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_MERCANTIL_COLOR[t.estado]}`}>{ESTADO_MERCANTIL_LABEL[t.estado]}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+// ── Tab: Laboral ────────────────────────────────────────────────────────────
+
+function TabLaboral({ clienteId }: { clienteId: string }) {
+  const router = useRouter();
+  const { data, loading } = useFetch<{ data: TramiteLaboral[] }>(
+    `/api/admin/laboral?cliente_id=${clienteId}&limit=100`
+  );
+  const tramites = data?.data ?? [];
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-lg animate-pulse" />)}</div>;
+
+  if (tramites.length === 0) {
+    return (
+      <EmptyState icon="👷" title="Sin trámites laborales" description="Este cliente no tiene trámites de cumplimiento laboral"
+        action={{ label: '+ Nuevo Trámite', onClick: () => router.push(`/admin/laboral/nuevo`) }} />
+    );
+  }
+
+  return (
+    <Section title={`Trámites Laborales (${tramites.length})`}>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-200">
+              {['', 'Categoría', 'Empleado', 'Vigencia', 'Estado'].map((h, i) => (
+                <th key={i} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-2.5 px-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {tramites.map(t => {
+              const sem = getSemaforoLaboral(t.fecha_fin, t.estado, t.alerta_dias_antes);
+              return (
+                <tr key={t.id} onClick={() => router.push(`/admin/laboral/${t.id}`)} className="hover:bg-slate-50/50 cursor-pointer transition-colors">
+                  <td className="py-2.5 px-3"><span className={`inline-block w-2 h-2 rounded-full ${SEMAFORO_LABORAL_DOT[sem]}`} /></td>
+                  <td className="py-2.5 px-3 text-sm text-slate-900">{CATEGORIA_LABORAL_SHORT[t.categoria]}</td>
+                  <td className="py-2.5 px-3">
+                    <div className="text-sm text-slate-900">{t.nombre_empleado || '—'}</div>
+                    {t.puesto && <div className="text-xs text-slate-400">{t.puesto}</div>}
+                  </td>
+                  <td className="py-2.5 px-3 text-xs text-slate-600">
+                    {t.fecha_inicio && <span>{t.fecha_inicio}</span>}
+                    {t.fecha_inicio && t.fecha_fin && <span> — </span>}
+                    {t.fecha_fin && <span>{t.fecha_fin}</span>}
+                    {!t.fecha_inicio && !t.fecha_fin && '—'}
+                  </td>
+                  <td className="py-2.5 px-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_LABORAL_COLOR[t.estado]}`}>{ESTADO_LABORAL_LABEL[t.estado]}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </Section>
   );
