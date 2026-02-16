@@ -101,8 +101,7 @@ export default function MercantilDetallePage({ params }: { params: Promise<{ id:
 
       await mutate(`/api/admin/mercantil/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body,
       });
       setEditing(false);
       refetch();
@@ -128,9 +127,7 @@ export default function MercantilDetallePage({ params }: { params: Promise<{ id:
     setSavingHistorial(true);
     try {
       await mutate(`/api/admin/mercantil/${id}/historial`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: hAccion, fecha: hFecha, descripcion: hDescripcion }),
+        body: { accion: hAccion, fecha: hFecha, descripcion: hDescripcion },
       });
       setShowHistorialForm(false);
       setHAccion('creado');

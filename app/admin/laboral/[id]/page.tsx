@@ -109,8 +109,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
 
       await mutate(`/api/admin/laboral/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body,
       });
       setEditing(false);
       refetch();
@@ -136,9 +135,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
     setSavingHistorial(true);
     try {
       await mutate(`/api/admin/laboral/${id}/historial`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: hAccion, fecha: hFecha, descripcion: hDescripcion }),
+        body: { accion: hAccion, fecha: hFecha, descripcion: hDescripcion },
       });
       setShowHistorialForm(false);
       setHAccion('creado');

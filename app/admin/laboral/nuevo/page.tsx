@@ -105,11 +105,7 @@ export default function NuevoTramiteLaboralPage() {
     if (descripcion) body.descripcion = descripcion;
     if (notas) body.notas = notas;
 
-    const result = await mutate('/api/admin/laboral', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const result = await mutate('/api/admin/laboral', { body });
 
     if (result?.tramite?.id) {
       router.push(`/admin/laboral/${result.tramite.id}`);
