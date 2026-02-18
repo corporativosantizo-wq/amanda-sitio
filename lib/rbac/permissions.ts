@@ -21,6 +21,11 @@ export type Modulo =
   | 'notariado'
   | 'jurisprudencia'
   | 'contabilidad'
+  | 'cotizaciones'
+  | 'facturas'
+  | 'pagos'
+  | 'gastos'
+  | 'reportes'
   | 'posts'
   | 'productos'
   | 'mensajes'
@@ -51,6 +56,11 @@ export const MODULE_ROUTE_MAP: Record<Modulo, string> = {
   notariado: '/admin/notariado',
   jurisprudencia: '/admin/jurisprudencia',
   contabilidad: '/admin/contabilidad',
+  cotizaciones: '/admin/contabilidad/cotizaciones',
+  facturas: '/admin/contabilidad/facturas',
+  pagos: '/admin/contabilidad/pagos',
+  gastos: '/admin/contabilidad/gastos',
+  reportes: '/admin/contabilidad/reportes',
   posts: '/admin/posts',
   productos: '/admin/productos',
   mensajes: '/admin/mensajes',
@@ -58,6 +68,33 @@ export const MODULE_ROUTE_MAP: Record<Modulo, string> = {
 };
 
 export const ALWAYS_VISIBLE_ROUTES = ['/admin', '/admin/ai'];
+
+// Sub-modules of contabilidad — maps sub-module name to its sub-route segment
+export const CONTABILIDAD_SUBMODULES: Record<string, string> = {
+  cotizaciones: 'cotizaciones',
+  facturas: 'facturas',
+  pagos: 'pagos',
+  gastos: 'gastos',
+  reportes: 'reportes',
+};
+
+/**
+ * Checks if a user has access to a top-level module, considering
+ * that contabilidad sub-modules grant access to the parent menu.
+ */
+export function hasModuleAccess(modulo: Modulo, rol: Rol, modulos: Modulo[]): boolean {
+  if (rol === 'admin') return true;
+  if (modulos.includes(modulo)) return true;
+
+  // contabilidad parent is visible if user has ANY contabilidad sub-module
+  if (modulo === 'contabilidad') {
+    return Object.keys(CONTABILIDAD_SUBMODULES).some(
+      (sub) => modulos.includes(sub as Modulo)
+    );
+  }
+
+  return false;
+}
 
 // ── Pure permission functions ───────────────────────────────────────────────
 
@@ -123,6 +160,27 @@ export function hasAccessToRoute(
 
   // /admin/acceso-denegado is always accessible
   if (pathname === '/admin/acceso-denegado') return true;
+
+  // Handle contabilidad sub-routes with granular access
+  if (pathname.startsWith('/admin/contabilidad')) {
+    // Full contabilidad module → access everything under it
+    if (modulos.includes('contabilidad')) return true;
+
+    // Check specific sub-module (e.g. /admin/contabilidad/cotizaciones)
+    const subSegment = pathname.replace('/admin/contabilidad/', '').split('/')[0];
+    if (subSegment && CONTABILIDAD_SUBMODULES[subSegment]) {
+      return modulos.includes(subSegment as Modulo);
+    }
+
+    // /admin/contabilidad main page → accessible if user has any sub-module
+    if (pathname === '/admin/contabilidad') {
+      return Object.keys(CONTABILIDAD_SUBMODULES).some(
+        (sub) => modulos.includes(sub as Modulo)
+      );
+    }
+
+    return false;
+  }
 
   const modulo = extractModuleFromPath(pathname);
   if (!modulo) return true; // Unknown route — allow (safe default for sub-pages)

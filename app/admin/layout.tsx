@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Analytics } from "@vercel/analytics/react"
 import { AdminUserProvider, useAdminUser } from '@/lib/rbac/admin-user-context'
 import type { Modulo } from '@/lib/rbac/permissions'
+import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
 
 export default function AdminLayout({
   children,
@@ -299,10 +300,26 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
               {item.icon}
               <span>{item.name}</span>
             </Link>
-            {/* Contabilidad sub-menu */}
+            {/* Sub-menu (Contabilidad, Notariado, etc.) */}
             {item.children && isActive(item.href) && (
               <div className="ml-8 mt-1 space-y-1">
-                {item.children.map((child) => (
+                {item.children
+                  .filter((child) => {
+                    // Admins see everything
+                    if (isAdmin) return true;
+                    if (!user) return true;
+                    // If user has the full parent module, show all children
+                    if (item.modulo && user.modulos_permitidos.includes(item.modulo)) return true;
+                    // For contabilidad, check specific sub-module access
+                    if (item.modulo === 'contabilidad') {
+                      const subSegment = child.href.split('/').pop() ?? '';
+                      return CONTABILIDAD_SUBMODULES[subSegment]
+                        ? user.modulos_permitidos.includes(subSegment as Modulo)
+                        : false;
+                    }
+                    return true;
+                  })
+                  .map((child) => (
                   <Link
                     key={child.name}
                     href={child.href}

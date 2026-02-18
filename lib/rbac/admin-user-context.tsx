@@ -22,6 +22,7 @@ import {
   canEdit as _canEdit,
   canDelete as _canDelete,
   hasAccessToRoute,
+  hasModuleAccess,
 } from './permissions';
 
 // ── Context type ────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ export function AdminUserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (loading || !user) return;
     if (!hasAccessToRoute(pathname, user.rol, user.modulos_permitidos)) {
-      alert('No tienes acceso a esta sección.');
+      alert('No tienes acceso a este módulo.');
       router.replace('/admin');
     }
   }, [pathname, user, loading, router]);
@@ -144,8 +145,7 @@ export function AdminUserProvider({ children }: { children: ReactNode }) {
   const hasModule = useCallback(
     (modulo: Modulo) => {
       if (!user) return false;
-      if (user.rol === 'admin') return true;
-      return user.modulos_permitidos.includes(modulo);
+      return hasModuleAccess(modulo, user.rol, user.modulos_permitidos);
     },
     [user]
   );
