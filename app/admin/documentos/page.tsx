@@ -4,10 +4,10 @@
 // ============================================================================
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useFetch } from '@/lib/hooks/use-fetch';
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 
 const TIPOS: Record<string, string> = {
   contrato_comercial: 'Contrato Comercial',
@@ -133,6 +133,12 @@ export default function DocumentosPage() {
   const [transcribeProgress, setTranscribeProgress] = useState<{
     current: number; total: number; docName: string; status: string; downloadUrl?: string;
   } | null>(null);
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; nombre: string } | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
+  const { mutate } = useMutate();
 
   // Fetch folders
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
@@ -346,11 +352,10 @@ export default function DocumentosPage() {
   };
 
   const toggleSelectAll = () => {
-    const pdfDocs = docs.filter(isPDF);
-    if (pdfDocs.length > 0 && selectedDocs.size === pdfDocs.length) {
+    if (docs.length > 0 && selectedDocs.size === docs.length) {
       setSelectedDocs(new Set());
     } else {
-      setSelectedDocs(new Set(pdfDocs.map((d: DocItem) => d.id)));
+      setSelectedDocs(new Set(docs.map((d: DocItem) => d.id)));
     }
   };
 
@@ -425,6 +430,42 @@ export default function DocumentosPage() {
     setTranscribing(false);
     setTranscribeProgress(null);
   };
+
+  const addToast = useCallback((message: string, type: 'success' | 'error') => {
+    const id = Date.now().toString();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+  }, []);
+
+  const eliminarDocumento = useCallback(async (id: string) => {
+    setDeletingIds((prev) => new Set([...prev, id]));
+    const result = await mutate(`/api/admin/documentos/${id}`, { method: 'DELETE' });
+    setDeletingIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    if (result) {
+      addToast('Documento eliminado', 'success');
+      refetch();
+    } else {
+      addToast('Error al eliminar documento', 'error');
+    }
+    setDeleteTarget(null);
+  }, [mutate, refetch, addToast]);
+
+  const eliminarSeleccionados = useCallback(async () => {
+    const ids = Array.from(selectedDocs);
+    if (ids.length === 0) return;
+    setDeletingIds(new Set(ids));
+    let exitosos = 0;
+    let errores = 0;
+    for (const id of ids) {
+      const result = await mutate(`/api/admin/documentos/${id}`, { method: 'DELETE' });
+      if (result) exitosos++; else errores++;
+    }
+    setDeletingIds(new Set());
+    setSelectedDocs(new Set());
+    if (exitosos > 0) addToast(`${exitosos} documento(s) eliminado(s)`, 'success');
+    if (errores > 0) addToast(`${errores} documento(s) no se pudieron eliminar`, 'error');
+    refetch();
+  }, [selectedDocs, mutate, refetch, addToast]);
 
   return (
     <div className="space-y-5">
@@ -709,6 +750,16 @@ export default function DocumentosPage() {
                                   Descargar
                                 </a>
                               )}
+                              <button
+                                onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
+                                disabled={deletingIds.has(doc.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Eliminar documento"
+                              >
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -863,14 +914,12 @@ export default function DocumentosPage() {
                 return (
                   <div key={doc.id} className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
                     <div className="flex items-start justify-between gap-4">
-                      {isPDF(doc) && (
-                        <input
-                          type="checkbox"
-                          checked={selectedDocs.has(doc.id)}
-                          onChange={() => toggleSelect(doc.id)}
-                          className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
-                        />
-                      )}
+                      <input
+                        type="checkbox"
+                        checked={selectedDocs.has(doc.id)}
+                        onChange={() => toggleSelect(doc.id)}
+                        className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${est.bg} ${est.text}`}>
@@ -932,6 +981,16 @@ export default function DocumentosPage() {
                             Transcribir
                           </button>
                         )}
+                        <button
+                          onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
+                          disabled={deletingIds.has(doc.id)}
+                          className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 flex items-center gap-1.5 justify-center"
+                        >
+                          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Eliminar
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -944,14 +1003,12 @@ export default function DocumentosPage() {
               {docs.map((doc: DocItem) => (
                 <div key={doc.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                   <div className="flex items-start justify-between gap-4">
-                    {isPDF(doc) && (
-                      <input
-                        type="checkbox"
-                        checked={selectedDocs.has(doc.id)}
-                        onChange={() => toggleSelect(doc.id)}
-                        className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
-                      />
-                    )}
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.has(doc.id)}
+                      onChange={() => toggleSelect(doc.id)}
+                      className="mt-1 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2] shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLORS[doc.estado]?.bg ?? ''} ${ESTADO_COLORS[doc.estado]?.text ?? ''}`}>
@@ -1035,6 +1092,16 @@ export default function DocumentosPage() {
                       >
                         Rechazar
                       </button>
+                      <button
+                        onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
+                        disabled={deletingIds.has(doc.id)}
+                        className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 flex items-center gap-1.5 justify-center border-t border-red-100 mt-1 pt-2"
+                      >
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Eliminar
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1050,7 +1117,7 @@ export default function DocumentosPage() {
                       <th className="w-10 py-3 pl-5 pr-1">
                         <input
                           type="checkbox"
-                          checked={docs.filter(isPDF).length > 0 && selectedDocs.size === docs.filter(isPDF).length}
+                          checked={docs.length > 0 && selectedDocs.size === docs.length}
                           onChange={toggleSelectAll}
                           className="rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]"
                         />
@@ -1073,14 +1140,12 @@ export default function DocumentosPage() {
                           onClick={() => verPDF(doc.id)}
                         >
                           <td className="py-3 pl-5 pr-1" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                            {isPDF(doc) && (
-                              <input
-                                type="checkbox"
-                                checked={selectedDocs.has(doc.id)}
-                                onChange={() => toggleSelect(doc.id)}
-                                className="rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]"
-                              />
-                            )}
+                            <input
+                              type="checkbox"
+                              checked={selectedDocs.has(doc.id)}
+                              onChange={() => toggleSelect(doc.id)}
+                              className="rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]"
+                            />
                           </td>
                           {carpetaAbierta ? (
                             <>
@@ -1131,14 +1196,26 @@ export default function DocumentosPage() {
                             </>
                           )}
                           <td className="py-3 px-4 pr-5 text-right" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                            {isPDF(doc) && (
+                            <div className="flex items-center justify-end gap-2">
+                              {isPDF(doc) && (
+                                <button
+                                  onClick={() => transcribirUno(doc.id)}
+                                  className="text-xs font-medium text-[#0891B2] hover:text-[#1E40AF] transition-colors"
+                                >
+                                  Transcribir
+                                </button>
+                              )}
                               <button
-                                onClick={() => transcribirUno(doc.id)}
-                                className="text-xs font-medium text-[#0891B2] hover:text-[#1E40AF] transition-colors"
+                                onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
+                                disabled={deletingIds.has(doc.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Eliminar documento"
                               >
-                                Transcribir
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                               </button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1176,12 +1253,22 @@ export default function DocumentosPage() {
       {/* Floating selection bar */}
       {selectedDocs.size > 0 && !transcribing && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1E3A5F] text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-4">
-          <span className="text-sm font-medium">{selectedDocs.size} PDF(s) seleccionados</span>
+          <span className="text-sm font-medium">{selectedDocs.size} documento(s) seleccionados</span>
           <button
             onClick={transcribirSeleccionados}
             className="px-4 py-1.5 text-sm font-medium bg-[#0891B2] rounded-lg hover:bg-[#0891B2]/80 transition-colors"
           >
-            Transcribir seleccionados
+            Transcribir
+          </button>
+          <button
+            onClick={eliminarSeleccionados}
+            disabled={deletingIds.size > 0}
+            className="px-4 py-1.5 text-sm font-medium bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Eliminar seleccionados
           </button>
           <button
             onClick={() => setSelectedDocs(new Set())}
@@ -1189,6 +1276,77 @@ export default function DocumentosPage() {
           >
             Cancelar
           </button>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <svg width="24" height="24" fill="none" stroke="#dc2626" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 text-center mb-2">Eliminar documento</h3>
+            <p className="text-sm text-slate-500 text-center mb-1">
+              ¿Estás segura de eliminar este documento? Esta acción no se puede deshacer.
+            </p>
+            <p className="text-sm font-medium text-slate-700 text-center mb-6 break-words">
+              &ldquo;{deleteTarget.nombre}&rdquo;
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => eliminarDocumento(deleteTarget.id)}
+                disabled={deletingIds.has(deleteTarget.id)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deletingIds.has(deleteTarget.id) ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Eliminando...
+                  </>
+                ) : (
+                  'Eliminar'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div className="fixed top-6 right-6 z-50 flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-fadeIn ${
+                toast.type === 'success'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+            >
+              {toast.type === 'success' ? (
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+              {toast.message}
+            </div>
+          ))}
         </div>
       )}
 
