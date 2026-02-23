@@ -11,15 +11,11 @@ import {
 
 export const maxDuration = 120;
 
-export async function POST(req: NextRequest) {
-  const cronSecret = req.headers.get('x-cron-secret')?.trim();
-  const isAuth = cronSecret === process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-              || cronSecret === process.env.CRON_SECRET?.trim()
-              || cronSecret === 'iurislex-cron-2026';
+import { requireCronAuth } from '@/lib/auth/cron-auth';
 
-  if (!cronSecret || !isAuth) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  }
+export async function POST(req: NextRequest) {
+  const authError = requireCronAuth(req);
+  if (authError) return authError;
 
   try {
     const resultado = await enviarCotizacionesProgramadas();

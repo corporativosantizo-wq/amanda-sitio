@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof TestimonioError) {
       return NextResponse.json(
-        { error: error.message, details: error.details },
+        { error: error.message },
         { status: 400 }
       );
     }

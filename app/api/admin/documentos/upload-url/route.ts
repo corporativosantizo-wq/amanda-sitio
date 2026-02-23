@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
 
 export async function POST(req: NextRequest) {
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     if (filesize > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'El archivo es demasiado grande. Máximo 1GB.' },
+        { error: 'El archivo es demasiado grande. Máximo 150MB.' },
         { status: 400 }
       );
     }
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     if (error || !data) {
       console.error('[UploadURL] Error creating signed URL:', error);
       return NextResponse.json(
-        { error: `Error al generar URL de subida: ${error?.message ?? 'desconocido'}` },
+        { error: 'Error al generar URL de subida' },
         { status: 500 }
       );
     }
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[UploadURL] Error:', err);
     return NextResponse.json(
-      { error: err.message ?? 'Error interno' },
+      { error: 'Error interno' },
       { status: 500 }
     );
   }

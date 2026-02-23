@@ -96,7 +96,7 @@ export default function ImportarClientes() {
 
   // ── Leer Excel ──────────────────────────────────────────────────────────
 
-  const MAX_EXCEL_SIZE = 5 * 1024 * 1024; // 5MB
+  const MAX_EXCEL_SIZE = 150 * 1024 * 1024; // 150MB
 
   const processFile = useCallback(async (file: File) => {
     setError(null);
@@ -105,7 +105,7 @@ export default function ImportarClientes() {
       return;
     }
     if (file.size > MAX_EXCEL_SIZE) {
-      setError(`El archivo es demasiado grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Máximo 5MB.`);
+      setError(`El archivo es demasiado grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Máximo 150MB.`);
       return;
     }
     setFileName(file.name);

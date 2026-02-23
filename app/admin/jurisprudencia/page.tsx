@@ -621,7 +621,7 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
             <p className="text-sm font-medium text-slate-700">
               Arrastra archivos PDF aquí
             </p>
-            <p className="text-xs text-slate-400 mt-1">o haz clic para seleccionar — máximo 1GB por archivo</p>
+            <p className="text-xs text-slate-400 mt-1">o haz clic para seleccionar — máximo 150MB por archivo</p>
             <input
               ref={fileInputRef}
               type="file"

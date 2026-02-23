@@ -183,7 +183,8 @@ export async function crearExpediente(input: ExpedienteInsert): Promise<Expedien
       dependencia: input.dependencia || null,
       monto_multa: input.monto_multa ?? null,
       resolucion_administrativa: input.resolucion_administrativa || null,
-      juzgado: input.juzgado || null,
+      instancia: input.instancia || null,
+      tribunal_nombre: input.tribunal_nombre || null,
       departamento: input.departamento || null,
       actor: input.actor || null,
       demandado: input.demandado || null,
@@ -211,7 +212,7 @@ export async function actualizarExpediente(id: string, input: ExpedienteUpdate):
     'numero_expediente', 'numero_mp', 'numero_administrativo',
     'cliente_id', 'origen', 'tipo_proceso', 'subtipo', 'fase_actual',
     'fiscalia', 'agente_fiscal', 'entidad_administrativa', 'dependencia',
-    'monto_multa', 'resolucion_administrativa', 'juzgado', 'departamento',
+    'monto_multa', 'resolucion_administrativa', 'instancia', 'tribunal_nombre', 'departamento',
     'actor', 'demandado', 'rol_cliente', 'estado',
     'fecha_inicio', 'fecha_ultima_actuacion', 'fecha_finalizacion',
     'descripcion', 'notas_internas', 'monto_pretension', 'moneda',
@@ -456,7 +457,7 @@ export async function actuacionesCalendario(fechaInicio: string, fechaFin: strin
       *,
       expediente:expedientes!actuaciones_procesales_expediente_id_fkey(
         id, numero_expediente, numero_mp, numero_administrativo, origen, tipo_proceso,
-        juzgado, fiscalia, entidad_administrativa,
+        instancia, tribunal_nombre, fiscalia, entidad_administrativa,
         cliente:clientes!expedientes_cliente_id_fkey(id, nombre)
       )
     `)

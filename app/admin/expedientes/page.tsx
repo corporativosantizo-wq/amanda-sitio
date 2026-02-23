@@ -15,6 +15,7 @@ import {
   type ExpedienteConCliente, type OrigenExpediente,
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL,
   FASE_LABEL, ESTADO_EXPEDIENTE_LABEL, ESTADO_EXPEDIENTE_COLOR,
+  INSTANCIA_SHORT, INSTANCIA_LABEL,
   DEPARTAMENTOS_GUATEMALA,
 } from '@/lib/types/expedientes';
 
@@ -51,7 +52,8 @@ function getNumeroDisplay(e: ExpedienteConCliente): string {
 }
 
 function getSedeDisplay(e: ExpedienteConCliente): string {
-  if (e.juzgado) return e.juzgado;
+  if (e.instancia) return INSTANCIA_SHORT[e.instancia];
+  if (e.tribunal_nombre) return e.tribunal_nombre;
   if (e.fiscalia) return e.fiscalia;
   if (e.entidad_administrativa) return e.entidad_administrativa;
   return '—';
@@ -107,6 +109,7 @@ export default function ExpedientesListPage() {
         { header: 'Tipo Proceso', key: 'tipo', width: 24 },
         { header: 'Fase', key: 'fase', width: 24 },
         { header: 'Estado', key: 'estado', width: 14 },
+        { header: 'Instancia', key: 'instancia', width: 20 },
         { header: 'Sede', key: 'sede', width: 28 },
         { header: 'Departamento', key: 'depto', width: 16 },
         { header: 'Actor', key: 'actor', width: 24 },
@@ -131,7 +134,8 @@ export default function ExpedientesListPage() {
           tipo: TIPO_PROCESO_LABEL[e.tipo_proceso],
           fase: FASE_LABEL[e.fase_actual],
           estado: ESTADO_EXPEDIENTE_LABEL[e.estado] ?? e.estado,
-          sede: getSedeDisplay(e),
+          instancia: e.instancia ? INSTANCIA_LABEL[e.instancia] : '',
+          sede: e.instancia ? `${INSTANCIA_SHORT[e.instancia]}${e.tribunal_nombre ? ' - ' + e.tribunal_nombre : ''}` : (e.tribunal_nombre ?? e.fiscalia ?? e.entidad_administrativa ?? ''),
           depto: e.departamento ?? '',
           actor: e.actor ?? '',
           demandado: e.demandado ?? '',

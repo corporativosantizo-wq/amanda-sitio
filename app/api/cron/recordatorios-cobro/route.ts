@@ -9,17 +9,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { registrarRecordatorio } from '@/lib/services/cobros.service';
 import { sendMail } from '@/lib/services/outlook.service';
 import { emailRecordatorioCobro } from '@/lib/templates/emails';
+import { requireCronAuth } from '@/lib/auth/cron-auth';
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'CRON_SECRET no configurado' }, { status: 500 });
-  }
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  }
+  const authError = requireCronAuth(req);
+  if (authError) return authError;
 
   const db = createAdminClient();
   const hoy = new Date().toISOString().split('T')[0];
@@ -126,6 +120,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error('[Cron Cobros] Error:', err);
-    return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

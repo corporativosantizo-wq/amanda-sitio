@@ -459,7 +459,7 @@ export async function generarSignedUrl(storagePath: string, expiresIn = 300): Pr
 // ── Extracción de texto de PDFs ─────────────────────────────────────────────
 
 const MAX_TEXT_LENGTH = 50000;
-const MAX_FILE_SIZE_OCR = 1 * 1024 * 1024 * 1024; // 1 GB
+const MAX_FILE_SIZE_OCR = 150 * 1024 * 1024; // 150 MB
 
 function sanitizarTextoExtraido(texto: string): string {
   return texto
@@ -474,7 +474,7 @@ export async function extraerYGuardarTexto(docId: string, archivoUrl: string): P
     const buffer = await descargarPDF(archivoUrl);
 
     if (buffer.length > MAX_FILE_SIZE_OCR) {
-      console.log(`[OCR] Saltado ${archivoUrl} (${(buffer.length / 1024 / 1024).toFixed(1)} MB > 1 GB)`);
+      console.log(`[OCR] Saltado ${archivoUrl} (${(buffer.length / 1024 / 1024).toFixed(1)} MB > 150 MB)`);
       await db().from('documentos').update({ texto_extraido: '[archivo demasiado grande]' }).eq('id', docId);
       return;
     }

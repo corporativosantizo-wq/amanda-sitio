@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState, use } from 'react';
+import { useState, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { ArrowLeft, Pencil, X, Save, Plus, Trash2 } from 'lucide-react';
@@ -23,6 +23,7 @@ import {
   SEMAFORO_COLOR,
   SEMAFORO_DOT,
 } from '@/lib/types/mercantil';
+import { ArchivoCard } from '@/components/admin/archivo-card';
 
 const CATEGORIAS = Object.entries(CATEGORIA_MERCANTIL_LABEL) as [CategoriaMercantil, string][];
 const ESTADOS = Object.entries(ESTADO_MERCANTIL_LABEL) as [EstadoTramiteMercantil, string][];
@@ -49,6 +50,11 @@ export default function MercantilDetallePage({ params }: { params: Promise<{ id:
   const [hFecha, setHFecha] = useState(new Date().toISOString().slice(0, 10));
   const [hDescripcion, setHDescripcion] = useState('');
   const [savingHistorial, setSavingHistorial] = useState(false);
+
+  // Archivos
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingTipoRef = useRef<'pdf' | 'docx'>('pdf');
+  const [uploadingArchivo, setUploadingArchivo] = useState<string | null>(null);
 
   if (loading) return (
     <div className="p-6"><div className="animate-pulse space-y-4">
@@ -136,6 +142,69 @@ export default function MercantilDetallePage({ params }: { params: Promise<{ id:
       refetch();
     } finally {
       setSavingHistorial(false);
+    }
+  }
+
+  function triggerUpload(tipo: 'pdf' | 'docx') {
+    pendingTipoRef.current = tipo;
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = tipo === 'pdf' ? '.pdf' : '.docx,.doc';
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await handleUpload(file, pendingTipoRef.current);
+  }
+
+  async function handleUpload(file: File, tipo: 'pdf' | 'docx') {
+    setUploadingArchivo(tipo);
+    try {
+      const fd = new FormData();
+      fd.append('archivo', file);
+      fd.append('modulo', 'mercantil');
+      fd.append('tramite_id', id);
+      fd.append('tipo', tipo);
+
+      const res = await fetch('/api/admin/cumplimiento/documentos', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Error al subir');
+      }
+      refetch();
+    } catch (err: any) {
+      alert(err.message || 'Error al subir archivo');
+    } finally {
+      setUploadingArchivo(null);
+    }
+  }
+
+  async function handleDownload(tipo: 'pdf' | 'docx') {
+    try {
+      const res = await fetch(`/api/admin/cumplimiento/documentos/download?modulo=mercantil&tramite_id=${id}&tipo=${tipo}`);
+      if (!res.ok) throw new Error('Error al obtener URL');
+      const { url } = await res.json();
+      window.open(url, '_blank');
+    } catch {
+      alert('Error al descargar archivo');
+    }
+  }
+
+  async function handleDeleteArchivo(tipo: 'pdf' | 'docx') {
+    if (!confirm('¿Eliminar este archivo?')) return;
+    try {
+      const res = await fetch('/api/admin/cumplimiento/documentos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modulo: 'mercantil', tramite_id: id, tipo }),
+      });
+      if (!res.ok) throw new Error('Error al eliminar');
+      refetch();
+    } catch {
+      alert('Error al eliminar archivo');
     }
   }
 
@@ -290,6 +359,41 @@ export default function MercantilDetallePage({ params }: { params: Promise<{ id:
             </div>
           </div>
         )}
+      </div>
+
+      {/* Documentos */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Documentos</h2>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ArchivoCard
+            tipo="pdf"
+            label="Documento final / inscrito"
+            desc="PDF con sellos o firmas"
+            nombreArchivo={t.archivo_pdf_nombre}
+            isUploading={uploadingArchivo === 'pdf'}
+            onUpload={() => triggerUpload('pdf')}
+            onDownload={() => handleDownload('pdf')}
+            onReplace={() => triggerUpload('pdf')}
+            onDelete={() => handleDeleteArchivo('pdf')}
+          />
+          <ArchivoCard
+            tipo="docx"
+            label="Documento editable / borrador"
+            desc="Word para edición"
+            nombreArchivo={t.archivo_docx_nombre}
+            isUploading={uploadingArchivo === 'docx'}
+            onUpload={() => triggerUpload('docx')}
+            onDownload={() => handleDownload('docx')}
+            onReplace={() => triggerUpload('docx')}
+            onDelete={() => handleDeleteArchivo('docx')}
+          />
+        </div>
       </div>
 
       {/* Historial */}

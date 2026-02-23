@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
     if (uploadError) {
       console.error('[AI Upload] Storage error:', uploadError);
-      return NextResponse.json({ error: `Error al subir archivo: ${uploadError.message}` }, { status: 500 });
+      return NextResponse.json({ error: 'Error al subir archivo' }, { status: 500 });
     }
 
     // Extract text from PDF
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[AI Upload] Error:', error);
     return NextResponse.json(
-      { error: `Error al procesar archivo: ${error.message ?? 'desconocido'}` },
+      { error: 'Error al procesar archivo' },
       { status: 500 },
     );
   }

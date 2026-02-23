@@ -125,6 +125,10 @@ export async function crearTramiteLaboral(input: TramiteLaboralInsert): Promise<
       descripcion: input.descripcion || null,
       notas: input.notas || null,
       documento_url: input.documento_url || null,
+      archivo_pdf_url: input.archivo_pdf_url || null,
+      archivo_pdf_nombre: input.archivo_pdf_nombre || null,
+      archivo_docx_url: input.archivo_docx_url || null,
+      archivo_docx_nombre: input.archivo_docx_nombre || null,
     })
     .select()
     .single();
@@ -141,6 +145,7 @@ export async function actualizarTramiteLaboral(id: string, input: TramiteLaboral
     'fecha_inicio', 'fecha_fin', 'fecha_registro_igt', 'numero_registro_igt',
     'salario', 'moneda', 'es_temporal', 'duracion_meses', 'alerta_dias_antes',
     'descripcion', 'notas', 'documento_url',
+    'archivo_pdf_url', 'archivo_pdf_nombre', 'archivo_docx_url', 'archivo_docx_nombre',
   ] as const;
 
   for (const f of fields) {

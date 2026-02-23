@@ -50,7 +50,8 @@ export async function GET() {
       previewUrl,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Error al obtener configuración de membrete:', err);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
 
@@ -72,9 +73,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solo se aceptan imágenes PNG o JPG' }, { status: 400 });
     }
 
-    // Validate size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      return NextResponse.json({ error: 'La imagen no debe superar 2MB' }, { status: 400 });
+    // Validate size (max 150MB)
+    if (file.size > 150 * 1024 * 1024) {
+      return NextResponse.json({ error: 'La imagen no debe superar 150MB' }, { status: 400 });
     }
 
     const ext = file.type === 'image/png' ? 'png' : 'jpg';
@@ -109,7 +110,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, path: storagePath });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Error al subir membrete:', err);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
 
@@ -138,6 +140,7 @@ export async function DELETE() {
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Error al eliminar membrete:', err);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

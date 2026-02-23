@@ -51,17 +51,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: false,
-      error: err.message,
-      statusCode: err.statusCode ?? null,
-      code: err.code ?? null,
-      hint: err.statusCode === 403
-        ? 'Permiso denegado. Verifica: (1) Mail.Send.Shared está en el app registration, (2) Admin consent otorgado, (3) asistente@papeleo.legal tiene buzón con licencia en Microsoft 365'
-        : err.statusCode === 404
-        ? 'Buzón no encontrado. Verifica que asistente@papeleo.legal tiene un buzón con licencia asignada en Microsoft 365 Admin Center'
-        : err.statusCode === 401
-        ? 'Token inválido o expirado. Reconecta Outlook desde /admin/calendario'
-        : 'Revisa los logs de Vercel para más detalles',
-      timestamp: new Date().toISOString(),
+      error: 'Error al enviar email de prueba',
     }, { status: 500 });
   }
 }

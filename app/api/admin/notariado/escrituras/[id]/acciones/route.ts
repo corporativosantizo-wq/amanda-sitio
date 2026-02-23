@@ -43,7 +43,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof EscrituraError) {
       return NextResponse.json(
-        { error: error.message, details: error.details },
+        { error: error.message },
         { status: 400 }
       );
     }

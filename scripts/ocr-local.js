@@ -48,7 +48,7 @@ const storage = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const BATCH_SIZE = 5;
 const MAX_TEXT_LENGTH = 50000;
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1 GB
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB
 const SIN_TEXTO = '[sin texto extraible]';
 
 // ── Funciones ───────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ async function procesarDocumento(doc, index, total) {
 
     // Verificar tamaño
     if (buffer.length > MAX_FILE_SIZE) {
-      console.log(`${prefix} \u26a0\ufe0f  ${doc.nombre_archivo} (saltado: ${(buffer.length / 1024 / 1024).toFixed(1)} MB > 1 GB)`);
+      console.log(`${prefix} \u26a0\ufe0f  ${doc.nombre_archivo} (saltado: ${(buffer.length / 1024 / 1024).toFixed(1)} MB > 150 MB)`);
       await guardarTexto(doc.id, '[archivo demasiado grande]');
       return { status: 'skipped' };
     }

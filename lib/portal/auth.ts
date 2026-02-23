@@ -53,13 +53,13 @@ export async function getPortalSession(
     .eq('auth_user_id', user.id)
     .eq('activo', true);
 
-  // Auto-crear vinculaciones si no existen
+  // Auto-crear vinculaciones si no existen (con protección contra race conditions)
   if ((!portalUsers || portalUsers.length === 0) && user.email) {
     const { data: clientes } = await db
       .from('clientes')
       .select('id')
       .eq('email', user.email)
-      .eq('estado', 'activo');
+      .eq('activo', true);
 
     if (clientes && clientes.length > 0) {
       const inserts = clientes.map((c: any) => ({
@@ -67,11 +67,22 @@ export async function getPortalSession(
         auth_user_id: user.id,
         email: user.email!,
       }));
+      // upsert para evitar duplicados por race condition
       const { data: created } = await db
         .from('portal_usuarios')
-        .insert(inserts)
+        .upsert(inserts, { onConflict: 'auth_user_id,cliente_id', ignoreDuplicates: true })
         .select('id, cliente_id');
-      portalUsers = created;
+      // Si upsert no retornó datos (ignoreDuplicates), re-query
+      if (!created || created.length === 0) {
+        const { data: refetched } = await db
+          .from('portal_usuarios')
+          .select('id, cliente_id')
+          .eq('auth_user_id', user.id)
+          .eq('activo', true);
+        portalUsers = refetched;
+      } else {
+        portalUsers = created;
+      }
     }
   }
 

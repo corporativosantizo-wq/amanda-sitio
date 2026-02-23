@@ -888,8 +888,15 @@ function BulletItem({
 // Markdown formatter
 // ═══════════════════════════════════════════════════════════════════════════
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function formatMarkdown(text: string): string {
-  return text
+  // 1. Escapar HTML para prevenir XSS
+  const safe = escapeHtml(text);
+  // 2. Aplicar formato markdown sobre el texto seguro
+  return safe
     .replace(/^### (.+)$/gm, '<strong style="font-size:15px;display:block;margin:12px 0 4px">$1</strong>')
     .replace(/^## (.+)$/gm, '<strong style="font-size:16px;display:block;margin:14px 0 6px">$1</strong>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#0d9488;text-decoration:underline;font-weight:600">$1</a>')
@@ -898,6 +905,6 @@ function formatMarkdown(text: string): string {
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#f3f4f6;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;margin:8px 0"><code>$2</code></pre>')
     .replace(/`(.+?)`/g, '<code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px">$1</code>')
     .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">')
-    .replace(/(?<!href=")(https:\/\/[^\s<"]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#0d9488;text-decoration:underline">Descargar documento</a>')
+    .replace(/(?<!href=&quot;)(https:\/\/[^\s&lt;&quot;]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#0d9488;text-decoration:underline">Descargar documento</a>')
     .replace(/\n/g, '<br>');
 }

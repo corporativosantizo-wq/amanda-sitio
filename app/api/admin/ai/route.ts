@@ -427,6 +427,86 @@ Tienes acceso a una base de jurisprudencia del despacho con tomos procesados y b
 - "Necesito precedentes de nulidad de contrato" → buscar_jurisprudencia(consulta="nulidad de contrato elementos requisitos")
 - "¿Hay jurisprudencia sobre daño moral en Guatemala?" → buscar_jurisprudencia(consulta="daño moral indemnización Guatemala")
 
+## MÓDULOS LEGALES — CONSULTAS CON consultar_legal
+
+Tienes acceso a los módulos legales del sistema a través de la herramienta consultar_legal. Puedes consultar:
+
+### 1. EXPEDIENTES JUDICIALES/FISCALES/ADMINISTRATIVOS (legal.expedientes)
+Un expediente puede ser de origen **judicial**, **fiscal** (Ministerio Público) o **administrativo**, y puede evolucionar (ej: fiscal → judicializado, administrativo → económico coactivo).
+
+**Consultas disponibles:**
+- **expedientes_cliente**: Expedientes de un cliente. Params: cliente_id (UUID o nombre), estado (activo/suspendido/archivado/finalizado), origen (judicial/fiscal/administrativo), tipo_proceso
+- **expedientes_buscar**: Buscar por número de expediente, MP, administrativo, o texto. Params: busqueda
+- **plazos_proximos**: Plazos procesales por vencer en los próximos N días. Params: dias (default 7), cliente_id (opcional)
+- **actuaciones_expediente**: Últimas actuaciones de un expediente. Params: expediente_id
+- **expedientes_vinculados**: Expedientes vinculados entre sí. Params: expediente_id
+- **expedientes_resumen**: Resumen general: totales por estado, por origen, por tipo de proceso.
+
+**Ejemplos:**
+- "¿Cuántos expedientes activos tiene Rope?" → consultar_legal(consulta="expedientes_cliente", params={cliente_id:"Rope", estado:"activo"})
+- "¿Qué plazos vencen esta semana?" → consultar_legal(consulta="plazos_proximos", params={dias:7})
+- "Muéstrame todos los expedientes de económico coactivo" → consultar_legal(consulta="expedientes_cliente", params={tipo_proceso:"economico_coactivo"})
+- "¿Qué expedientes tiene Agrope en Suchitepéquez?" → consultar_legal(consulta="expedientes_buscar", params={busqueda:"Agrope Suchitepéquez"})
+
+### 2. CUMPLIMIENTO MERCANTIL (legal.tramites_mercantiles)
+Trámites de registro mercantil: patentes de comercio, inscripciones, asambleas, nombramientos, etc.
+
+**Consultas disponibles:**
+- **mercantil_cliente**: Trámites de un cliente. Params: cliente_id (UUID o nombre), categoria, estado
+- **mercantil_por_vencer**: Trámites próximos a vencer (patentes, etc). Params: dias (default 30)
+- **mercantil_asambleas_pendientes**: Empresas que no han celebrado asamblea ordinaria este año. Params: (ninguno)
+- **mercantil_resumen**: Resumen: totales por estado y categoría, por vencer, vencidos.
+
+**Ejemplos:**
+- "¿Qué patentes de comercio están por vencer?" → consultar_legal(consulta="mercantil_por_vencer", params={dias:60})
+- "¿Qué empresas no han celebrado asamblea ordinaria este año?" → consultar_legal(consulta="mercantil_asambleas_pendientes")
+- "Trámites mercantiles de Rope" → consultar_legal(consulta="mercantil_cliente", params={cliente_id:"Rope"})
+
+### 3. CUMPLIMIENTO LABORAL (legal.tramites_laborales)
+Contratos laborales, reglamentos internos, registros IGT, libros de salarios, etc.
+
+**Consultas disponibles:**
+- **laboral_cliente**: Trámites de un cliente. Params: cliente_id (UUID o nombre), categoria, estado
+- **laboral_por_vencer**: Contratos temporales próximos a vencer. Params: dias (default 30)
+- **laboral_pendientes_igt**: Contratos pendientes de registro en la IGT. Params: cliente_id (opcional)
+- **laboral_reglamento_vigente**: Verifica si una empresa tiene reglamento interno vigente. Params: cliente_id (UUID o nombre)
+- **laboral_libro_salarios**: Verifica si una empresa tiene libro de salarios autorizado. Params: cliente_id (UUID o nombre)
+- **laboral_resumen**: Resumen: totales por estado, categoría, por vencer, vencidos.
+
+**Ejemplos:**
+- "¿Cuántos contratos de Rope están pendientes de registro en la IGT?" → consultar_legal(consulta="laboral_pendientes_igt", params={cliente_id:"Rope"})
+- "¿Rope tiene reglamento interno vigente?" → consultar_legal(consulta="laboral_reglamento_vigente", params={cliente_id:"Rope"})
+
+### 4. DIRECTORIOS INSTITUCIONALES
+- **tribunales_buscar**: Buscar juzgados/tribunales en el OJ. Params: busqueda (nombre), departamento, tipo (juzgado_paz/juzgado_primera_instancia/sala_apelaciones/tribunal_sentencia), ramo
+- **fiscalias_buscar**: Buscar fiscalías del MP. Params: busqueda (nombre), departamento, tipo
+
+**Ejemplos:**
+- "¿Cuál es el teléfono del Juzgado Civil de Mixco?" → consultar_legal(consulta="tribunales_buscar", params={busqueda:"Civil Mixco"})
+- "¿Qué fiscalías hay en Escuintla?" → consultar_legal(consulta="fiscalias_buscar", params={departamento:"Escuintla"})
+- "¿Qué fiscalías hay en Guatemala?" → consultar_legal(consulta="fiscalias_buscar", params={departamento:"Guatemala"})
+
+### 5. REPRESENTANTES LEGALES Y GRUPO EMPRESARIAL
+Las empresas pueden tener representantes legales con cargos de dirección (Administrador Único, Presidente del Consejo) o gestión (Gerente General, Gerente Operativo). Empresas que comparten representante legal forman un **grupo empresarial**.
+
+- **representantes_empresa**: Representantes de una empresa. Params: cliente_id (UUID o nombre)
+- **grupo_empresarial**: Empresas del grupo empresarial (comparten representante). Params: cliente_id (UUID o nombre)
+- **empresas_representante**: Todas las empresas donde trabaja un representante. Params: busqueda (nombre del representante)
+
+**Ejemplos:**
+- "¿Qué empresas comparten representante legal?" → consultar_legal(consulta="grupo_empresarial", params={cliente_id:"Rope"})
+- "¿Cuáles son las empresas del grupo empresarial de Rope?" → consultar_legal(consulta="grupo_empresarial", params={cliente_id:"Rope"})
+- "Representantes legales de Marope" → consultar_legal(consulta="representantes_empresa", params={cliente_id:"Marope"})
+
+### 6. BIBLIOTECA LEGAL
+Documentos de referencia: legislación, formularios, modelos de documentos, jurisprudencia indexada.
+
+- **biblioteca_buscar**: Buscar documentos. Params: busqueda (texto), categoria (legislacion/formulario/modelo/jurisprudencia/otro)
+
+**Ejemplos:**
+- "Busca el modelo de contrato individual de trabajo" → consultar_legal(consulta="biblioteca_buscar", params={busqueda:"contrato individual trabajo"})
+- "Encuentra el Código de Comercio" → consultar_legal(consulta="biblioteca_buscar", params={busqueda:"Código de Comercio"})
+
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
 - Usa moneda guatemalteca (Q) siempre
@@ -1575,6 +1655,602 @@ async function handleBuscarJurisprudencia(
   return result;
 }
 
+// ── Consultas legales (expedientes, mercantil, laboral, tribunales, etc.) ──
+
+async function handleConsultarLegal(
+  consulta: string,
+  params: any,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // Helper: resolve client name → ID
+  async function resolveClienteId(clienteRef: string): Promise<string | null> {
+    if (/^[0-9a-f]{8}-/i.test(clienteRef)) return clienteRef;
+    const contactos = await buscarContacto(db, clienteRef, 1);
+    return contactos.length ? contactos[0].id : null;
+  }
+
+  switch (consulta) {
+    // ── EXPEDIENTES ──────────────────────────────────────────────────────
+
+    case 'expedientes_cliente': {
+      let query = db
+        .from('expedientes')
+        .select('*, cliente:clientes!expedientes_cliente_id_fkey(id, codigo, nombre)')
+        .order('updated_at', { ascending: false })
+        .limit(25);
+
+      if (params.cliente_id) {
+        const cid = await resolveClienteId(params.cliente_id);
+        if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+        query = query.eq('cliente_id', cid);
+      }
+      if (params.estado) query = query.eq('estado', params.estado);
+      if (params.origen) query = query.eq('origen', params.origen);
+      if (params.tipo_proceso) query = query.eq('tipo_proceso', params.tipo_proceso);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No se encontraron expedientes con esos filtros.';
+
+      const lines = data.map((e: any) => {
+        const num = e.numero_expediente ?? e.numero_mp ?? e.numero_administrativo ?? 'S/N';
+        const cliente = e.cliente?.nombre ?? 'Sin cliente';
+        return `- **${num}** (${e.origen}) ${e.tipo_proceso} — ${e.fase_actual} — Estado: ${e.estado} — ${cliente}${e.tribunal_nombre ? ` — ${e.tribunal_nombre}` : ''}${e.departamento ? ` (${e.departamento})` : ''}`;
+      });
+      return `${data.length} expediente(s) encontrado(s):\n${lines.join('\n')}`;
+    }
+
+    case 'expedientes_buscar': {
+      const q = params.busqueda?.trim();
+      if (!q) return 'Se requiere parámetro busqueda.';
+
+      // Search by number or text across multiple fields
+      const { data, error } = await db
+        .from('expedientes')
+        .select('*, cliente:clientes!expedientes_cliente_id_fkey(id, codigo, nombre)')
+        .or(`numero_expediente.ilike.%${q}%,numero_mp.ilike.%${q}%,numero_administrativo.ilike.%${q}%,descripcion.ilike.%${q}%,tribunal_nombre.ilike.%${q}%,actor.ilike.%${q}%,demandado.ilike.%${q}%,departamento.ilike.%${q}%,fiscalia.ilike.%${q}%,entidad_administrativa.ilike.%${q}%`)
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No se encontraron expedientes para: "${q}".`;
+
+      const lines = data.map((e: any) => {
+        const num = e.numero_expediente ?? e.numero_mp ?? e.numero_administrativo ?? 'S/N';
+        const cliente = e.cliente?.nombre ?? 'Sin cliente';
+        return `- **${num}** (${e.origen}) ${e.tipo_proceso} — ${e.fase_actual} — ${e.estado} — ${cliente}${e.tribunal_nombre ? ` — ${e.tribunal_nombre}` : ''}${e.departamento ? ` (${e.departamento})` : ''}`;
+      });
+      return `${data.length} expediente(s) encontrado(s):\n${lines.join('\n')}`;
+    }
+
+    case 'plazos_proximos': {
+      const dias = params.dias ?? 7;
+      const hoy = new Date().toISOString().slice(0, 10);
+      const limite = new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+
+      let query = db
+        .from('plazos_procesales')
+        .select('*, expediente:expedientes!plazos_procesales_expediente_id_fkey(id, numero_expediente, numero_mp, numero_administrativo, origen, tipo_proceso, cliente:clientes!expedientes_cliente_id_fkey(nombre))')
+        .eq('estado', 'pendiente')
+        .gte('fecha_vencimiento', hoy)
+        .lte('fecha_vencimiento', limite)
+        .order('fecha_vencimiento', { ascending: true })
+        .limit(30);
+
+      if (params.cliente_id) {
+        const cid = await resolveClienteId(params.cliente_id);
+        if (cid) {
+          // Filter through expediente's cliente_id
+          const { data: expIds } = await db.from('expedientes').select('id').eq('cliente_id', cid);
+          if (expIds?.length) {
+            query = query.in('expediente_id', expIds.map((e: any) => e.id));
+          } else {
+            return `No se encontraron expedientes del cliente "${params.cliente_id}".`;
+          }
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No hay plazos pendientes en los próximos ${dias} días.`;
+
+      const lines = data.map((p: any) => {
+        const exp = p.expediente;
+        const num = exp?.numero_expediente ?? exp?.numero_mp ?? exp?.numero_administrativo ?? 'S/N';
+        const cliente = exp?.cliente?.nombre ?? '';
+        const diasRestantes = Math.ceil((new Date(p.fecha_vencimiento).getTime() - Date.now()) / 86400000);
+        return `- **${p.fecha_vencimiento}** (${diasRestantes}d) — ${p.tipo_plazo}: ${p.descripcion} — Exp: ${num}${cliente ? ` (${cliente})` : ''}`;
+      });
+      return `${data.length} plazo(s) pendiente(s) en los próximos ${dias} días:\n${lines.join('\n')}`;
+    }
+
+    case 'actuaciones_expediente': {
+      if (!params.expediente_id) return 'Se requiere expediente_id.';
+      const { data, error } = await db
+        .from('actuaciones_procesales')
+        .select('*')
+        .eq('expediente_id', params.expediente_id)
+        .order('fecha', { ascending: false })
+        .limit(20);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No hay actuaciones registradas para este expediente.';
+
+      const lines = data.map((a: any) =>
+        `- **${a.fecha}** [${a.sede}] ${a.tipo} — ${a.descripcion} (${a.realizado_por})`
+      );
+      return `${data.length} actuación(es):\n${lines.join('\n')}`;
+    }
+
+    case 'expedientes_vinculados': {
+      if (!params.expediente_id) return 'Se requiere expediente_id.';
+      const { data, error } = await db
+        .from('expedientes_vinculados')
+        .select('*, expediente_destino:expedientes!expedientes_vinculados_expediente_destino_id_fkey(id, numero_expediente, numero_mp, numero_administrativo, origen, tipo_proceso, estado)')
+        .eq('expediente_origen_id', params.expediente_id)
+        .limit(20);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No hay expedientes vinculados.';
+
+      const lines = data.map((v: any) => {
+        const dest = v.expediente_destino;
+        const num = dest?.numero_expediente ?? dest?.numero_mp ?? dest?.numero_administrativo ?? 'S/N';
+        return `- ${v.tipo_vinculo}: **${num}** (${dest?.origen}) ${dest?.tipo_proceso} — ${dest?.estado}${v.descripcion ? ` — ${v.descripcion}` : ''}`;
+      });
+      return `${data.length} expediente(s) vinculado(s):\n${lines.join('\n')}`;
+    }
+
+    case 'expedientes_resumen': {
+      const [byEstado, byOrigen, byTipo, total] = await Promise.all([
+        db.from('expedientes').select('estado'),
+        db.from('expedientes').select('origen'),
+        db.from('expedientes').select('tipo_proceso'),
+        db.from('expedientes').select('id', { count: 'exact', head: true }),
+      ]);
+
+      const estados: Record<string, number> = {};
+      for (const r of byEstado.data ?? []) estados[r.estado] = (estados[r.estado] ?? 0) + 1;
+      const origenes: Record<string, number> = {};
+      for (const r of byOrigen.data ?? []) origenes[r.origen] = (origenes[r.origen] ?? 0) + 1;
+      const tipos: Record<string, number> = {};
+      for (const r of byTipo.data ?? []) tipos[r.tipo_proceso] = (tipos[r.tipo_proceso] ?? 0) + 1;
+
+      let result = `**Total expedientes:** ${total.count ?? 0}\n\n`;
+      result += `**Por estado:**\n${Object.entries(estados).map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`;
+      result += `**Por origen:**\n${Object.entries(origenes).map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`;
+      result += `**Por tipo de proceso:**\n${Object.entries(tipos).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
+      return result;
+    }
+
+    // ── MERCANTIL ────────────────────────────────────────────────────────
+
+    case 'mercantil_cliente': {
+      let query = db
+        .from('tramites_mercantiles')
+        .select('*, cliente:clientes!tramites_mercantiles_cliente_id_fkey(id, codigo, nombre)')
+        .order('updated_at', { ascending: false })
+        .limit(25);
+
+      if (params.cliente_id) {
+        const cid = await resolveClienteId(params.cliente_id);
+        if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+        query = query.eq('cliente_id', cid);
+      }
+      if (params.categoria) query = query.eq('categoria', params.categoria);
+      if (params.estado) query = query.eq('estado', params.estado);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No se encontraron trámites mercantiles con esos filtros.';
+
+      const lines = data.map((t: any) => {
+        const cliente = t.cliente?.nombre ?? 'Sin cliente';
+        return `- **${t.categoria}** ${t.subtipo ? `(${t.subtipo})` : ''} — Estado: ${t.estado} — ${cliente}${t.numero_registro ? ` — Reg: ${t.numero_registro}` : ''}${t.fecha_vencimiento ? ` — Vence: ${t.fecha_vencimiento}` : ''}`;
+      });
+      return `${data.length} trámite(s) mercantil(es):\n${lines.join('\n')}`;
+    }
+
+    case 'mercantil_por_vencer': {
+      const dias = params.dias ?? 30;
+      const hoy = new Date().toISOString().slice(0, 10);
+      const limite = new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+
+      const { data, error } = await db
+        .from('tramites_mercantiles')
+        .select('*, cliente:clientes!tramites_mercantiles_cliente_id_fkey(id, codigo, nombre)')
+        .in('estado', ['vigente', 'inscrito'])
+        .not('fecha_vencimiento', 'is', null)
+        .gte('fecha_vencimiento', hoy)
+        .lte('fecha_vencimiento', limite)
+        .order('fecha_vencimiento', { ascending: true });
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No hay trámites mercantiles por vencer en los próximos ${dias} días.`;
+
+      const lines = data.map((t: any) => {
+        const diasR = Math.ceil((new Date(t.fecha_vencimiento).getTime() - Date.now()) / 86400000);
+        return `- **${t.categoria}** — ${t.cliente?.nombre} — Vence: ${t.fecha_vencimiento} (${diasR}d)${t.numero_registro ? ` — Reg: ${t.numero_registro}` : ''}`;
+      });
+      return `${data.length} trámite(s) mercantil(es) por vencer:\n${lines.join('\n')}`;
+    }
+
+    case 'mercantil_asambleas_pendientes': {
+      const anio = new Date().getFullYear();
+      const inicioAnio = `${anio}-01-01`;
+      const finAnio = `${anio}-12-31`;
+
+      // Get all companies (type empresa)
+      const { data: empresas } = await db
+        .from('clientes')
+        .select('id, nombre, codigo')
+        .eq('tipo', 'empresa')
+        .eq('estado', 'activo');
+
+      if (!empresas?.length) return 'No hay empresas activas registradas.';
+
+      // Get companies that HAVE had an asamblea_ordinaria this year
+      const { data: conAsamblea } = await db
+        .from('tramites_mercantiles')
+        .select('cliente_id')
+        .eq('categoria', 'asamblea_ordinaria')
+        .gte('fecha_tramite', inicioAnio)
+        .lte('fecha_tramite', finAnio);
+
+      const clientesConAsamblea = new Set((conAsamblea ?? []).map((t: any) => t.cliente_id));
+      const sinAsamblea = empresas.filter((e: any) => !clientesConAsamblea.has(e.id));
+
+      if (!sinAsamblea.length) return `Todas las empresas activas ya celebraron asamblea ordinaria en ${anio}.`;
+
+      const lines = sinAsamblea.map((e: any) => `- **${e.nombre}** (${e.codigo})`);
+      return `${sinAsamblea.length} empresa(s) SIN asamblea ordinaria en ${anio}:\n${lines.join('\n')}`;
+    }
+
+    case 'mercantil_resumen': {
+      const [byEstado, byCategoria, total] = await Promise.all([
+        db.from('tramites_mercantiles').select('estado'),
+        db.from('tramites_mercantiles').select('categoria'),
+        db.from('tramites_mercantiles').select('id', { count: 'exact', head: true }),
+      ]);
+
+      const estados: Record<string, number> = {};
+      for (const r of byEstado.data ?? []) estados[r.estado] = (estados[r.estado] ?? 0) + 1;
+      const categorias: Record<string, number> = {};
+      for (const r of byCategoria.data ?? []) categorias[r.categoria] = (categorias[r.categoria] ?? 0) + 1;
+
+      const hoy = new Date().toISOString().slice(0, 10);
+      const limite30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const { count: porVencer } = await db.from('tramites_mercantiles').select('id', { count: 'exact', head: true })
+        .in('estado', ['vigente', 'inscrito']).not('fecha_vencimiento', 'is', null)
+        .gte('fecha_vencimiento', hoy).lte('fecha_vencimiento', limite30);
+      const { count: vencidos } = await db.from('tramites_mercantiles').select('id', { count: 'exact', head: true })
+        .not('fecha_vencimiento', 'is', null).lt('fecha_vencimiento', hoy).in('estado', ['vigente', 'inscrito']);
+
+      let result = `**Total trámites mercantiles:** ${total.count ?? 0}\n`;
+      result += `**Por vencer (30d):** ${porVencer ?? 0} | **Vencidos:** ${vencidos ?? 0}\n\n`;
+      result += `**Por estado:**\n${Object.entries(estados).map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`;
+      result += `**Por categoría:**\n${Object.entries(categorias).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
+      return result;
+    }
+
+    // ── LABORAL ──────────────────────────────────────────────────────────
+
+    case 'laboral_cliente': {
+      let query = db
+        .from('tramites_laborales')
+        .select('*, cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre)')
+        .order('updated_at', { ascending: false })
+        .limit(25);
+
+      if (params.cliente_id) {
+        const cid = await resolveClienteId(params.cliente_id);
+        if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+        query = query.eq('cliente_id', cid);
+      }
+      if (params.categoria) query = query.eq('categoria', params.categoria);
+      if (params.estado) query = query.eq('estado', params.estado);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No se encontraron trámites laborales con esos filtros.';
+
+      const lines = data.map((t: any) => {
+        const cliente = t.cliente?.nombre ?? 'Sin cliente';
+        return `- **${t.categoria}** — ${cliente}${t.nombre_empleado ? ` — ${t.nombre_empleado}` : ''}${t.puesto ? ` (${t.puesto})` : ''} — Estado: ${t.estado}${t.fecha_fin ? ` — Vence: ${t.fecha_fin}` : ''}${t.numero_registro_igt ? ` — IGT: ${t.numero_registro_igt}` : ''}`;
+      });
+      return `${data.length} trámite(s) laboral(es):\n${lines.join('\n')}`;
+    }
+
+    case 'laboral_por_vencer': {
+      const dias = params.dias ?? 30;
+      const hoy = new Date().toISOString().slice(0, 10);
+      const limite = new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+
+      const { data, error } = await db
+        .from('tramites_laborales')
+        .select('*, cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre)')
+        .in('estado', ['vigente', 'registrado', 'firmado'])
+        .not('fecha_fin', 'is', null)
+        .gte('fecha_fin', hoy)
+        .lte('fecha_fin', limite)
+        .order('fecha_fin', { ascending: true });
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No hay contratos laborales por vencer en los próximos ${dias} días.`;
+
+      const lines = data.map((t: any) => {
+        const diasR = Math.ceil((new Date(t.fecha_fin).getTime() - Date.now()) / 86400000);
+        return `- **${t.categoria}** — ${t.cliente?.nombre}${t.nombre_empleado ? ` — ${t.nombre_empleado}` : ''} — Vence: ${t.fecha_fin} (${diasR}d)`;
+      });
+      return `${data.length} contrato(s) por vencer:\n${lines.join('\n')}`;
+    }
+
+    case 'laboral_pendientes_igt': {
+      let query = db
+        .from('tramites_laborales')
+        .select('*, cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre)')
+        .in('categoria', ['contrato_individual', 'contrato_temporal', 'registro_contrato_igt', 'reglamento_interno'])
+        .is('numero_registro_igt', null)
+        .not('estado', 'in', '("cancelado","vencido")')
+        .order('created_at', { ascending: false });
+
+      if (params.cliente_id) {
+        const cid = await resolveClienteId(params.cliente_id);
+        if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+        query = query.eq('cliente_id', cid);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No hay contratos pendientes de registro en la IGT.';
+
+      const lines = data.map((t: any) =>
+        `- **${t.categoria}** — ${t.cliente?.nombre}${t.nombre_empleado ? ` — ${t.nombre_empleado}` : ''} — Estado: ${t.estado}`
+      );
+      return `${data.length} contrato(s) pendiente(s) de registro IGT:\n${lines.join('\n')}`;
+    }
+
+    case 'laboral_reglamento_vigente': {
+      if (!params.cliente_id) return 'Se requiere cliente_id.';
+      const cid = await resolveClienteId(params.cliente_id);
+      if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+
+      const { data, error } = await db
+        .from('tramites_laborales')
+        .select('*')
+        .eq('cliente_id', cid)
+        .eq('categoria', 'reglamento_interno')
+        .in('estado', ['vigente', 'registrado'])
+        .limit(1);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `La empresa NO tiene reglamento interno vigente registrado.`;
+      const r = data[0];
+      return `La empresa SÍ tiene reglamento interno vigente. Estado: ${r.estado}${r.numero_registro_igt ? ` — Registro IGT: ${r.numero_registro_igt}` : ''}${r.fecha_registro_igt ? ` — Registrado: ${r.fecha_registro_igt}` : ''}`;
+    }
+
+    case 'laboral_libro_salarios': {
+      if (!params.cliente_id) return 'Se requiere cliente_id.';
+      const cid = await resolveClienteId(params.cliente_id);
+      if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+
+      const { data, error } = await db
+        .from('tramites_laborales')
+        .select('*')
+        .eq('cliente_id', cid)
+        .eq('categoria', 'libro_salarios')
+        .in('estado', ['vigente', 'registrado'])
+        .limit(1);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `La empresa NO tiene libro de salarios autorizado registrado.`;
+      const r = data[0];
+      return `La empresa SÍ tiene libro de salarios autorizado. Estado: ${r.estado}${r.numero_registro_igt ? ` — Registro: ${r.numero_registro_igt}` : ''}`;
+    }
+
+    case 'laboral_resumen': {
+      const [byEstado, byCategoria, total] = await Promise.all([
+        db.from('tramites_laborales').select('estado'),
+        db.from('tramites_laborales').select('categoria'),
+        db.from('tramites_laborales').select('id', { count: 'exact', head: true }),
+      ]);
+
+      const estados: Record<string, number> = {};
+      for (const r of byEstado.data ?? []) estados[r.estado] = (estados[r.estado] ?? 0) + 1;
+      const categorias: Record<string, number> = {};
+      for (const r of byCategoria.data ?? []) categorias[r.categoria] = (categorias[r.categoria] ?? 0) + 1;
+
+      const hoy = new Date().toISOString().slice(0, 10);
+      const limite30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const { count: porVencer } = await db.from('tramites_laborales').select('id', { count: 'exact', head: true })
+        .in('estado', ['vigente', 'registrado', 'firmado']).not('fecha_fin', 'is', null)
+        .gte('fecha_fin', hoy).lte('fecha_fin', limite30);
+      const { count: vencidos } = await db.from('tramites_laborales').select('id', { count: 'exact', head: true })
+        .not('fecha_fin', 'is', null).lt('fecha_fin', hoy).in('estado', ['vigente', 'registrado', 'firmado']);
+
+      let result = `**Total trámites laborales:** ${total.count ?? 0}\n`;
+      result += `**Por vencer (30d):** ${porVencer ?? 0} | **Vencidos:** ${vencidos ?? 0}\n\n`;
+      result += `**Por estado:**\n${Object.entries(estados).map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`;
+      result += `**Por categoría:**\n${Object.entries(categorias).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
+      return result;
+    }
+
+    // ── TRIBUNALES ───────────────────────────────────────────────────────
+
+    case 'tribunales_buscar': {
+      let query = db.from('tribunales_oj').select('*').limit(20);
+
+      if (params.busqueda) query = query.ilike('nombre', `%${params.busqueda}%`);
+      if (params.departamento) query = query.ilike('departamento', `%${params.departamento}%`);
+      if (params.tipo) query = query.eq('tipo', params.tipo);
+      if (params.ramo) query = query.ilike('ramo', `%${params.ramo}%`);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No se encontraron tribunales con esos filtros.';
+
+      const lines = data.map((t: any) =>
+        `- **${t.nombre}** (${t.tipo}) — ${t.departamento}${t.municipio ? `, ${t.municipio}` : ''}${t.ramo ? ` — Ramo: ${t.ramo}` : ''}${t.telefono ? ` — Tel: ${t.telefono}` : ''}${t.direccion ? ` — Dir: ${t.direccion}` : ''}`
+      );
+      return `${data.length} tribunal(es) encontrado(s):\n${lines.join('\n')}`;
+    }
+
+    // ── FISCALÍAS ────────────────────────────────────────────────────────
+
+    case 'fiscalias_buscar': {
+      let query = db.from('fiscalias_mp').select('*').limit(20);
+
+      if (params.busqueda) query = query.ilike('nombre', `%${params.busqueda}%`);
+      if (params.departamento) query = query.ilike('departamento', `%${params.departamento}%`);
+      if (params.tipo) query = query.ilike('tipo', `%${params.tipo}%`);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No se encontraron fiscalías con esos filtros.';
+
+      const lines = data.map((f: any) =>
+        `- **${f.nombre}** — ${f.departamento}${f.municipio ? `, ${f.municipio}` : ''}${f.tipo ? ` — Tipo: ${f.tipo}` : ''}${f.telefono_extension ? ` — Tel/Ext: ${f.telefono_extension}` : ''}${f.direccion ? ` — Dir: ${f.direccion}` : ''}`
+      );
+      return `${data.length} fiscalía(s) encontrada(s):\n${lines.join('\n')}`;
+    }
+
+    // ── REPRESENTANTES Y GRUPO EMPRESARIAL ───────────────────────────────
+
+    case 'representantes_empresa': {
+      if (!params.cliente_id) return 'Se requiere cliente_id.';
+      const cid = await resolveClienteId(params.cliente_id);
+      if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+
+      const { data, error } = await db
+        .from('empresa_representante')
+        .select('*, representante:representantes_legales!empresa_representante_representante_id_fkey(id, nombre_completo, email, telefono)')
+        .eq('empresa_id', cid);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return 'No hay representantes legales registrados para esta empresa.';
+
+      const CARGO_MAP: Record<string, string> = {
+        administrador_unico: 'Administrador Único',
+        presidente_consejo: 'Presidente del Consejo',
+        gerente_general: 'Gerente General',
+        gerente_operativo: 'Gerente Operativo',
+      };
+
+      const lines = data.map((er: any) => {
+        const r = er.representante;
+        return `- **${r.nombre_completo}** — ${CARGO_MAP[er.cargo] ?? er.cargo}${r.email ? ` — ${r.email}` : ''}${r.telefono ? ` — ${r.telefono}` : ''}`;
+      });
+      return `${data.length} representante(s) legal(es):\n${lines.join('\n')}`;
+    }
+
+    case 'grupo_empresarial': {
+      if (!params.cliente_id) return 'Se requiere cliente_id.';
+      const cid = await resolveClienteId(params.cliente_id);
+      if (!cid) return `No se encontró cliente: "${params.cliente_id}"`;
+
+      // Check if client has grupo_empresarial_id
+      const { data: cliente } = await db.from('clientes').select('id, nombre, grupo_empresarial_id').eq('id', cid).single();
+      if (!cliente) return 'Cliente no encontrado.';
+
+      if (cliente.grupo_empresarial_id) {
+        // Get all companies in the same group
+        const { data: grupo } = await db.from('grupo_empresarial').select('id, nombre').eq('id', cliente.grupo_empresarial_id).single();
+        const { data: empresas } = await db.from('clientes').select('id, codigo, nombre').eq('grupo_empresarial_id', cliente.grupo_empresarial_id);
+
+        if (empresas?.length) {
+          const lines = empresas.map((e: any) => `- **${e.nombre}** (${e.codigo})`);
+          return `Grupo empresarial: **${grupo?.nombre ?? 'Sin nombre'}**\n${empresas.length} empresa(s):\n${lines.join('\n')}`;
+        }
+      }
+
+      // Fallback: find companies sharing representatives
+      const { data: reps } = await db
+        .from('empresa_representante')
+        .select('representante_id')
+        .eq('empresa_id', cid);
+
+      if (!reps?.length) return 'Esta empresa no tiene representantes legales registrados ni grupo empresarial asignado.';
+
+      const repIds = reps.map((r: any) => r.representante_id);
+      const { data: otrasEmpresas } = await db
+        .from('empresa_representante')
+        .select('empresa:clientes!empresa_representante_empresa_id_fkey(id, codigo, nombre), representante:representantes_legales!empresa_representante_representante_id_fkey(nombre_completo), cargo')
+        .in('representante_id', repIds);
+
+      if (!otrasEmpresas?.length) return 'No se encontraron otras empresas que compartan representante legal.';
+
+      // Deduplicate by empresa
+      const empresasMap = new Map<string, { nombre: string; codigo: string; reps: string[] }>();
+      for (const er of otrasEmpresas) {
+        const emp = (er as any).empresa;
+        if (!emp) continue;
+        if (!empresasMap.has(emp.id)) empresasMap.set(emp.id, { nombre: emp.nombre, codigo: emp.codigo, reps: [] });
+        empresasMap.get(emp.id)!.reps.push((er as any).representante?.nombre_completo ?? '');
+      }
+
+      const lines = Array.from(empresasMap.values()).map(e =>
+        `- **${e.nombre}** (${e.codigo}) — Rep: ${[...new Set(e.reps)].join(', ')}`
+      );
+      return `${empresasMap.size} empresa(s) vinculada(s) por representante legal:\n${lines.join('\n')}`;
+    }
+
+    case 'empresas_representante': {
+      if (!params.busqueda) return 'Se requiere busqueda (nombre del representante).';
+      const { data, error } = await db
+        .from('representantes_legales')
+        .select('id, nombre_completo')
+        .ilike('nombre_completo', `%${params.busqueda}%`)
+        .limit(3);
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No se encontró representante: "${params.busqueda}"`;
+
+      let result = '';
+      for (const rep of data) {
+        const { data: empresas } = await db
+          .from('empresa_representante')
+          .select('cargo, empresa:clientes!empresa_representante_empresa_id_fkey(id, codigo, nombre)')
+          .eq('representante_id', rep.id);
+
+        const CARGO_MAP: Record<string, string> = {
+          administrador_unico: 'Administrador Único',
+          presidente_consejo: 'Presidente del Consejo',
+          gerente_general: 'Gerente General',
+          gerente_operativo: 'Gerente Operativo',
+        };
+
+        if (empresas?.length) {
+          const lines = empresas.map((er: any) => `  - ${(er as any).empresa?.nombre} (${(er as any).empresa?.codigo}) — ${CARGO_MAP[er.cargo] ?? er.cargo}`);
+          result += `**${rep.nombre_completo}** — ${empresas.length} empresa(s):\n${lines.join('\n')}\n\n`;
+        }
+      }
+      return result || 'No se encontraron empresas para ese representante.';
+    }
+
+    // ── BIBLIOTECA LEGAL ─────────────────────────────────────────────────
+
+    case 'biblioteca_buscar': {
+      let query = db.from('biblioteca_legal').select('*').limit(15);
+
+      if (params.busqueda) query = query.or(`titulo.ilike.%${params.busqueda}%,descripcion.ilike.%${params.busqueda}%,tags.ilike.%${params.busqueda}%`);
+      if (params.categoria) query = query.eq('categoria', params.categoria);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!data?.length) return `No se encontraron documentos para: "${params.busqueda ?? 'todos'}".`;
+
+      const lines = data.map((d: any) =>
+        `- **${d.titulo}** (${d.categoria}) ${d.descripcion ? `— ${d.descripcion}` : ''}${d.storage_path ? ' [archivo disponible]' : ''}`
+      );
+      return `${data.length} documento(s) encontrado(s):\n${lines.join('\n')}`;
+    }
+
+    default:
+      return `Consulta no reconocida: ${consulta}. Consultas disponibles: expedientes_cliente, expedientes_buscar, plazos_proximos, actuaciones_expediente, expedientes_vinculados, expedientes_resumen, mercantil_cliente, mercantil_por_vencer, mercantil_asambleas_pendientes, mercantil_resumen, laboral_cliente, laboral_por_vencer, laboral_pendientes_igt, laboral_reglamento_vigente, laboral_libro_salarios, laboral_resumen, tribunales_buscar, fiscalias_buscar, representantes_empresa, grupo_empresarial, empresas_representante, biblioteca_buscar`;
+  }
+}
+
 async function handleConsultarCatalogo(
   consulta: 'catalogo_servicios' | 'plantilla_cotizacion' | 'plantilla_recordatorio_audiencia' | 'configuracion',
 ): Promise<string> {
@@ -1996,6 +2672,34 @@ export async function POST(req: Request) {
           required: ['consulta'],
         },
       },
+      {
+        name: 'consultar_legal',
+        description: 'Consulta los módulos legales del sistema: expedientes judiciales/fiscales/administrativos, cumplimiento mercantil, cumplimiento laboral, directorios de tribunales y fiscalías, representantes legales, grupo empresarial, y biblioteca legal.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            consulta: {
+              type: 'string',
+              enum: [
+                'expedientes_cliente', 'expedientes_buscar', 'plazos_proximos',
+                'actuaciones_expediente', 'expedientes_vinculados', 'expedientes_resumen',
+                'mercantil_cliente', 'mercantil_por_vencer', 'mercantil_asambleas_pendientes', 'mercantil_resumen',
+                'laboral_cliente', 'laboral_por_vencer', 'laboral_pendientes_igt',
+                'laboral_reglamento_vigente', 'laboral_libro_salarios', 'laboral_resumen',
+                'tribunales_buscar', 'fiscalias_buscar',
+                'representantes_empresa', 'grupo_empresarial', 'empresas_representante',
+                'biblioteca_buscar',
+              ],
+              description: 'Tipo de consulta legal a realizar.',
+            },
+            params: {
+              type: 'object',
+              description: 'Parámetros de la consulta. Varían según el tipo: cliente_id (UUID o nombre), estado, origen, tipo_proceso, busqueda, dias, expediente_id, categoria, departamento, tipo, ramo.',
+            },
+          },
+          required: ['consulta'],
+        },
+      },
     ];
 
     // ── Inyectar fecha actual al system prompt ──────────────────────────
@@ -2133,6 +2837,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'buscar_jurisprudencia') {
               const input = block.input as any;
               result = await handleBuscarJurisprudencia(input.consulta, input.limite ?? 10);
+            } else if (block.name === 'consultar_legal') {
+              const input = block.input as any;
+              result = await handleConsultarLegal(input.consulta, input.params ?? {});
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }

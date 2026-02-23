@@ -15,7 +15,7 @@ import {
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
 const ALLOWED_TYPES = ['application/pdf'];
 
 /**
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Validar tamaño
     if (archivo.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: `El archivo excede el límite de 1GB (${(archivo.size / 1024 / 1024).toFixed(1)}MB)` },
+        { error: `El archivo excede el límite de 150MB (${(archivo.size / 1024 / 1024).toFixed(1)}MB)` },
         { status: 400 }
       );
     }
@@ -161,7 +161,7 @@ function manejarError(error: unknown) {
   if (error instanceof EscrituraError) {
     const status = error.message.includes('no encontrad') ? 404 : 400;
     return NextResponse.json(
-      { error: error.message, details: error.details },
+      { error: error.message },
       { status }
     );
   }

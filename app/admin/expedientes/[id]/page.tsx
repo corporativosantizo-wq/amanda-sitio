@@ -9,19 +9,21 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import ExcelJS from 'exceljs';
 import { Section, Badge, Skeleton, EmptyState, Q } from '@/components/admin/ui';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
-  FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X,
+  FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
 } from 'lucide-react';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
-  type RolClienteExpediente, type MonedaExpediente,
+  type RolClienteExpediente, type MonedaExpediente, type InstanciaJudicial,
   type SedeActuacion, type TipoActuacion, type RealizadoPor,
   type TipoPlazo, type EstadoPlazo, type TipoVinculo,
   type ActuacionProcesal, type PlazoProcesal,
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL, FASE_LABEL,
   ROL_CLIENTE_LABEL, ESTADO_EXPEDIENTE_LABEL, ESTADO_EXPEDIENTE_COLOR,
+  INSTANCIA_LABEL, INSTANCIA_SHORT, INSTANCIA_COLOR, getInstanciasForTipoProceso,
   SEDE_LABEL, TIPO_ACTUACION_LABEL, REALIZADO_POR_LABEL,
   TIPO_PLAZO_LABEL, ESTADO_PLAZO_LABEL, ESTADO_PLAZO_COLOR,
   TIPO_VINCULO_LABEL, getFasesForOrigen,
@@ -47,7 +49,8 @@ interface ExpedienteDetalle {
   dependencia: string | null;
   monto_multa: number | null;
   resolucion_administrativa: string | null;
-  juzgado: string | null;
+  instancia: InstanciaJudicial | null;
+  tribunal_nombre: string | null;
   departamento: string | null;
   actor: string | null;
   demandado: string | null;
@@ -94,6 +97,32 @@ interface ExpedienteData {
   vinculados: VinculadoRow[];
 }
 
+interface ClienteSuggestion {
+  id: string;
+  codigo: string;
+  nombre: string;
+  nit: string | null;
+  tipo: string;
+}
+
+interface TribunalSuggestion {
+  id: number;
+  nombre: string;
+  tipo: string;
+  departamento: string;
+  municipio: string;
+  telefono: string | null;
+}
+
+interface FiscaliaSuggestion {
+  id: number;
+  nombre: string;
+  tipo: string;
+  departamento: string;
+  municipio: string;
+  telefono_extension: string | null;
+}
+
 type TabKey = 'datos' | 'actuaciones' | 'plazos' | 'documentos' | 'vinculados';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
@@ -124,7 +153,11 @@ function getNumeroDisplay(e: ExpedienteDetalle): string {
 }
 
 function getSedeDisplay(e: ExpedienteDetalle): string {
-  if (e.juzgado) return e.juzgado;
+  if (e.instancia && e.tribunal_nombre) {
+    return `${INSTANCIA_SHORT[e.instancia]} · ${e.tribunal_nombre}`;
+  }
+  if (e.tribunal_nombre) return e.tribunal_nombre;
+  if (e.instancia) return INSTANCIA_LABEL[e.instancia];
   if (e.fiscalia) return e.fiscalia;
   if (e.entidad_administrativa) return e.entidad_administrativa;
   return '—';
@@ -157,6 +190,7 @@ export default function ExpedienteDetallePage() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [downloadingReport, setDownloadingReport] = useState(false);
 
   const e = data?.expediente;
   const actuaciones = data?.actuaciones ?? [];
@@ -178,10 +212,13 @@ export default function ExpedienteDetallePage() {
       numero_expediente: e.numero_expediente ?? '',
       numero_mp: e.numero_mp ?? '',
       numero_administrativo: e.numero_administrativo ?? '',
+      cliente_id: e.cliente_id,
+      cliente_nombre: e.cliente.nombre,
       origen: e.origen,
       tipo_proceso: e.tipo_proceso,
       fase_actual: e.fase_actual,
-      juzgado: e.juzgado ?? '',
+      instancia: e.instancia ?? '',
+      tribunal_nombre: e.tribunal_nombre ?? '',
       departamento: e.departamento ?? '',
       fiscalia: e.fiscalia ?? '',
       agente_fiscal: e.agente_fiscal ?? '',
@@ -208,10 +245,11 @@ export default function ExpedienteDetallePage() {
 
   const saveEdit = useCallback(async () => {
     setSaveError(null);
+    if (!form.cliente_id) { setSaveError('Debe seleccionar un cliente'); return; }
     const body: Record<string, unknown> = {};
     const strFields = [
       'numero_expediente', 'numero_mp', 'numero_administrativo',
-      'tipo_proceso', 'fase_actual', 'juzgado', 'departamento',
+      'tipo_proceso', 'fase_actual', 'instancia', 'tribunal_nombre', 'departamento',
       'fiscalia', 'agente_fiscal', 'entidad_administrativa', 'dependencia',
       'resolucion_administrativa', 'actor', 'demandado', 'rol_cliente',
       'estado', 'fecha_inicio', 'fecha_finalizacion', 'descripcion',
@@ -220,6 +258,7 @@ export default function ExpedienteDetallePage() {
     for (const f of strFields) {
       body[f] = form[f]?.trim() || null;
     }
+    body.cliente_id = form.cliente_id;
     body.monto_multa = form.monto_multa ? parseFloat(form.monto_multa) : null;
     body.monto_pretension = form.monto_pretension ? parseFloat(form.monto_pretension) : null;
 
@@ -234,6 +273,147 @@ export default function ExpedienteDetallePage() {
   const set = (key: string) => (
     ev: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => setForm(prev => ({ ...prev, [key]: ev.target.value }));
+
+  // ── Download report ─────────────────────────────────────────────────
+
+  const handleDownloadReport = useCallback(async () => {
+    if (!data || !e) return;
+    setDownloadingReport(true);
+    try {
+      const MONEDA_DISPLAY: Record<string, string> = { GTQ: 'Quetzales (GTQ)', USD: 'Dólares (USD)', EUR: 'Euros (EUR)' };
+      const wb = new ExcelJS.Workbook();
+
+      const styleHeader = (ws: ExcelJS.Worksheet) => {
+        ws.getRow(1).eachCell(cell => {
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+          cell.alignment = { vertical: 'middle' };
+        });
+      };
+
+      // ── Hoja 1: Datos Generales (clave-valor) ──
+      const wsDatos = wb.addWorksheet('Datos Generales');
+      wsDatos.columns = [
+        { header: 'Campo', key: 'campo', width: 28 },
+        { header: 'Valor', key: 'valor', width: 50 },
+      ];
+      styleHeader(wsDatos);
+
+      const datosRows: [string, string][] = [
+        ['No. Expediente', e.numero_expediente ?? ''],
+        ['No. MP', e.numero_mp ?? ''],
+        ['No. Administrativo', e.numero_administrativo ?? ''],
+        ['Cliente', e.cliente.nombre],
+        ['Origen', ORIGEN_LABEL[e.origen]],
+        ['Tipo de Proceso', TIPO_PROCESO_LABEL[e.tipo_proceso]],
+        ['Fase Actual', FASE_LABEL[e.fase_actual]],
+        ['Estado', ESTADO_EXPEDIENTE_LABEL[e.estado] ?? e.estado],
+        ['Instancia', e.instancia ? INSTANCIA_LABEL[e.instancia] : ''],
+        ['Tribunal / Sede', getSedeDisplay(e)],
+        ['Departamento', e.departamento ?? ''],
+        ['Actor / Denunciante', e.actor ?? ''],
+        ['Demandado / Denunciado', e.demandado ?? ''],
+        ['Rol del Cliente', e.rol_cliente ? ROL_CLIENTE_LABEL[e.rol_cliente] : ''],
+        ['Fecha Inicio', e.fecha_inicio],
+        ['Fecha Finalización', e.fecha_finalizacion ?? ''],
+        ['Última Actuación', e.fecha_ultima_actuacion ?? ''],
+        ['Monto Pretensión', e.monto_pretension != null ? String(e.monto_pretension) : ''],
+        ['Moneda', MONEDA_DISPLAY[e.moneda] ?? e.moneda],
+        ['Descripción', e.descripcion ?? ''],
+        ['Notas Internas', e.notas_internas ?? ''],
+      ];
+      datosRows.forEach(([campo, valor]) => wsDatos.addRow({ campo, valor }));
+
+      // ── Hoja 2: Actuaciones ──
+      const wsAct = wb.addWorksheet('Actuaciones');
+      wsAct.columns = [
+        { header: 'Fecha', key: 'fecha', width: 14 },
+        { header: 'Sede', key: 'sede', width: 16 },
+        { header: 'Tipo', key: 'tipo', width: 20 },
+        { header: 'Realizado por', key: 'realizado', width: 18 },
+        { header: 'Descripción', key: 'descripcion', width: 50 },
+      ];
+      styleHeader(wsAct);
+
+      const actsSorted = [...actuaciones].sort((a, b) => a.fecha.localeCompare(b.fecha));
+      actsSorted.forEach(a => {
+        wsAct.addRow({
+          fecha: a.fecha,
+          sede: SEDE_LABEL[a.sede],
+          tipo: TIPO_ACTUACION_LABEL[a.tipo],
+          realizado: REALIZADO_POR_LABEL[a.realizado_por],
+          descripcion: a.descripcion,
+        });
+      });
+
+      // ── Hoja 3: Plazos ──
+      const wsPlz = wb.addWorksheet('Plazos');
+      wsPlz.columns = [
+        { header: 'Tipo', key: 'tipo', width: 24 },
+        { header: 'Descripción', key: 'descripcion', width: 40 },
+        { header: 'Fecha Inicio', key: 'fecha_inicio', width: 14 },
+        { header: 'Fecha Vencimiento', key: 'fecha_vencimiento', width: 16 },
+        { header: 'Días Hábiles', key: 'dias_habiles', width: 14 },
+        { header: 'Estado', key: 'estado', width: 14 },
+      ];
+      styleHeader(wsPlz);
+
+      plazos.forEach(p => {
+        wsPlz.addRow({
+          tipo: TIPO_PLAZO_LABEL[p.tipo_plazo],
+          descripcion: p.descripcion,
+          fecha_inicio: p.fecha_inicio,
+          fecha_vencimiento: p.fecha_vencimiento,
+          dias_habiles: p.dias_habiles ? 'Sí' : 'No',
+          estado: ESTADO_PLAZO_LABEL[p.estado],
+        });
+      });
+
+      // ── Hoja 4: Expedientes Vinculados ──
+      const wsVinc = wb.addWorksheet('Expedientes Vinculados');
+      wsVinc.columns = [
+        { header: 'Número', key: 'numero', width: 24 },
+        { header: 'Tipo de Vínculo', key: 'tipo_vinculo', width: 20 },
+        { header: 'Tipo Proceso', key: 'tipo_proceso', width: 24 },
+        { header: 'Estado', key: 'estado', width: 14 },
+        { header: 'Descripción', key: 'descripcion', width: 40 },
+      ];
+      styleHeader(wsVinc);
+
+      vinculados.forEach(v => {
+        const linked = v.expediente_vinculado;
+        if (!linked) return;
+        const nums = [
+          linked.numero_expediente,
+          linked.numero_mp ? `MP: ${linked.numero_mp}` : null,
+          linked.numero_administrativo ? `Admin: ${linked.numero_administrativo}` : null,
+        ].filter(Boolean).join(' / ');
+        wsVinc.addRow({
+          numero: nums || '(sin número)',
+          tipo_vinculo: TIPO_VINCULO_LABEL[v.tipo_vinculo],
+          tipo_proceso: TIPO_PROCESO_LABEL[linked.tipo_proceso],
+          estado: ESTADO_EXPEDIENTE_LABEL[linked.estado] ?? linked.estado,
+          descripcion: v.descripcion ?? '',
+        });
+      });
+
+      // ── Generar y descargar ──
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const numDisplay = (e.numero_expediente ?? e.numero_mp ?? e.numero_administrativo ?? 'SN').replace(/[/\\:*?"<>|]/g, '_');
+      const fecha = new Date().toISOString().slice(0, 10);
+      a.download = `Expediente_${numDisplay}_${fecha}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al descargar reporte:', err);
+    } finally {
+      setDownloadingReport(false);
+    }
+  }, [data, e, actuaciones, plazos, vinculados]);
 
   // ── Loading / Error ───────────────────────────────────────────────────
 
@@ -282,6 +462,13 @@ export default function ExpedienteDetallePage() {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleDownloadReport} disabled={downloadingReport}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-40">
+              <Download size={14} />
+              {downloadingReport ? 'Descargando…' : 'Descargar'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -325,7 +512,7 @@ export default function ExpedienteDetallePage() {
 
       {/* Tab content */}
       {tab === 'datos' && (
-        <TabDatos exp={e} editing={editing} form={form} set={set}
+        <TabDatos exp={e} editing={editing} form={form} set={set} setForm={setForm}
           onStartEdit={startEdit} onCancel={cancelEdit} onSave={saveEdit}
           saving={saving} saveError={saveError} />
       )}
@@ -375,9 +562,10 @@ function SummaryCard({ label, value, sub, accent, link }: {
 
 // ── Tab: Datos ───────────────────────────────────────────────────────────
 
-function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, saving, saveError }: {
+function TabDatos({ exp, editing, form, set, setForm, onStartEdit, onCancel, onSave, saving, saveError }: {
   exp: ExpedienteDetalle; editing: boolean; form: Record<string, string>;
   set: (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  setForm: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   onStartEdit: () => void; onCancel: () => void; onSave: () => void;
   saving: boolean; saveError: string | null;
 }) {
@@ -386,6 +574,100 @@ function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, savi
   const tiposProceso = origen === 'fiscal' ? TIPOS_PROCESO_FISCAL
     : origen === 'administrativo' ? TIPOS_PROCESO_ADMINISTRATIVO
     : TIPOS_PROCESO_JUDICIAL;
+
+  // Autocomplete state for tribunal
+  const [tribunalSugerencias, setTribunalSugerencias] = useState<TribunalSuggestion[]>([]);
+  const [showTribunalSug, setShowTribunalSug] = useState(false);
+  const tribunalTimer = useRef<NodeJS.Timeout>(undefined);
+
+  // Autocomplete state for fiscalía
+  const [fiscaliaSugerencias, setFiscaliaSugerencias] = useState<FiscaliaSuggestion[]>([]);
+  const [showFiscaliaSug, setShowFiscaliaSug] = useState(false);
+  const fiscaliaTimer = useRef<NodeJS.Timeout>(undefined);
+
+  // Autocomplete state for cliente
+  const [clienteSugerencias, setClienteSugerencias] = useState<ClienteSuggestion[]>([]);
+  const [showClienteSug, setShowClienteSug] = useState(false);
+  const clienteTimer = useRef<NodeJS.Timeout>(undefined);
+
+  // Cliente autocomplete effect
+  useEffect(() => {
+    if (!editing) return;
+    if (clienteTimer.current) clearTimeout(clienteTimer.current);
+    const q = form.cliente_nombre ?? '';
+    // Don't search if a client is already selected (user hasn't typed new text)
+    if (q.length < 2 || form.cliente_id) { setClienteSugerencias([]); setShowClienteSug(false); return; }
+
+    clienteTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8&activo=true`);
+        const json = await res.json();
+        setClienteSugerencias(json.data ?? []);
+        setShowClienteSug(true);
+      } catch { /* ignore */ }
+    }, 300);
+
+    return () => { if (clienteTimer.current) clearTimeout(clienteTimer.current); };
+  }, [editing, form.cliente_nombre, form.cliente_id]);
+
+  function selectClienteEdit(c: ClienteSuggestion) {
+    setForm(prev => ({ ...prev, cliente_id: c.id, cliente_nombre: c.nombre }));
+    setShowClienteSug(false);
+    setClienteSugerencias([]);
+  }
+
+  // Tribunal autocomplete effect
+  useEffect(() => {
+    if (!editing) return;
+    if (tribunalTimer.current) clearTimeout(tribunalTimer.current);
+    const q = form.tribunal_nombre ?? '';
+    if (q.length < 2) { setTribunalSugerencias([]); return; }
+
+    tribunalTimer.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q, limit: '10' });
+        if (form.instancia) params.set('instancia', form.instancia);
+        if (form.departamento) params.set('departamento', form.departamento);
+        const res = await fetch(`/api/admin/tribunales?${params}`);
+        const json = await res.json();
+        setTribunalSugerencias(json.data ?? []);
+        setShowTribunalSug(true);
+      } catch { /* ignore */ }
+    }, 300);
+
+    return () => { if (tribunalTimer.current) clearTimeout(tribunalTimer.current); };
+  }, [editing, form.tribunal_nombre, form.instancia, form.departamento]);
+
+  // Fiscalía autocomplete effect
+  useEffect(() => {
+    if (!editing) return;
+    if (fiscaliaTimer.current) clearTimeout(fiscaliaTimer.current);
+    const q = form.fiscalia ?? '';
+    if (q.length < 2) { setFiscaliaSugerencias([]); return; }
+
+    fiscaliaTimer.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q, limit: '10' });
+        if (form.departamento) params.set('departamento', form.departamento);
+        const res = await fetch(`/api/admin/fiscalias?${params}`);
+        const json = await res.json();
+        setFiscaliaSugerencias(json.data ?? []);
+        setShowFiscaliaSug(true);
+      } catch { /* ignore */ }
+    }, 300);
+
+    return () => { if (fiscaliaTimer.current) clearTimeout(fiscaliaTimer.current); };
+  }, [editing, form.fiscalia, form.departamento]);
+
+  function selectTribunalEdit(t: TribunalSuggestion) {
+    setForm(prev => ({ ...prev, tribunal_nombre: t.nombre, departamento: t.departamento || prev.departamento }));
+    setShowTribunalSug(false);
+  }
+
+  function selectFiscaliaEdit(f: FiscaliaSuggestion) {
+    setForm(prev => ({ ...prev, fiscalia: f.nombre, departamento: f.departamento || prev.departamento }));
+    setShowFiscaliaSug(false);
+  }
 
   return (
     <div className="space-y-5">
@@ -415,6 +697,52 @@ function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, savi
           {saveError}
         </div>
       )}
+
+      {/* Cliente */}
+      <Section title="Cliente">
+        {editing ? (
+          <div className="relative max-w-md">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Buscar cliente *</label>
+            <input
+              value={form.cliente_nombre ?? ''}
+              onChange={ev => setForm(prev => ({ ...prev, cliente_nombre: ev.target.value, cliente_id: '' }))}
+              onBlur={() => setTimeout(() => setShowClienteSug(false), 200)}
+              placeholder="Nombre del cliente..."
+              className={INPUT}
+            />
+            {showClienteSug && clienteSugerencias.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {clienteSugerencias.map(c => (
+                  <button key={c.id} type="button" onClick={() => selectClienteEdit(c)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between border-b border-slate-100 last:border-0">
+                    <span className="font-medium text-slate-900">{c.nombre}</span>
+                    <span className="text-xs text-slate-400">{c.codigo} · {c.nit}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {form.cliente_id ? (
+              <p className="text-xs text-green-600 mt-1">Cliente seleccionado</p>
+            ) : form.cliente_nombre && form.cliente_nombre.length >= 2 ? (
+              <p className="text-xs text-amber-600 mt-1">Selecciona un cliente de la lista</p>
+            ) : null}
+          </div>
+        ) : (
+          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <dt className="text-xs font-medium text-slate-500 uppercase tracking-wider">Cliente</dt>
+              <dd className="mt-1">
+                <Link href={`/admin/clientes/${exp.cliente.id}`}
+                  className="text-sm text-[#0891B2] hover:underline font-medium">
+                  {exp.cliente.nombre}
+                </Link>
+              </dd>
+            </div>
+            <Field label="Código" value={exp.cliente.codigo} />
+            <Field label="NIT" value={exp.cliente.nit} />
+          </dl>
+        )}
+      </Section>
 
       {/* Números */}
       <Section title="Números de expediente">
@@ -501,8 +829,30 @@ function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, savi
             {origen === 'judicial' && (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Juzgado</label>
-                  <input value={form.juzgado} onChange={set('juzgado')} className={INPUT} />
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Instancia</label>
+                  <select value={form.instancia} onChange={set('instancia')} className={SELECT}>
+                    <option value="">— Seleccionar —</option>
+                    {getInstanciasForTipoProceso(form.tipo_proceso as TipoProceso).map(i => (
+                      <option key={i} value={i}>{INSTANCIA_LABEL[i]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="relative">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nombre del tribunal</label>
+                  <input value={form.tribunal_nombre} onChange={set('tribunal_nombre')}
+                    onBlur={() => setTimeout(() => setShowTribunalSug(false), 200)}
+                    className={INPUT} placeholder="Ej: Juzgado Primero Civil, Sala Tercera de Apelaciones..." />
+                  {showTribunalSug && tribunalSugerencias.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {tribunalSugerencias.map(t => (
+                        <button key={t.id} type="button" onClick={() => selectTribunalEdit(t)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                          <span className="font-medium text-slate-900">{t.nombre}</span>
+                          <span className="block text-xs text-slate-400">{t.departamento}{t.municipio ? ` · ${t.municipio}` : ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Departamento</label>
@@ -515,9 +865,22 @@ function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, savi
             )}
             {origen === 'fiscal' && (
               <>
-                <div>
+                <div className="relative">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Fiscalía</label>
-                  <input value={form.fiscalia} onChange={set('fiscalia')} className={INPUT} />
+                  <input value={form.fiscalia} onChange={set('fiscalia')}
+                    onBlur={() => setTimeout(() => setShowFiscaliaSug(false), 200)}
+                    className={INPUT} placeholder="Ej: Fiscalía de Delitos Económicos" />
+                  {showFiscaliaSug && fiscaliaSugerencias.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {fiscaliaSugerencias.map(f => (
+                        <button key={f.id} type="button" onClick={() => selectFiscaliaEdit(f)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                          <span className="font-medium text-slate-900">{f.nombre}</span>
+                          <span className="block text-xs text-slate-400">{f.departamento}{f.municipio ? ` · ${f.municipio}` : ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Agente Fiscal</label>
@@ -547,10 +910,22 @@ function TabDatos({ exp, editing, form, set, onStartEdit, onCancel, onSave, savi
             )}
           </div>
         ) : (
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {origen === 'judicial' && (
               <>
-                <Field label="Juzgado" value={exp.juzgado} />
+                <div>
+                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wider">Instancia</dt>
+                  <dd className="mt-1">
+                    {exp.instancia ? (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${INSTANCIA_COLOR[exp.instancia]}`}>
+                        {INSTANCIA_LABEL[exp.instancia]}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-slate-900">—</span>
+                    )}
+                  </dd>
+                </div>
+                <Field label="Tribunal" value={exp.tribunal_nombre} />
                 <Field label="Departamento" value={exp.departamento} />
               </>
             )}

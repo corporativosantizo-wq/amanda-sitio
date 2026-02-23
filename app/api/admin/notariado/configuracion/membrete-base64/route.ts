@@ -58,6 +58,7 @@ export async function GET() {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Error al obtener membrete base64:', err);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

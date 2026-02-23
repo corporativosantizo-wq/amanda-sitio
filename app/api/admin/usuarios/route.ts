@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-secret': 'crear-usuario-2026',
+        'x-secret': process.env.EDGE_FN_SECRET!,
       },
       body: JSON.stringify({ email, nombre, password, rol, modulos_permitidos }),
     });

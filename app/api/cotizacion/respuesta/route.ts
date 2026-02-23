@@ -7,12 +7,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendMail } from '@/lib/services/outlook.service';
 
+// Rate limiting en memoria para este endpoint público
+const rateCounts = new Map<string, { count: number; resetAt: number }>();
+function checkRate(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateCounts.get(ip);
+  if (!entry || entry.resetAt < now) {
+    rateCounts.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 10) return false;
+  entry.count++;
+  return true;
+}
+
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { db: { schema: 'legal' } }
   );
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // GET — Obtiene datos de la cotización para mostrar en la página
@@ -60,6 +78,11 @@ export async function GET(req: NextRequest) {
 
 // POST — Procesa la acción (aceptar o dudas)
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  if (!checkRate(ip)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes. Intente de nuevo en un momento.' }, { status: 429 });
+  }
+
   try {
     const { token, accion, mensaje } = await req.json();
 
@@ -127,7 +150,7 @@ export async function POST(req: NextRequest) {
           subject: `Cotización ${cotizacion.numero} ACEPTADA por ${clienteNombre}`,
           htmlBody: `
             <h2>Cotización Aceptada</h2>
-            <p>El cliente <strong>${clienteNombre}</strong> ha aceptado la cotización <strong>${cotizacion.numero}</strong> por <strong>${fmtQ(cotizacion.total)}</strong>.</p>
+            <p>El cliente <strong>${escapeHtml(clienteNombre)}</strong> ha aceptado la cotización <strong>${escapeHtml(cotizacion.numero)}</strong> por <strong>${fmtQ(cotizacion.total)}</strong>.</p>
             <p>Fecha: ${new Date().toLocaleDateString('es-GT', { timeZone: 'America/Guatemala', dateStyle: 'full' })}</p>
           `,
         });
@@ -165,11 +188,11 @@ export async function POST(req: NextRequest) {
           subject: `Dudas sobre cotización ${cotizacion.numero} — ${clienteNombre}`,
           htmlBody: `
             <h2>Consulta sobre Cotización</h2>
-            <p>El cliente <strong>${clienteNombre}</strong> tiene dudas sobre la cotización <strong>${cotizacion.numero}</strong>.</p>
+            <p>El cliente <strong>${escapeHtml(clienteNombre)}</strong> tiene dudas sobre la cotización <strong>${escapeHtml(cotizacion.numero)}</strong>.</p>
             <blockquote style="border-left:3px solid #2563EB;padding:12px 16px;background:#f8fafc;margin:16px 0;">
-              ${mensaje.trim().replace(/\n/g, '<br/>')}
+              ${escapeHtml(mensaje.trim()).replace(/\n/g, '<br/>')}
             </blockquote>
-            <p>Responder a: <strong>${cliente?.email ?? 'sin email'}</strong></p>
+            <p>Responder a: <strong>${escapeHtml(cliente?.email ?? 'sin email')}</strong></p>
           `,
         });
       } catch (e) {

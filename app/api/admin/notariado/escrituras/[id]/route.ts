@@ -39,7 +39,7 @@ function manejarError(error: unknown) {
   if (error instanceof EscrituraError) {
     const status = error.message.includes('no encontrad') ? 404 : 400;
     return NextResponse.json(
-      { error: error.message, details: error.details },
+      { error: error.message },
       { status }
     );
   }

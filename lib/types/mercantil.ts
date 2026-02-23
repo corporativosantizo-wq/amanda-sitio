@@ -64,6 +64,10 @@ export interface TramiteMercantil {
   descripcion: string | null;
   notas: string | null;
   documento_url: string | null;
+  archivo_pdf_url: string | null;
+  archivo_pdf_nombre: string | null;
+  archivo_docx_url: string | null;
+  archivo_docx_nombre: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +93,10 @@ export interface TramiteMercantilInsert {
   descripcion?: string | null;
   notas?: string | null;
   documento_url?: string | null;
+  archivo_pdf_url?: string | null;
+  archivo_pdf_nombre?: string | null;
+  archivo_docx_url?: string | null;
+  archivo_docx_nombre?: string | null;
 }
 
 export type TramiteMercantilUpdate = Partial<TramiteMercantilInsert>;

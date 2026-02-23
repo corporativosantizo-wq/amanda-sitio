@@ -10,8 +10,9 @@ import { useRouter } from 'next/navigation';
 import { useMutate } from '@/lib/hooks/use-fetch';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
-  type RolClienteExpediente, type MonedaExpediente,
+  type RolClienteExpediente, type MonedaExpediente, type InstanciaJudicial,
   ORIGEN_LABEL, TIPO_PROCESO_LABEL, FASE_LABEL, ROL_CLIENTE_LABEL,
+  INSTANCIA_LABEL, getInstanciasForTipoProceso,
   getFasesForOrigen, TIPOS_PROCESO_FISCAL, TIPOS_PROCESO_ADMINISTRATIVO,
   TIPOS_PROCESO_JUDICIAL, DEPARTAMENTOS_GUATEMALA,
 } from '@/lib/types/expedientes';
@@ -22,6 +23,24 @@ interface ClienteSuggestion {
   nombre: string;
   nit: string | null;
   tipo: string;
+}
+
+interface TribunalSuggestion {
+  id: number;
+  nombre: string;
+  tipo: string;
+  departamento: string;
+  municipio: string;
+  telefono: string | null;
+}
+
+interface FiscaliaSuggestion {
+  id: number;
+  nombre: string;
+  tipo: string;
+  departamento: string;
+  municipio: string;
+  telefono_extension: string | null;
 }
 
 export default function NuevoExpedientePage() {
@@ -58,8 +77,19 @@ export default function NuevoExpedientePage() {
   const [resolucionAdministrativa, setResolucionAdministrativa] = useState('');
 
   // Sede judicial
-  const [juzgado, setJuzgado] = useState('');
+  const [instancia, setInstancia] = useState<InstanciaJudicial | ''>('');
+  const [tribunalNombre, setTribunalNombre] = useState('');
   const [departamento, setDepartamento] = useState('Guatemala');
+
+  // Autocomplete tribunales
+  const [tribunalSugerencias, setTribunalSugerencias] = useState<TribunalSuggestion[]>([]);
+  const [showTribunalSug, setShowTribunalSug] = useState(false);
+  const tribunalTimer = useRef<NodeJS.Timeout>(undefined);
+
+  // Autocomplete fiscalías
+  const [fiscaliaSugerencias, setFiscaliaSugerencias] = useState<FiscaliaSuggestion[]>([]);
+  const [showFiscaliaSug, setShowFiscaliaSug] = useState(false);
+  const fiscaliaTimer = useRef<NodeJS.Timeout>(undefined);
 
   // Partes
   const [actor, setActor] = useState('');
@@ -88,7 +118,21 @@ export default function NuevoExpedientePage() {
       setTipoProceso('civil');
       setRolCliente('demandado');
     }
+    setInstancia('');
   }, [origen]);
+
+  // Reset instancia when tipoProceso changes if no longer valid
+  useEffect(() => {
+    if (instancia && (origen === 'judicial' || origen === 'fiscal')) {
+      const valid = getInstanciasForTipoProceso(tipoProceso);
+      if (!valid.includes(instancia)) setInstancia('');
+    }
+    // Also update fases for laboral
+    if (origen === 'judicial') {
+      const fases = getFasesForOrigen(origen, tipoProceso);
+      if (!fases.includes(faseActual)) setFaseActual(fases[0]);
+    }
+  }, [tipoProceso]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Client autocomplete
   useEffect(() => {
@@ -112,6 +156,57 @@ export default function NuevoExpedientePage() {
     setClienteNombre(c.nombre);
     setShowSugerencias(false);
     setClienteSugerencias([]);
+  }
+
+  // Tribunal autocomplete
+  useEffect(() => {
+    if (tribunalTimer.current) clearTimeout(tribunalTimer.current);
+    if (tribunalNombre.length < 2) { setTribunalSugerencias([]); return; }
+
+    tribunalTimer.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: tribunalNombre, limit: '10' });
+        if (instancia) params.set('instancia', instancia);
+        if (departamento) params.set('departamento', departamento);
+        const res = await fetch(`/api/admin/tribunales?${params}`);
+        const json = await res.json();
+        setTribunalSugerencias(json.data ?? []);
+        setShowTribunalSug(true);
+      } catch { /* ignore */ }
+    }, 300);
+
+    return () => { if (tribunalTimer.current) clearTimeout(tribunalTimer.current); };
+  }, [tribunalNombre, instancia, departamento]);
+
+  // Fiscalía autocomplete
+  useEffect(() => {
+    if (fiscaliaTimer.current) clearTimeout(fiscaliaTimer.current);
+    if (fiscalia.length < 2) { setFiscaliaSugerencias([]); return; }
+
+    fiscaliaTimer.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: fiscalia, limit: '10' });
+        if (departamento) params.set('departamento', departamento);
+        const res = await fetch(`/api/admin/fiscalias?${params}`);
+        const json = await res.json();
+        setFiscaliaSugerencias(json.data ?? []);
+        setShowFiscaliaSug(true);
+      } catch { /* ignore */ }
+    }, 300);
+
+    return () => { if (fiscaliaTimer.current) clearTimeout(fiscaliaTimer.current); };
+  }, [fiscalia, departamento]);
+
+  function selectTribunal(t: TribunalSuggestion) {
+    setTribunalNombre(t.nombre);
+    if (t.departamento) setDepartamento(t.departamento);
+    setShowTribunalSug(false);
+  }
+
+  function selectFiscalia(f: FiscaliaSuggestion) {
+    setFiscalia(f.nombre);
+    if (f.departamento) setDepartamento(f.departamento);
+    setShowFiscaliaSug(false);
   }
 
   function getTiposProcesoForOrigen(): TipoProceso[] {
@@ -146,7 +241,8 @@ export default function NuevoExpedientePage() {
       dependencia: dependencia.trim() || null,
       monto_multa: montoMulta ? parseFloat(montoMulta) : null,
       resolucion_administrativa: resolucionAdministrativa.trim() || null,
-      juzgado: juzgado.trim() || null,
+      instancia: instancia || null,
+      tribunal_nombre: tribunalNombre.trim() || null,
       departamento: departamento || null,
       actor: actor.trim() || null,
       demandado: demandado.trim() || null,
@@ -225,21 +321,32 @@ export default function NuevoExpedientePage() {
         {/* Números de expediente */}
         <div className={sectionCls}>
           <h2 className="font-semibold text-slate-900">Números de identificación</h2>
-          <p className="text-xs text-slate-500">Al menos uno es obligatorio</p>
+          <p className="text-xs text-slate-500">
+            {origen === 'judicial' ? 'Número de expediente judicial obligatorio' :
+             origen === 'fiscal' ? 'Número MP obligatorio; judicial opcional si ya fue judicializado' :
+             'Número administrativo obligatorio; judicial opcional si derivó a coactivo'}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(origen === 'judicial' || origen === 'fiscal') && (
+            {origen === 'judicial' && (
               <div>
-                <label className={labelCls}>No. Expediente Judicial</label>
+                <label className={labelCls}>No. Expediente Judicial *</label>
                 <input type="text" value={numeroExpediente} onChange={e => setNumeroExpediente(e.target.value)}
                   placeholder="01001-2024-00123" className={inputCls} />
               </div>
             )}
             {origen === 'fiscal' && (
-              <div>
-                <label className={labelCls}>No. MP / Fiscalía *</label>
-                <input type="text" value={numeroMp} onChange={e => setNumeroMp(e.target.value)}
-                  placeholder="MP001-2024-12345" className={inputCls} />
-              </div>
+              <>
+                <div>
+                  <label className={labelCls}>No. Expediente MP *</label>
+                  <input type="text" value={numeroMp} onChange={e => setNumeroMp(e.target.value)}
+                    placeholder="MP001-2024-12345" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>No. Expediente Judicial (si ya fue judicializado)</label>
+                  <input type="text" value={numeroExpediente} onChange={e => setNumeroExpediente(e.target.value)}
+                    placeholder="01001-2024-00123" className={inputCls} />
+                </div>
+              </>
             )}
             {origen === 'administrativo' && (
               <>
@@ -249,18 +356,11 @@ export default function NuevoExpedientePage() {
                     placeholder="SAT-2024-00456" className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>No. Expediente Judicial</label>
+                  <label className={labelCls}>No. Expediente Judicial (si derivó a coactivo)</label>
                   <input type="text" value={numeroExpediente} onChange={e => setNumeroExpediente(e.target.value)}
-                    placeholder="Si ya fue judicializado" className={inputCls} />
+                    placeholder="01001-2024-00123" className={inputCls} />
                 </div>
               </>
-            )}
-            {origen === 'judicial' && (
-              <div>
-                <label className={labelCls}>No. Expediente Judicial *</label>
-                <input type="text" value={numeroExpediente} onChange={e => setNumeroExpediente(e.target.value)}
-                  placeholder="01001-2024-00123" className={inputCls} />
-              </div>
             )}
           </div>
         </div>
@@ -285,7 +385,7 @@ export default function NuevoExpedientePage() {
             <div>
               <label className={labelCls}>Fase actual *</label>
               <select value={faseActual} onChange={e => setFaseActual(e.target.value as FaseExpediente)} className={inputCls}>
-                {getFasesForOrigen(origen).map(f => (
+                {getFasesForOrigen(origen, tipoProceso).map(f => (
                   <option key={f} value={f}>{FASE_LABEL[f]}</option>
                 ))}
               </select>
@@ -298,10 +398,23 @@ export default function NuevoExpedientePage() {
           <div className={sectionCls}>
             <h2 className="font-semibold text-slate-900">Sede Fiscal</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="relative">
                 <label className={labelCls}>Fiscalía</label>
-                <input type="text" value={fiscalia} onChange={e => setFiscalia(e.target.value)}
+                <input type="text" value={fiscalia}
+                  onChange={e => setFiscalia(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowFiscaliaSug(false), 200)}
                   placeholder="Ej: Fiscalía de Delitos Económicos" className={inputCls} />
+                {showFiscaliaSug && fiscaliaSugerencias.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {fiscaliaSugerencias.map(f => (
+                      <button key={f.id} type="button" onClick={() => selectFiscalia(f)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                        <span className="font-medium text-slate-900">{f.nombre}</span>
+                        <span className="block text-xs text-slate-400">{f.departamento}{f.municipio ? ` · ${f.municipio}` : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Agente fiscal</label>
@@ -345,11 +458,33 @@ export default function NuevoExpedientePage() {
         {(origen === 'judicial' || origen === 'fiscal') && (
           <div className={sectionCls}>
             <h2 className="font-semibold text-slate-900">Sede Judicial</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className={labelCls}>Juzgado</label>
-                <input type="text" value={juzgado} onChange={e => setJuzgado(e.target.value)}
-                  placeholder="Nombre completo del juzgado" className={inputCls} />
+                <label className={labelCls}>Instancia</label>
+                <select value={instancia} onChange={e => setInstancia(e.target.value as InstanciaJudicial | '')} className={inputCls}>
+                  <option value="">Seleccionar instancia</option>
+                  {getInstanciasForTipoProceso(tipoProceso).map(i => (
+                    <option key={i} value={i}>{INSTANCIA_LABEL[i]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="relative">
+                <label className={labelCls}>Nombre del tribunal</label>
+                <input type="text" value={tribunalNombre}
+                  onChange={e => setTribunalNombre(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowTribunalSug(false), 200)}
+                  placeholder="Ej: Juzgado Primero Civil, Sala Tercera de Apelaciones..." className={inputCls} />
+                {showTribunalSug && tribunalSugerencias.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {tribunalSugerencias.map(t => (
+                      <button key={t.id} type="button" onClick={() => selectTribunal(t)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                        <span className="font-medium text-slate-900">{t.nombre}</span>
+                        <span className="block text-xs text-slate-400">{t.departamento}{t.municipio ? ` · ${t.municipio}` : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Departamento</label>

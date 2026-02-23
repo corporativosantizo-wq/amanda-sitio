@@ -64,6 +64,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Límite de 150 MB por archivo
+    const MAX_FILE_SIZE = 150 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'El archivo excede el límite de 150 MB.' },
+        { status: 400 }
+      );
+    }
+
     // Validate file type
     const validCategories = ['borrador_docx', 'testimonio', 'aviso_trimestral', 'aviso_general', 'escritura_pdf', 'escritura_docx'];
     if (!validCategories.includes(categoria)) {

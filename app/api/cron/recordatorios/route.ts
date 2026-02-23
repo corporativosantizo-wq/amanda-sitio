@@ -6,19 +6,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { enviarRecordatorios } from '@/lib/services/citas.service';
+import { requireCronAuth } from '@/lib/auth/cron-auth';
 
 export async function GET(req: NextRequest) {
-  // Verificar CRON_SECRET
-  const authHeader = req.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'CRON_SECRET no configurado' }, { status: 500 });
-  }
-
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  }
+  const authError = requireCronAuth(req);
+  if (authError) return authError;
 
   try {
     const result = await enviarRecordatorios();

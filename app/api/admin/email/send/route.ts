@@ -8,17 +8,11 @@ import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { marcarTareaEjecutada } from '@/lib/services/tareas.service';
 
-export async function POST(req: NextRequest) {
-  // Verificar secret — acepta SUPABASE_SERVICE_ROLE_KEY o CRON_SECRET dedicado
-  const cronSecret = req.headers.get('x-cron-secret')?.trim();
-  const isAuth = cronSecret === process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-              || cronSecret === process.env.CRON_SECRET?.trim()
-              || cronSecret === 'iurislex-cron-2026';
+import { requireCronAuth } from '@/lib/auth/cron-auth';
 
-  if (!cronSecret || !isAuth) {
-    console.error(`[Email/Send] Auth fallida — header presente: ${!!cronSecret}, longitud: ${cronSecret?.length ?? 0}`);
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  }
+export async function POST(req: NextRequest) {
+  const authError = requireCronAuth(req);
+  if (authError) return authError;
 
   try {
     const body = await req.json();
@@ -61,7 +55,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[Email/Send] Error:', err.message);
     return NextResponse.json(
-      { error: err.message ?? 'Error al enviar email' },
+      { error: 'Error al enviar email' },
       { status: 500 }
     );
   }

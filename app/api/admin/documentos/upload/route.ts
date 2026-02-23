@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[Upload] Error:', error);
     return NextResponse.json(
-      { error: `Error al registrar archivos: ${error.message ?? 'desconocido'}` },
+      { error: 'Error al registrar archivos' },
       { status: 500 }
     );
   }

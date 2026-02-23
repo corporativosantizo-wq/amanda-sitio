@@ -24,6 +24,10 @@ function esAudiencia(subject: string): boolean {
   return KEYWORDS_AUDIENCIA.some((kw) => lower.includes(kw));
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // Nombres de día en español
 const DIAS_SEMANA: Record<number, string> = {
   0: 'Domingo',
@@ -118,10 +122,10 @@ function generarEmailResumen(params: {
             ${formatHora(a.start)}${a.end ? ` – ${formatHora(a.end)}` : ''}
           </td>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#334155;">
-            ${a.subject}
+            ${escapeHtml(a.subject)}
           </td>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">
-            ${a.location || '—'}
+            ${escapeHtml(a.location || '—')}
           </td>
         </tr>`)
       .join('');
@@ -178,19 +182,11 @@ function generarEmailResumen(params: {
 </html>`;
 }
 
+import { requireCronAuth } from '@/lib/auth/cron-auth';
+
 export async function POST(req: NextRequest) {
-  // Verificar secret
-  const cronSecret = req.headers.get('x-cron-secret');
-  const expectedSecret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!expectedSecret) {
-    console.error('[Resumen Semanal] SUPABASE_SERVICE_ROLE_KEY no configurada');
-    return NextResponse.json({ error: 'Secret no configurado' }, { status: 500 });
-  }
-
-  if (cronSecret !== expectedSecret) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  }
+  const authError = requireCronAuth(req);
+  if (authError) return authError;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -249,7 +245,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[Resumen Semanal] Error:', err.message);
     return NextResponse.json(
-      { error: err.message ?? 'Error al generar resumen semanal' },
+      { error: 'Error al generar resumen semanal' },
       { status: 500 }
     );
   }

@@ -35,6 +35,16 @@ export type RolClienteExpediente =
   | 'actor' | 'demandado' | 'tercero' | 'amicus_curiae'
   | 'denunciante' | 'denunciado' | 'sancionado' | 'contribuyente';
 
+export type InstanciaJudicial =
+  | 'juzgado_primera_instancia'
+  | 'juzgado_paz'
+  | 'sala_apelaciones'
+  | 'tribunal_sentencia'
+  | 'camara_csj_civil'
+  | 'camara_csj_penal'
+  | 'csj_pleno'
+  | 'corte_constitucionalidad';
+
 export type MonedaExpediente = 'GTQ' | 'USD' | 'EUR';
 
 export type SedeActuacion = 'fiscal' | 'administrativa' | 'judicial';
@@ -82,7 +92,8 @@ export interface Expediente {
   monto_multa: number | null;
   resolucion_administrativa: string | null;
   // Sede judicial
-  juzgado: string | null;
+  instancia: InstanciaJudicial | null;
+  tribunal_nombre: string | null;
   departamento: string | null;
   // Partes
   actor: string | null;
@@ -116,7 +127,8 @@ export interface ExpedienteInsert {
   dependencia?: string | null;
   monto_multa?: number | null;
   resolucion_administrativa?: string | null;
-  juzgado?: string | null;
+  instancia?: InstanciaJudicial | null;
+  tribunal_nombre?: string | null;
   departamento?: string | null;
   actor?: string | null;
   demandado?: string | null;
@@ -359,6 +371,39 @@ export const ESTADO_PLAZO_COLOR: Record<EstadoPlazo, string> = {
   prorrogado: 'bg-blue-100 text-blue-700',
 };
 
+export const INSTANCIA_LABEL: Record<InstanciaJudicial, string> = {
+  juzgado_primera_instancia: 'Juzgado de Primera Instancia',
+  juzgado_paz: 'Juzgado de Paz',
+  sala_apelaciones: 'Sala de la Corte de Apelaciones',
+  tribunal_sentencia: 'Tribunal de Sentencia',
+  camara_csj_civil: 'Cámara Civil - CSJ',
+  camara_csj_penal: 'Cámara Penal - CSJ',
+  csj_pleno: 'CSJ (Pleno)',
+  corte_constitucionalidad: 'Corte de Constitucionalidad',
+};
+
+export const INSTANCIA_SHORT: Record<InstanciaJudicial, string> = {
+  juzgado_primera_instancia: '1a Instancia',
+  juzgado_paz: 'Juz. Paz',
+  sala_apelaciones: 'Sala Apelaciones',
+  tribunal_sentencia: 'Trib. Sentencia',
+  camara_csj_civil: 'Cámara Civil CSJ',
+  camara_csj_penal: 'Cámara Penal CSJ',
+  csj_pleno: 'CSJ Pleno',
+  corte_constitucionalidad: 'CC',
+};
+
+export const INSTANCIA_COLOR: Record<InstanciaJudicial, string> = {
+  juzgado_primera_instancia: 'bg-sky-100 text-sky-700',
+  juzgado_paz: 'bg-slate-100 text-slate-600',
+  sala_apelaciones: 'bg-indigo-100 text-indigo-700',
+  tribunal_sentencia: 'bg-teal-100 text-teal-700',
+  camara_csj_civil: 'bg-violet-100 text-violet-700',
+  camara_csj_penal: 'bg-rose-100 text-rose-700',
+  csj_pleno: 'bg-purple-100 text-purple-700',
+  corte_constitucionalidad: 'bg-amber-100 text-amber-700',
+};
+
 export const TIPO_VINCULO_LABEL: Record<TipoVinculo, string> = {
   amparo: 'Amparo',
   apelacion: 'Apelación',
@@ -392,12 +437,27 @@ export const FASES_JUDICIAL: FaseExpediente[] = [
 
 export const FASES_GENERAL: FaseExpediente[] = ['archivado', 'finalizado'];
 
-export function getFasesForOrigen(origen: OrigenExpediente): FaseExpediente[] {
+export function getFasesForOrigen(origen: OrigenExpediente, tipoProceso?: TipoProceso): FaseExpediente[] {
   switch (origen) {
     case 'fiscal': return [...FASES_FISCAL, ...FASES_GENERAL];
     case 'administrativo': return [...FASES_ADMINISTRATIVO, ...FASES_GENERAL];
-    case 'judicial': return [...FASES_JUDICIAL, ...FASES_GENERAL];
+    case 'judicial':
+      if (tipoProceso === 'laboral') {
+        return [...FASES_JUDICIAL.filter(f => f !== 'casacion'), ...FASES_GENERAL];
+      }
+      return [...FASES_JUDICIAL, ...FASES_GENERAL];
   }
+}
+
+export function getInstanciasForTipoProceso(tipoProceso: TipoProceso): InstanciaJudicial[] {
+  const ALL: InstanciaJudicial[] = [
+    'juzgado_primera_instancia', 'juzgado_paz', 'sala_apelaciones',
+    'tribunal_sentencia', 'camara_csj_civil', 'camara_csj_penal',
+    'csj_pleno', 'corte_constitucionalidad',
+  ];
+  if (tipoProceso === 'amparo') return ALL;
+  if ((tipoProceso as string) === 'casacion') return ['camara_csj_civil', 'camara_csj_penal'];
+  return ['juzgado_primera_instancia', 'juzgado_paz', 'sala_apelaciones', 'tribunal_sentencia', 'csj_pleno', 'corte_constitucionalidad'];
 }
 
 // --- Tipos de proceso por origen ---
