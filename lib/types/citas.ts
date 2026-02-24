@@ -87,7 +87,7 @@ export const HORARIOS: Record<TipoCita, HorarioConfig> = {
     hora_fin: '12:15',
     duracion_max: 60,
     duracion_min: 30,
-    costo: 500,
+    costo: 75,
     categoria_outlook: 'Azul',
     color_admin: '#3B82F6',
   },

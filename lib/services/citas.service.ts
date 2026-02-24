@@ -625,6 +625,6 @@ function generarBodyEvento(cita: any): string {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
-<p><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT')}</p>
+<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
 }

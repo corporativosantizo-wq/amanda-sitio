@@ -100,11 +100,12 @@ export default async function ProductoPage({ params }: PageProps) {
               {/* Precio */}
               <div className="flex items-center gap-4 mb-8">
                 <span className="font-display text-4xl font-bold text-navy">
-                  ${product.price}
+                  {product.type === 'service' && <span className="text-lg font-medium text-slate mr-1">Desde</span>}
+                  ${Number(product.price).toLocaleString('en-US')}
                 </span>
                 {product.compare_price && (
                   <span className="text-slate line-through text-xl">
-                    ${product.compare_price}
+                    ${Number(product.compare_price).toLocaleString('en-US')}
                   </span>
                 )}
               </div>
@@ -207,7 +208,8 @@ export default async function ProductoPage({ params }: PageProps) {
                       {prod.name}
                     </h3>
                     <span className="font-display text-xl font-bold text-navy">
-                      ${prod.price}
+                      {prod.type === 'service' && <span className="text-xs font-medium text-slate mr-1">Desde</span>}
+                      ${Number(prod.price).toLocaleString('en-US')}
                     </span>
                   </div>
                 </Link>

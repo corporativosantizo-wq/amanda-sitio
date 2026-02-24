@@ -190,11 +190,12 @@ export default function TiendaClient({ productos, categorias }: Props) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold text-navy">
-                        ${producto.price}
+                        {producto.type === 'service' && <span className="text-sm font-medium text-slate mr-1">Desde</span>}
+                        ${Number(producto.price).toLocaleString('en-US')}
                       </span>
                       {producto.compare_price && (
                         <span className="text-sm text-slate line-through">
-                          ${producto.compare_price}
+                          ${Number(producto.compare_price).toLocaleString('en-US')}
                         </span>
                       )}
                     </div>

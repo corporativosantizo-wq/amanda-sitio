@@ -1,6 +1,6 @@
 // ============================================================================
 // POST /api/pagos/checkout
-// Crea una Stripe Checkout Session para pago de cita (Q500 consulta nueva)
+// Crea una Stripe Checkout Session para pago de cita ($75 USD consulta nueva)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -35,11 +35,11 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      currency: 'gtq',
+      currency: 'usd',
       line_items: [
         {
           price_data: {
-            currency: 'gtq',
+            currency: 'usd',
             product_data: {
               name: `Cita — ${cita.titulo}`,
               description: `${cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento'} | ${cita.fecha}`,

@@ -140,7 +140,7 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
     pagoSection = `
     <table width="100%" style="margin:16px 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;">
       <tr><td>
-        <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#92400e;">Costo: Q${Number(cita.costo).toLocaleString('es-GT', { minimumFractionDigits: 2 })}</p>
+        <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#92400e;">Costo: $${Number(cita.costo).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD</p>
         <p style="margin:0 0 12px;font-size:13px;color:#78350f;">Pago previo a la consulta. Puede realizar la transferencia a cualquiera de las siguientes cuentas:</p>
         ${CUENTAS_BANCARIAS.map((c) => `
           <p style="margin:4px 0;font-size:13px;color:#334155;">
