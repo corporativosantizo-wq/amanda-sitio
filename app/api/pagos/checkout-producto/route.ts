@@ -57,11 +57,11 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      currency: 'gtq',
+      currency: 'usd',
       line_items: [
         {
           price_data: {
-            currency: 'gtq',
+            currency: 'usd',
             product_data: {
               name: product.name,
               ...(product.description && { description: product.description }),
