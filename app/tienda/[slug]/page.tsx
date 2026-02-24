@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import ComprarButton from '../ComprarButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,15 +65,15 @@ export default async function ProductoPage({ params }: PageProps) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
             {/* Imagen */}
             <div className="aspect-square bg-gradient-to-br from-azure/10 to-cyan/10 rounded-2xl flex items-center justify-center">
-              {product.image_url ? (
+              {product.featured_image ? (
                 <img 
-                  src={product.image_url} 
+                  src={product.featured_image} 
                   alt={product.name}
                   className="w-full h-full object-cover rounded-2xl"
                 />
               ) : (
                 <span className="text-8xl">
-                  {product.product_type === 'digital' ? '📄' : '💼'}
+                  {product.type === 'digital' ? '📄' : '💼'}
                 </span>
               )}
             </div>
@@ -111,10 +112,10 @@ export default async function ProductoPage({ params }: PageProps) {
               {/* Tipo de producto */}
               <div className="flex items-center gap-2 mb-8 text-slate">
                 <span className="text-2xl">
-                  {product.product_type === 'digital' ? '📥' : '📦'}
+                  {product.type === 'digital' ? '📥' : '📦'}
                 </span>
                 <span>
-                  {product.product_type === 'digital' 
+                  {product.type === 'digital' 
                     ? 'Producto digital - Descarga inmediata' 
                     : 'Servicio profesional'}
                 </span>
@@ -122,10 +123,8 @@ export default async function ProductoPage({ params }: PageProps) {
 
               {/* Botón de compra */}
               <div className="space-y-4">
-                <button className="w-full py-4 bg-cyan text-navy-dark font-bold text-lg rounded-lg hover:bg-navy hover:text-white transition-all duration-300">
-                  Comprar ahora
-                </button>
-                <Link 
+                <ComprarButton productId={product.id} />
+                <Link
                   href="/contacto"
                   className="block w-full py-4 border-2 border-navy text-navy font-bold text-lg rounded-lg hover:bg-navy hover:text-white transition-all duration-300 text-center"
                 >
@@ -191,15 +190,15 @@ export default async function ProductoPage({ params }: PageProps) {
                   className="group bg-white rounded-2xl border border-slate-light overflow-hidden hover:border-cyan hover:shadow-xl transition-all duration-300"
                 >
                   <div className="aspect-video bg-gradient-to-br from-azure/10 to-cyan/10 flex items-center justify-center">
-                    {prod.image_url ? (
+                    {prod.featured_image ? (
                       <img 
-                        src={prod.image_url} 
+                        src={prod.featured_image} 
                         alt={prod.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     ) : (
                       <span className="text-5xl">
-                        {prod.product_type === 'digital' ? '📄' : '💼'}
+                        {prod.type === 'digital' ? '📄' : '💼'}
                       </span>
                     )}
                   </div>
