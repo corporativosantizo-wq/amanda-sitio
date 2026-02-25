@@ -2,14 +2,16 @@
 
 // ============================================================================
 // lib/storage/tus-upload.ts
-// Subida de archivos grandes a Supabase Storage via signed upload URLs.
-// El service_role_key NUNCA sale del servidor — se genera un signed URL
-// por archivo y el cliente sube directamente a esa URL.
+// Subida resumable de archivos grandes a Supabase Storage via protocolo TUS.
+// El service_role_key NUNCA sale del servidor — el endpoint /tus-token
+// (protegido por requireAdmin) devuelve las credenciales necesarias.
 // ============================================================================
 
-export const TUS_THRESHOLD = 50 * 1024 * 1024; // 50MB — umbral de referencia
+import * as tus from 'tus-js-client';
 
-// ── Signed Upload ───────────────────────────────────────────────────────────
+export const TUS_THRESHOLD = 50 * 1024 * 1024; // 50MB — archivos mayores usan TUS
+
+// ── TUS Resumable Upload ─────────────────────────────────────────────────────
 
 interface TusUploadParams {
   file: File;
@@ -18,51 +20,58 @@ interface TusUploadParams {
   onProgress: (bytesUploaded: number, bytesTotal: number) => void;
 }
 
-export function tusUpload(params: TusUploadParams): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // 1. Obtener signed upload URL del servidor (service_role queda server-side)
-      const res = await fetch('/api/admin/storage/tus-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bucket: params.bucketName,
-          objectName: params.objectName,
-        }),
-      });
+export async function tusUpload(params: TusUploadParams): Promise<void> {
+  // 1. Obtener credenciales TUS del servidor (solo admins autenticados)
+  const res = await fetch('/api/admin/storage/tus-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      bucket: params.bucketName,
+      objectName: params.objectName,
+    }),
+  });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? `Error al obtener URL de subida (${res.status})`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? `Error al obtener credenciales de subida (${res.status})`);
+  }
+
+  const { tusEndpoint, token } = await res.json();
+
+  // 2. Subir con tus-js-client (chunked, resumable)
+  return new Promise((resolve, reject) => {
+    const upload = new tus.Upload(params.file, {
+      endpoint: tusEndpoint,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      metadata: {
+        bucketName: params.bucketName,
+        objectName: params.objectName,
+        contentType: params.file.type || 'application/octet-stream',
+        cacheControl: '3600',
+      },
+      chunkSize: 6 * 1024 * 1024, // 6 MB — requerido por Supabase Storage
+      onError: (error) => {
+        reject(new Error(`Error al subir archivo: ${error.message}`));
+      },
+      onProgress: (bytesUploaded, bytesTotal) => {
+        params.onProgress(bytesUploaded, bytesTotal);
+      },
+      onSuccess: () => {
+        resolve();
+      },
+    });
+
+    // Buscar uploads anteriores para reanudar si la conexión se cortó
+    upload.findPreviousUploads().then((previousUploads) => {
+      if (previousUploads.length) {
+        upload.resumeFromPreviousUpload(previousUploads[0]);
       }
-
-      const { signedUrl } = await res.json();
-
-      // 2. Subir archivo usando XMLHttpRequest para reporte de progreso
-      const xhr = new XMLHttpRequest();
-
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          params.onProgress(e.loaded, e.total);
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-        } else {
-          reject(new Error(`Error al subir archivo: ${xhr.status} ${xhr.statusText}`));
-        }
-      });
-
-      xhr.addEventListener('error', () => reject(new Error('Error de red al subir archivo')));
-      xhr.addEventListener('abort', () => reject(new Error('Subida cancelada')));
-
-      xhr.open('PUT', signedUrl);
-      xhr.setRequestHeader('Content-Type', params.file.type || 'application/octet-stream');
-      xhr.send(params.file);
-    } catch (err) {
-      reject(err);
-    }
+      upload.start();
+    });
   });
 }

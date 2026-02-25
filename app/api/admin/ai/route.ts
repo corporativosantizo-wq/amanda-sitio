@@ -46,6 +46,41 @@ import {
 } from '@/lib/services/cotizaciones.service';
 import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
 
+// ── Retry wrapper for Anthropic API (handles 529 Overloaded) ─────────────
+class AnthropicOverloadedError extends Error {
+  constructor() {
+    super('El asistente está ocupado en este momento, intenta de nuevo en unos segundos.');
+    this.name = 'AnthropicOverloadedError';
+  }
+}
+
+async function callAnthropicWithRetry(
+  anthropic: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  maxRetries = 3,
+): Promise<Anthropic.Message> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err: any) {
+      const status = err?.status ?? err?.error?.status;
+      if (status === 529 && attempt < maxRetries) {
+        const delay = attempt * 2000; // 2s, 4s
+        console.warn(`[AI] Anthropic 529 overloaded – retry ${attempt}/${maxRetries} in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      if (status === 529) {
+        console.error(`[AI] Anthropic 529 overloaded – all ${maxRetries} retries exhausted`);
+        throw new AnthropicOverloadedError();
+      }
+      throw err;
+    }
+  }
+  // Unreachable, but satisfies TS
+  throw new AnthropicOverloadedError();
+}
+
 const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo — Despacho Jurídico, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
 
 ## TU PERSONALIDAD
@@ -2733,7 +2768,7 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    let response = await anthropic.messages.create({
+    let response = await callAnthropicWithRetry(anthropic, {
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: dynamicPrompt,
@@ -2863,7 +2898,7 @@ export async function POST(req: Request) {
         { role: 'user' as const, content: toolResults },
       ];
 
-      response = await anthropic.messages.create({
+      response = await callAnthropicWithRetry(anthropic, {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: dynamicPrompt,
@@ -2879,6 +2914,12 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('AI Error:', error);
+    if (error instanceof AnthropicOverloadedError) {
+      return Response.json({
+        role: 'assistant',
+        content: 'El asistente está ocupado en este momento, intenta de nuevo en unos segundos.',
+      });
+    }
     return Response.json({ error: error.message ?? 'Error interno del asistente' }, { status: 500 });
   }
 }

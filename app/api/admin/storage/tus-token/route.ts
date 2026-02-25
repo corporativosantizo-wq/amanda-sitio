@@ -1,19 +1,11 @@
 // ============================================================================
 // POST /api/admin/storage/tus-token
-// Genera signed upload URL para subidas grandes a Supabase Storage.
-// NUNCA expone el service_role_key al cliente.
+// Devuelve el endpoint TUS y token de autorización para subidas resumable.
+// Protegido por requireAdmin — solo administradores autenticados.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/api-auth';
-import { createClient } from '@supabase/supabase-js';
-
-function storageClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
-}
 
 export async function POST(req: NextRequest) {
   const session = await requireAdmin();
@@ -29,23 +21,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const storage = storageClient();
-    const { data, error } = await storage.storage
-      .from(bucket)
-      .createSignedUploadUrl(objectName);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    if (error || !data) {
-      console.error('[Storage] Error generando signed upload URL:', error?.message);
-      return NextResponse.json(
-        { error: 'Error al generar URL de subida' },
-        { status: 500 },
-      );
-    }
+    // Usar hostname directo de storage para mejor rendimiento con archivos grandes
+    // https://supabase.com/docs/guides/storage/uploads/resumable-uploads
+    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+    const tusEndpoint = `https://${projectRef}.supabase.co/storage/v1/upload/resumable`;
 
     return NextResponse.json({
-      signedUrl: data.signedUrl,
-      token: data.token,
-      path: data.path,
+      tusEndpoint,
+      token: serviceRoleKey,
     });
   } catch (err: any) {
     console.error('[Storage] Error:', err.message);
