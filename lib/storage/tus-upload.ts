@@ -3,8 +3,8 @@
 // ============================================================================
 // lib/storage/tus-upload.ts
 // Subida resumable de archivos grandes a Supabase Storage via protocolo TUS.
-// Usa signed upload tokens (x-signature) — el service_role_key nunca sale
-// del servidor.
+// El token de auth se obtiene del servidor via /api/admin/storage/tus-token
+// (protegido por requireAdmin). No está hardcoded en el cliente.
 // ============================================================================
 
 import * as tus from 'tus-js-client';
@@ -44,6 +44,7 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
       endpoint: tusEndpoint,
       retryDelays: [0, 3000, 5000, 10000, 20000],
       headers: {
+        authorization: `Bearer ${token}`,
         'x-upsert': 'true',
       },
       uploadDataDuringCreation: true,
@@ -63,11 +64,6 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
       },
       onSuccess: () => {
         resolve();
-      },
-      onBeforeRequest: (req) => {
-        // Inyectar signed upload token via x-signature en cada request TUS
-        const xhr = req.getUnderlyingObject();
-        xhr.setRequestHeader('x-signature', token);
       },
     });
 
