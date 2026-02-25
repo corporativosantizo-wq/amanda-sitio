@@ -38,6 +38,10 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
 
   const { tusEndpoint, token } = await res.json();
 
+  console.log('[TUS] endpoint:', tusEndpoint);
+  console.log('[TUS] bucket:', params.bucketName, 'object:', params.objectName);
+  console.log('[TUS] file size:', params.file.size, 'type:', params.file.type);
+
   // 2. Subir con tus-js-client (chunked, resumable)
   return new Promise((resolve, reject) => {
     const upload = new tus.Upload(params.file, {
@@ -47,7 +51,7 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
         authorization: `Bearer ${token}`,
         'x-upsert': 'true',
       },
-      uploadDataDuringCreation: true,
+      uploadDataDuringCreation: false,
       removeFingerprintOnSuccess: true,
       metadata: {
         bucketName: params.bucketName,
