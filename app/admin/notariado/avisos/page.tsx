@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { generarAvisoTrimestral } from '@/lib/generators/aviso-trimestral';
 import { generarAvisoGeneral, type TipoAviso } from '@/lib/generators/aviso-general';
 import { saveAs } from 'file-saver';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Shared constants ────────────────────────────────────────────────────
 
@@ -287,7 +288,7 @@ function TabGenerales() {
       const res = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${docId}`);
       if (!res.ok) { alert('Error al descargar'); return; }
       const { url } = await res.json();
-      window.open(url, '_blank');
+      safeWindowOpen(url);
     } catch {
       alert('Error al descargar');
     }

@@ -9,6 +9,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import { PageHeader, Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 const TABS = [
   { key: '', label: 'Todas' },
@@ -114,7 +115,7 @@ export default function EscriturasListPage() {
       const dlRes = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${docs[0].id}`);
       if (!dlRes.ok) return;
       const { url } = await dlRes.json();
-      window.open(url, '_blank');
+      safeWindowOpen(url);
     } catch { /* ignore */ }
     setMenuOpen(null);
   };

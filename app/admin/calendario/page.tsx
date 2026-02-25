@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { safeRedirect } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ function CalendarioPage() {
   const connectOutlook = async () => {
     const res = await fetch('/api/admin/calendario/auth');
     const json = await res.json();
-    if (json.url) window.location.href = json.url;
+    if (json.url) safeRedirect(json.url);
   };
 
   // Actions

@@ -55,7 +55,7 @@ export async function obtenerDisponibilidad(
   const date = new Date(fecha + 'T12:00:00');
   const dayOfWeek = date.getDay(); // 0=Dom, 1=Lun, ...
   if (!config.dias.includes(dayOfWeek)) {
-    console.log(`[Disponibilidad] fecha=${fecha}, tipo=${tipo}: día ${dayOfWeek} no válido (permitidos: ${config.dias})`);
+    console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ': día', dayOfWeek, 'no válido (permitidos:', config.dias + ')');
     return []; // No hay slots disponibles este día
   }
 
@@ -64,13 +64,13 @@ export async function obtenerDisponibilidad(
   nowGT.setHours(0, 0, 0, 0);
   const fechaDate = new Date(fecha + 'T00:00:00');
   if (fechaDate < nowGT) {
-    console.log(`[Disponibilidad] fecha=${fecha} es pasada (hoy GT: ${nowGT.toISOString()})`);
+    console.log('[Disponibilidad] fecha=', fecha, 'es pasada (hoy GT:', nowGT.toISOString() + ')');
     return [];
   }
 
   // Generar slots base
   const slots = generarSlots(config.hora_inicio, config.hora_fin, config.duracion_min);
-  console.log(`[Disponibilidad] fecha=${fecha}, tipo=${tipo}: ${slots.length} slots base generados (${config.hora_inicio}-${config.hora_fin}, cada ${config.duracion_min}min)`);
+  console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo + ':', slots.length, 'slots base generados (' + config.hora_inicio + '-' + config.hora_fin + ', cada', config.duracion_min + 'min)');
 
   // Obtener citas existentes del día (no canceladas)
   const { data: citasExistentes } = await db()
@@ -85,7 +85,7 @@ export async function obtenerDisponibilidad(
     .select('hora_inicio, hora_fin')
     .eq('fecha', fecha);
 
-  console.log(`[Disponibilidad] fecha=${fecha}: citas existentes=${JSON.stringify(citasExistentes ?? [])}, bloqueos=${JSON.stringify(bloqueos ?? [])}`);
+  console.log('[Disponibilidad] fecha=', fecha, ': citas existentes=', JSON.stringify(citasExistentes ?? []), ', bloqueos=', JSON.stringify(bloqueos ?? []));
 
   // Filtrar slots ocupados por citas
   let disponibles = slots.filter((slot: SlotDisponible) => {
@@ -94,7 +94,7 @@ export async function obtenerDisponibilidad(
     );
     return !ocupado;
   });
-  console.log(`[Disponibilidad] Después de filtrar citas: ${disponibles.length} slots`);
+  console.log('[Disponibilidad] Después de filtrar citas:', disponibles.length, 'slots');
 
   // Filtrar slots bloqueados
   disponibles = disponibles.filter((slot: SlotDisponible) => {
@@ -103,7 +103,7 @@ export async function obtenerDisponibilidad(
     );
     return !bloqueado;
   });
-  console.log(`[Disponibilidad] Después de filtrar bloqueos: ${disponibles.length} slots`);
+  console.log('[Disponibilidad] Después de filtrar bloqueos:', disponibles.length, 'slots');
 
   // Si Outlook conectado, filtrar por busy slots
   try {
@@ -112,7 +112,7 @@ export async function obtenerDisponibilidad(
       const startISO = `${fecha}T${config.hora_inicio}:00`;
       const endISO = `${fecha}T${config.hora_fin}:00`;
       const busySlots = await getFreeBusy(startISO, endISO);
-      console.log(`[Disponibilidad] Outlook busy slots: ${JSON.stringify(busySlots)}`);
+      console.log('[Disponibilidad] Outlook busy slots:', JSON.stringify(busySlots));
 
       disponibles = disponibles.filter((slot: SlotDisponible) => {
         const busy = busySlots.some((b: any) => {
@@ -122,7 +122,7 @@ export async function obtenerDisponibilidad(
         });
         return !busy;
       });
-      console.log(`[Disponibilidad] Después de filtrar Outlook: ${disponibles.length} slots`);
+      console.log('[Disponibilidad] Después de filtrar Outlook:', disponibles.length, 'slots');
     } else {
       console.log(`[Disponibilidad] Outlook no conectado, sin filtrar`);
     }
@@ -130,7 +130,7 @@ export async function obtenerDisponibilidad(
     console.warn('[Citas] No se pudo consultar Outlook free/busy:', outlookErr);
   }
 
-  console.log(`[Disponibilidad] RESULTADO FINAL: ${disponibles.length} slots disponibles:`, disponibles.map((s: SlotDisponible) => s.hora_inicio));
+  console.log('[Disponibilidad] RESULTADO FINAL:', disponibles.length, 'slots disponibles:', disponibles.map((s: SlotDisponible) => s.hora_inicio));
   return disponibles;
 }
 
@@ -237,16 +237,16 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
     const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
     slotValido = hasStart && hasHalf;
-    console.log(`[crearCita] consulta_nueva validation: hora=${input.hora_inicio}, halfHour=${halfHour}, hasStart=${hasStart}, hasHalf=${hasHalf}, slotValido=${slotValido}`);
+    console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
   } else {
     slotValido = disponibles.some(
       (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
     );
-    console.log(`[crearCita] seguimiento validation: hora_inicio=${input.hora_inicio}, hora_fin=${input.hora_fin}, slotValido=${slotValido}`);
+    console.log('[crearCita] seguimiento validation: hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, ', slotValido=', slotValido);
   }
 
   if (!slotValido) {
-    console.error(`[crearCita] Slot NO disponible. fecha=${input.fecha}, tipo=${input.tipo}, hora_inicio=${input.hora_inicio}, hora_fin=${input.hora_fin}. Slots disponibles:`, JSON.stringify(disponibles));
+    console.error('[crearCita] Slot NO disponible. fecha=', input.fecha, ', tipo=', input.tipo, ', hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, '. Slots disponibles:', JSON.stringify(disponibles));
     throw new CitaError('El horario seleccionado ya no está disponible.');
   }
 
@@ -299,12 +299,12 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   if (cita.cliente) {
     clienteEmail = cita.cliente.email;
   }
-  console.log(`[crearCita] clienteEmail: ${clienteEmail ? clienteEmail.replace(/(.{2}).+(@.+)/, '$1***$2') : 'NULL'}`);
+  console.log('[crearCita] clienteEmail:', clienteEmail ? clienteEmail.replace(/(.{2}).+(@.+)/, '$1***$2') : 'NULL');
 
   console.log(`[crearCita] ══════ INICIO Outlook Calendar ══════`);
   try {
     const connected = await isOutlookConnected();
-    console.log(`[crearCita] isOutlookConnected() = ${connected}`);
+    console.log('[crearCita] isOutlookConnected() =', connected);
 
     if (!connected) {
       console.log(`[crearCita] ⚠ Outlook NO conectado — no se creará evento. Verifica que exista outlook_access_token_encrypted en legal.configuracion`);
@@ -318,11 +318,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       };
-      console.log(`[crearCita] createCalendarEvent: subject=${calendarPayload.subject}, start=${calendarPayload.startDateTime}, attendees=${calendarPayload.attendees.length}`);
+      console.log('[crearCita] createCalendarEvent: subject=', calendarPayload.subject, ', start=', calendarPayload.startDateTime, ', attendees=', calendarPayload.attendees.length);
 
       const { eventId, teamsLink } = await createCalendarEvent(calendarPayload);
-      console.log(`[crearCita] ✓ Evento Outlook creado: eventId=${eventId}`);
-      console.log(`[crearCita] ✓ Teams link: ${teamsLink ?? 'NULL'}`);
+      console.log('[crearCita] Evento Outlook creado: eventId=', eventId);
+      console.log('[crearCita] Teams link:', teamsLink ?? 'NULL');
 
       const { error: updateErr } = await db()
         .from('citas')
@@ -334,9 +334,9 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         .eq('id', cita.id);
 
       if (updateErr) {
-        console.error(`[crearCita] ERROR al guardar outlook_event_id/teams_link en BD: ${JSON.stringify(updateErr)}`);
+        console.error('[crearCita] ERROR al guardar outlook_event_id/teams_link en BD:', JSON.stringify(updateErr));
       } else {
-        console.log(`[crearCita] ✓ outlook_event_id y teams_link guardados en BD`);
+        console.log('[crearCita] outlook_event_id y teams_link guardados en BD');
       }
 
       cita.outlook_event_id = eventId;
@@ -344,21 +344,21 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     }
   } catch (outlookErr: any) {
     console.error(`[crearCita] ══════ ERROR Outlook Calendar ══════`);
-    console.error(`[crearCita] message: ${outlookErr.message ?? outlookErr}`);
-    console.error(`[crearCita] name: ${outlookErr.name ?? 'N/A'}`);
-    console.error(`[crearCita] statusCode: ${outlookErr.statusCode ?? 'N/A'}`);
-    console.error(`[crearCita] code: ${outlookErr.code ?? 'N/A'}`);
-    console.error(`[crearCita] details: ${JSON.stringify(outlookErr.details ?? outlookErr.body ?? {}).substring(0, 1000)}`);
-    console.error(`[crearCita] stack: ${(outlookErr.stack ?? '').substring(0, 500)}`);
+    console.error('[crearCita] message:', outlookErr.message ?? outlookErr);
+    console.error('[crearCita] name:', outlookErr.name ?? 'N/A');
+    console.error('[crearCita] statusCode:', outlookErr.statusCode ?? 'N/A');
+    console.error('[crearCita] code:', outlookErr.code ?? 'N/A');
+    console.error('[crearCita] details:', JSON.stringify(outlookErr.details ?? outlookErr.body ?? {}).substring(0, 1000));
+    console.error('[crearCita] stack:', (outlookErr.stack ?? '').substring(0, 500));
   }
-  console.log(`[crearCita] ══════ FIN Outlook Calendar (event_id=${cita.outlook_event_id ?? 'NULL'}, teams=${cita.teams_link ? 'SÍ' : 'NULL'}) ══════`);
+  console.log('[crearCita] FIN Outlook Calendar (event_id=', cita.outlook_event_id ?? 'NULL', ', teams=', cita.teams_link ? 'SÍ' : 'NULL', ')');
 
   // Enviar email de confirmación (independiente de Outlook calendar)
   if (clienteEmail) {
     console.log(`[crearCita] ── Enviando email de confirmación ──`);
     try {
       const email = emailConfirmacionCita(cita);
-      console.log(`[crearCita] Template generado: from=${email.from}, subject=${email.subject}, html=${email.html.length} chars`);
+      console.log('[crearCita] Template generado: from=', email.from, ', subject=', email.subject, ', html=', email.html.length, 'chars');
       await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
       console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);
       await db()
@@ -367,9 +367,9 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         .eq('id', cita.id);
     } catch (emailErr: any) {
       console.error(`[crearCita] ── ERROR al enviar email de confirmación ──`);
-      console.error(`[crearCita] Error: ${emailErr.message ?? emailErr}`);
-      console.error(`[crearCita] statusCode: ${emailErr.statusCode ?? 'N/A'}`);
-      console.error(`[crearCita] code: ${emailErr.code ?? 'N/A'}`);
+      console.error('[crearCita] Error:', emailErr.message ?? emailErr);
+      console.error('[crearCita] statusCode:', emailErr.statusCode ?? 'N/A');
+      console.error('[crearCita] code:', emailErr.code ?? 'N/A');
     }
   } else {
     console.log(`[crearCita] No se envía email — clienteEmail es null`);
@@ -562,7 +562,7 @@ export async function enviarRecordatorios(): Promise<{
           .eq('id', cita.id);
         enviados_24h++;
       } catch {
-        console.warn(`[Citas] Error enviando recordatorio 24h para cita ${cita.id}`);
+        console.warn('[Citas] Error enviando recordatorio 24h para cita', cita.id);
       }
     }
   }
@@ -592,7 +592,7 @@ export async function enviarRecordatorios(): Promise<{
             .eq('id', cita.id);
           enviados_1h++;
         } catch {
-          console.warn(`[Citas] Error enviando recordatorio 1h para cita ${cita.id}`);
+          console.warn('[Citas] Error enviando recordatorio 1h para cita', cita.id);
         }
       }
     }
@@ -614,7 +614,7 @@ export async function enviarRecordatorios(): Promise<{
     completadas = ids.length;
   }
 
-  console.log(`[Citas] Recordatorios: 24h=${enviados_24h}, 1h=${enviados_1h}, completadas=${completadas}`);
+  console.log('[Citas] Recordatorios: 24h=', enviados_24h, ', 1h=', enviados_1h, ', completadas=', completadas);
   return { enviados_24h, enviados_1h, completadas };
 }
 

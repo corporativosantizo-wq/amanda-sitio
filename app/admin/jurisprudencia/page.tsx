@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
 import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Toast system ─────────────────────────────────────────────────────────────
 
@@ -199,7 +200,7 @@ export default function JurisprudenciaPage() {
     const res = await fetch(`/api/admin/jurisprudencia/${id}`);
     const data = await res.json();
     if (data.signed_url) {
-      window.open(data.signed_url, '_blank');
+      safeWindowOpen(data.signed_url);
     }
   };
 

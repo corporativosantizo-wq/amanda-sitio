@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { safeRedirect } from '@/lib/utils/validate-url';
 
 interface Props {
   productId: string;
@@ -30,7 +31,7 @@ export default function ComprarButton({ productId }: Props) {
       }
 
       // Redirect to Stripe Checkout
-      window.location.href = data.url;
+      safeRedirect(data.url);
     } catch {
       setError('Error de conexión. Intenta de nuevo.');
       setLoading(false);

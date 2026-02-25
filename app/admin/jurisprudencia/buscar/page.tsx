@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
 import { useFetch } from '@/lib/hooks/use-fetch';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -406,7 +407,7 @@ export default function BuscarJurisprudenciaPage() {
     const res = await fetch(`/api/admin/jurisprudencia/${tomoId}`);
     const data = await res.json();
     if (data.signed_url) {
-      window.open(data.signed_url, '_blank');
+      safeWindowOpen(data.signed_url);
     }
   };
 
