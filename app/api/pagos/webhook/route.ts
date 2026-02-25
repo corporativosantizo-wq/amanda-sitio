@@ -42,9 +42,9 @@ export async function POST(req: NextRequest) {
     if (citaId) {
       try {
         await actualizarCita(citaId, { estado: 'confirmada' });
-        console.log(`[Stripe] Cita ${citaId} confirmada por pago`);
+        console.log('[Stripe] Cita', citaId, 'confirmada por pago');
       } catch (err) {
-        console.error(`[Stripe] Error al confirmar cita ${citaId}:`, err);
+        console.error('[Stripe] Error al confirmar cita', citaId + ':', err);
       }
     }
 
@@ -69,9 +69,9 @@ export async function POST(req: NextRequest) {
           product_type: session.metadata?.product_type ?? 'digital',
         });
 
-        console.log(`[Stripe] Orden creada para producto ${productId}`);
+        console.log('[Stripe] Orden creada para producto', productId);
       } catch (err) {
-        console.error(`[Stripe] Error al registrar orden de producto ${productId}:`, err);
+        console.error('[Stripe] Error al registrar orden de producto', productId + ':', err);
       }
     }
   }

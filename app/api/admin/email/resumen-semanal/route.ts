@@ -192,15 +192,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const to = body.to || 'amanda@papeleo.legal';
 
-    console.log(`[Resumen Semanal] Generando resumen para ${to}`);
+    console.log('[Resumen Semanal] Generando resumen para', to);
 
     // Calcular rango lunes-viernes
     const { lunes, viernes, lunesFmt, viernesFmt } = getLunesViernes();
-    console.log(`[Resumen Semanal] Rango: ${lunes} → ${viernes}`);
+    console.log('[Resumen Semanal] Rango:', lunes, '→', viernes);
 
     // Leer eventos del calendario (usa token delegado con auto-refresh)
     const eventos = await getCalendarEvents(lunes, viernes);
-    console.log(`[Resumen Semanal] Total eventos calendario: ${eventos.length}`);
+    console.log('[Resumen Semanal] Total eventos calendario:', eventos.length);
 
     // Filtrar audiencias
     const audiencias = eventos
@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
       }))
       .sort((a, b) => a.start.localeCompare(b.start));
 
-    console.log(`[Resumen Semanal] Audiencias encontradas: ${audiencias.length}`);
+    console.log('[Resumen Semanal] Audiencias encontradas:', audiencias.length);
 
     // Generar HTML
     const html = generarEmailResumen({ audiencias, lunesFmt, viernesFmt });
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
     });
 
     const maskedTo = to.replace(/(.{2}).+(@.+)/, '$1***$2');
-    console.log(`[Resumen Semanal] Email enviado a ${maskedTo}`);
+    console.log('[Resumen Semanal] Email enviado a', maskedTo);
 
     return NextResponse.json({
       ok: true,

@@ -26,23 +26,23 @@ export async function POST(req: NextRequest) {
     }
 
     const maskedTo = to.replace(/(.{2}).+(@.+)/, '$1***$2');
-    console.log(`[Email/Send] Enviando email a ${maskedTo} — asunto: ${subject}`);
-    if (tarea_id) console.log(`[Email/Send] tarea_id: ${tarea_id}`);
+    console.log('[Email/Send] Enviando email a', maskedTo, '— asunto:', subject);
+    if (tarea_id) console.log('[Email/Send] tarea_id:', tarea_id);
 
     // sendMail usa app token (client_credentials) — no requiere token delegado
     const mailFrom: MailboxAlias = from || 'asistente@papeleo.legal';
     await sendMail({ from: mailFrom, to, subject, htmlBody, cc: 'amanda@papeleo.legal' });
 
-    console.log(`[Email/Send] Email enviado exitosamente a ${maskedTo}`);
+    console.log('[Email/Send] Email enviado exitosamente a', maskedTo);
 
     // Marcar tarea como ejecutada si se proporcionó tarea_id
     if (tarea_id) {
       try {
         await marcarTareaEjecutada(tarea_id, `Email enviado a ${maskedTo}`);
-        console.log(`[Email/Send] Tarea ${tarea_id} marcada como ejecutada`);
+        console.log('[Email/Send] Tarea', tarea_id, 'marcada como ejecutada');
       } catch (err: any) {
         // No fallar el request si la tarea no se pudo marcar
-        console.error(`[Email/Send] Error marcando tarea ${tarea_id}:`, err.message);
+        console.error('[Email/Send] Error marcando tarea', tarea_id + ':', err.message);
       }
     }
 

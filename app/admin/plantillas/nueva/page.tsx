@@ -6,6 +6,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 
 interface CampoDetectado {
   id: string;
@@ -387,13 +388,13 @@ export default function NuevaPlantillaPage() {
                 className="absolute inset-0 px-4 py-3 text-sm font-mono whitespace-pre-wrap break-words pointer-events-none overflow-hidden leading-relaxed"
                 aria-hidden="true"
                 dangerouslySetInnerHTML={{
-                  __html: estructura
+                  __html: sanitizeHtml(estructura
                     .replace(/&/g, '&amp;')
                     .replace(/</g, '&lt;')
                     .replace(
                       /\{\{(\w+)\}\}/g,
                       '<mark class="bg-teal-100 text-teal-700 rounded px-0.5 font-semibold">{{$1}}</mark>'
-                    ),
+                    )),
                 }}
               />
               <textarea

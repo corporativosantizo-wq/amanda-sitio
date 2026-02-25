@@ -23,6 +23,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Path traversal prevention
+    if (
+      typeof bucket !== 'string' || typeof objectName !== 'string' ||
+      bucket.includes('..') || objectName.includes('..') ||
+      /[<>:"|?*\x00-\x1f]/.test(objectName)
+    ) {
+      return NextResponse.json(
+        { error: 'Nombre de archivo inválido' },
+        { status: 400 },
+      );
+    }
+
     // Hostname directo de storage (bypasses API gateway / Kong)
     // https://supabase.com/docs/guides/storage/uploads/resumable-uploads
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

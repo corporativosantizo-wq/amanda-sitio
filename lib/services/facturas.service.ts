@@ -255,7 +255,7 @@ export async function anularFactura(id: string, motivo?: string): Promise<Factur
   // TODO: Si tiene FEL, anular en Megaprint
   if (actual.fel_uuid) {
     // await anularFEL(actual.fel_uuid, motivo);
-    console.warn(`[FEL] Pendiente anular FEL UUID: ${actual.fel_uuid}`);
+    console.warn('[FEL] Pendiente anular FEL UUID:', actual.fel_uuid);
   }
 
   const notas = motivo

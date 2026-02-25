@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solo se aceptan archivos .docx' }, { status: 400 });
     }
 
-    console.log(`[Analizar] Archivo recibido: ${archivo.name} (${(archivo.size / 1024).toFixed(0)} KB)`);
+    console.log('[Analizar] Archivo recibido:', archivo.name, '(' + (archivo.size / 1024).toFixed(0) + ' KB)');
 
     // 2. Subir original a Storage
     const buffer = Buffer.from(await archivo.arrayBuffer());
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[Analizar] Archivo subido a: ${storagePath}`);
+    console.log('[Analizar] Archivo subido a:', storagePath);
 
     // 3. Extraer texto con mammoth
     const { value: textoExtraido } = await mammoth.extractRawText({ buffer });
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[Analizar] Texto extraído: ${textoExtraido.length} caracteres`);
+    console.log('[Analizar] Texto extraído:', textoExtraido.length, 'caracteres');
 
     // 4. Enviar a Claude para análisis
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     const textBlock = response.content.find((b: any) => b.type === 'text') as any;
     const rawText = textBlock?.text ?? '';
 
-    console.log(`[Analizar] Respuesta de Claude: ${rawText.length} chars`);
+    console.log('[Analizar] Respuesta de Claude:', rawText.length, 'chars');
 
     // 5. Parsear JSON
     let analysis: any;
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[Analizar] Plantilla detectada: "${analysis.nombre}", ${(analysis.campos || []).length} campos`);
+    console.log('[Analizar] Plantilla detectada:', '"' + analysis.nombre + '",', (analysis.campos || []).length, 'campos');
 
     return NextResponse.json({
       analysis: {

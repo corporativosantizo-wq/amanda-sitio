@@ -522,7 +522,7 @@ export async function enviarCotizacionesProgramadas(): Promise<{ enviadas: numbe
         .eq('id', cot.id);
       enviadas++;
     } catch (err: any) {
-      console.error(`[CronCotizaciones] Error enviando ${cot.id}:`, err.message);
+      console.error('[CronCotizaciones] Error enviando', cot.id + ':', err.message);
       errores++;
     }
   }

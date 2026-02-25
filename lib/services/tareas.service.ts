@@ -102,7 +102,7 @@ export async function crearTarea(input: TareaInsert): Promise<Tarea> {
     accion_automatica: input.accion_automatica ?? null,
     ejecutada: false,
   };
-  console.log(`[Tareas] crearTarea: titulo=${payload.titulo}, tipo=${payload.tipo}, prioridad=${payload.prioridad}`);
+  console.log('[Tareas] crearTarea: titulo=', payload.titulo, ', tipo=', payload.tipo, ', prioridad=', payload.prioridad);
 
   const { data, error } = await db()
     .from('tareas')
@@ -111,7 +111,7 @@ export async function crearTarea(input: TareaInsert): Promise<Tarea> {
     .single();
 
   if (error) {
-    console.error(`[Tareas] crearTarea ERROR: ${JSON.stringify(error)}`);
+    console.error('[Tareas] crearTarea ERROR:', JSON.stringify(error));
     throw new TareaError(`Error al crear tarea: ${error.message ?? error.code ?? 'desconocido'}`, error);
   }
   return data as Tarea;
@@ -146,7 +146,7 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
 
   payload.updated_at = new Date().toISOString();
 
-  console.log(`[Tareas] actualizarTarea id=${id}, keys=${Object.keys(payload).join(',')}`);
+  console.log('[Tareas] actualizarTarea id=', id, ', keys=', Object.keys(payload).join(','));
 
   const { data, error } = await db()
     .from('tareas')
@@ -156,7 +156,7 @@ export async function actualizarTarea(id: string, updates: Partial<TareaInsert> 
     .single();
 
   if (error) {
-    console.error(`[Tareas] actualizarTarea ERROR: ${JSON.stringify(error)}`);
+    console.error('[Tareas] actualizarTarea ERROR:', JSON.stringify(error));
     throw new TareaError(`Error al actualizar tarea: ${error.message ?? error.code ?? 'desconocido'}`, error);
   }
   return data as Tarea;

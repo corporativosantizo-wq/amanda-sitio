@@ -59,16 +59,16 @@ export async function transcribirDocumento(
   const ext = (doc.nombre_archivo as string).toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
   if (ext !== '.pdf') throw new DocumentoError('Solo se pueden transcribir archivos PDF.');
 
-  console.log(`[Transcribir] Iniciando: ${doc.nombre_archivo} (${formato})`);
+  console.log('[Transcribir] Iniciando:', doc.nombre_archivo, '(' + formato + ')');
 
   // 2. Download PDF from Storage
   const pdfBuffer = await descargarPDF(doc.archivo_url);
-  console.log(`[Transcribir] PDF descargado: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+  console.log('[Transcribir] PDF descargado:', (pdfBuffer.length / 1024).toFixed(0), 'KB');
 
   // 3. Split into individual pages
   const srcDoc = await PDFDocument.load(pdfBuffer);
   const totalPages = srcDoc.getPageCount();
-  console.log(`[Transcribir] ${totalPages} páginas`);
+  console.log('[Transcribir]', totalPages, 'páginas');
 
   // 4. Transcribe each page with Claude (in parallel batches)
   const pageTexts: string[] = new Array(totalPages).fill('');
@@ -110,7 +110,7 @@ export async function transcribirDocumento(
           const textBlock = response.content.find((b: any) => b.type === 'text') as any;
           return { pageIdx, text: textBlock?.text ?? '' };
         } catch (err: any) {
-          console.error(`[Transcribir] Error en página ${pageIdx + 1}:`, err.message);
+          console.error('[Transcribir] Error en página', pageIdx + 1 + ':', err.message);
           return { pageIdx, text: `[Error al transcribir página ${pageIdx + 1}: ${err.message}]` };
         }
       }),
@@ -119,7 +119,7 @@ export async function transcribirDocumento(
     for (const r of batchResults) {
       pageTexts[r.pageIdx] = r.text;
     }
-    console.log(`[Transcribir] Lote completado: páginas ${batchStart + 1}-${batchEnd} de ${totalPages}`);
+    console.log('[Transcribir] Lote completado: páginas', batchStart + 1 + '-' + batchEnd, 'de', totalPages);
   }
 
   // 5. Generate DOCX
@@ -201,7 +201,7 @@ export async function transcribirDocumento(
   });
 
   const docxBuffer = await Packer.toBuffer(docxDoc);
-  console.log(`[Transcribir] DOCX generado: ${(docxBuffer.length / 1024).toFixed(0)} KB`);
+  console.log('[Transcribir] DOCX generado:', (docxBuffer.length / 1024).toFixed(0), 'KB');
 
   // 6. Upload DOCX to Supabase Storage
   const storage = createClient(
@@ -224,7 +224,7 @@ export async function transcribirDocumento(
   });
 
   if (uploadErr) throw new DocumentoError('Error al subir DOCX', uploadErr);
-  console.log(`[Transcribir] DOCX subido: ${storagePath}`);
+  console.log('[Transcribir] DOCX subido:', storagePath);
 
   // 7. Create document record linked to original
   const nuevoDoc = await crearDocumento({
@@ -251,7 +251,7 @@ export async function transcribirDocumento(
   // Generate download URL
   const { data: signedData } = await storage.createSignedUrl(storagePath, 600);
 
-  console.log(`[Transcribir] Completado: ${nuevoDoc.id}`);
+  console.log('[Transcribir] Completado:', nuevoDoc.id);
 
   return {
     transcripcion: {

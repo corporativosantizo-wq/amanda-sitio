@@ -6,6 +6,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 import type { TareaConCliente } from '@/lib/types';
 import {
   CATEGORIA_TAREA_LABEL,
@@ -674,7 +675,7 @@ export default function AIAssistantPage() {
                     {msg.role === 'assistant' ? (
                       <div
                         className="whitespace-pre-wrap"
-                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatMarkdown(msg.content)) }}
                       />
                     ) : (
                       <span>{msg.content}</span>

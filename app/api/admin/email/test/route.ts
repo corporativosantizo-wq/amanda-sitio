@@ -11,7 +11,7 @@ import { emailWrapper } from '@/lib/templates/emails';
 export async function GET() {
   const timestamp = new Date().toLocaleString('es-GT', { timeZone: 'America/Guatemala' });
 
-  console.log(`[EmailTest] ── INICIO test de email ── ${timestamp}`);
+  console.log('[EmailTest] ── INICIO test de email ──', timestamp);
 
   try {
     const html = emailWrapper(`
@@ -34,7 +34,7 @@ export async function GET() {
       htmlBody: html,
     });
 
-    console.log(`[EmailTest] ── ÉXITO ──`);
+    console.log('[EmailTest] ── ÉXITO ──');
     return NextResponse.json({
       success: true,
       message: 'Email de prueba enviado exitosamente',
@@ -43,11 +43,11 @@ export async function GET() {
       timestamp,
     });
   } catch (err: any) {
-    console.error(`[EmailTest] ── ERROR ──`);
-    console.error(`[EmailTest] message: ${err.message}`);
-    console.error(`[EmailTest] statusCode: ${err.statusCode ?? 'N/A'}`);
-    console.error(`[EmailTest] code: ${err.code ?? 'N/A'}`);
-    console.error(`[EmailTest] body: [REDACTED — check Vercel logs for details]`);
+    console.error('[EmailTest] ── ERROR ──');
+    console.error('[EmailTest] message:', err.message);
+    console.error('[EmailTest] statusCode:', err.statusCode ?? 'N/A');
+    console.error('[EmailTest] code:', err.code ?? 'N/A');
+    console.error('[EmailTest] body: [REDACTED — check Vercel logs for details]');
 
     return NextResponse.json({
       success: false,

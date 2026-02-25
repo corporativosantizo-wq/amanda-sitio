@@ -6,7 +6,7 @@
 const TRUSTED_DOMAINS = [
   'supabase.co',
   'amandasantizo.com',
-  'checkout.stripe.com',
+  'stripe.com',
   'login.microsoftonline.com',
   'graph.microsoft.com',
 ];
