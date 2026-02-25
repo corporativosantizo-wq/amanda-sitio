@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { validateExternalUrl } from '@/lib/utils/validate-url';
 
 interface MembreteConfig {
   membrete_path: string | null;
@@ -150,7 +151,7 @@ export default function ConfiguracionNotariadoPage() {
               <div className="flex justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={config.previewUrl}
+                  src={validateExternalUrl(config.previewUrl ?? '') ?? ''}
                   alt="Membrete actual"
                   className="max-h-32 object-contain border border-slate-200 rounded"
                 />

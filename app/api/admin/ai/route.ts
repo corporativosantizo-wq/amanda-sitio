@@ -1563,7 +1563,13 @@ async function handleCrearCotizacionCompleta(
 
       let logoBase64: string | undefined;
       try {
-        logoBase64 = fs.readFileSync(path.join(process.cwd(), 'public', 'Logo_Amanda_Santizo_2021_Full_Color.png')).toString('base64');
+        const LOGO_FILE = 'Logo_Amanda_Santizo_2021_Full_Color.png';
+        const logoPath = path.resolve(process.cwd(), 'public', LOGO_FILE);
+        // Path traversal guard: ensure resolved path stays inside public/
+        if (!logoPath.startsWith(path.resolve(process.cwd(), 'public'))) {
+          throw new Error('Invalid logo path');
+        }
+        logoBase64 = fs.readFileSync(logoPath).toString('base64');
       } catch { /* fallback to text */ }
 
       const emailTemplate = emailCotizacion({
