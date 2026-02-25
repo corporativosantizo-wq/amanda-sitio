@@ -1,6 +1,23 @@
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 
-export default function ServiciosPage() {
+interface ServiceProduct {
+  id: string
+  name: string
+  description: string
+  price: number
+}
+
+export default async function ServiciosPage() {
+  // Obtener servicios de la BD
+  const supabase = await createClient()
+  const { data: dbServicios } = await supabase
+    .from('products')
+    .select('id, name, description, price')
+    .eq('status', 'active')
+    .eq('type', 'service')
+    .order('price', { ascending: true })
+
   const servicios = [
     {
       id: 'consultoria',
@@ -124,8 +141,8 @@ export default function ServiciosPage() {
               </span>
             </h1>
             <p className="text-xl text-slate-light leading-relaxed mb-8">
-              Desde consultoría estratégica hasta capacitaciones especializadas. 
-              Cada servicio está diseñado para darte claridad, protección y confianza 
+              Desde consultoría estratégica hasta capacitaciones especializadas.
+              Cada servicio está diseñado para darte claridad, protección y confianza
               en cada decisión legal.
             </p>
             <Link
@@ -138,7 +155,7 @@ export default function ServiciosPage() {
         </div>
       </section>
 
-      {/* Servicios */}
+      {/* Servicios destacados */}
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="space-y-16">
@@ -210,6 +227,59 @@ export default function ServiciosPage() {
           </div>
         </div>
       </section>
+
+      {/* Servicios de la BD */}
+      {(dbServicios ?? []).length > 0 && (
+        <section className="py-20 bg-slate-lighter">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="text-center mb-12">
+              <span className="inline-block px-4 py-2 bg-azure/10 text-azure font-semibold rounded-full text-sm mb-4">
+                Servicios Profesionales
+              </span>
+              <h2 className="font-display text-3xl md:text-4xl font-bold text-navy mb-4">
+                Contrata directamente
+              </h2>
+              <p className="text-slate text-lg max-w-2xl mx-auto">
+                Servicios legales con precio de referencia. Solicita una cotización personalizada
+                según la complejidad de tu caso.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {(dbServicios as ServiceProduct[]).map((svc) => (
+                <div
+                  key={svc.id}
+                  className="bg-white rounded-2xl border border-slate-light p-6 hover:border-cyan hover:shadow-xl transition-all duration-300 flex flex-col"
+                >
+                  <h3 className="font-display text-xl font-bold text-navy mb-3">
+                    {svc.name}
+                  </h3>
+                  <p className="text-slate text-sm leading-relaxed mb-6 flex-1">
+                    {svc.description}
+                  </p>
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-light">
+                    <div>
+                      <span className="text-sm font-medium text-slate">Desde </span>
+                      <span className="text-xl font-bold text-navy">
+                        ${Number(svc.price).toLocaleString('en-US')}
+                      </span>
+                    </div>
+                    <Link
+                      href="/tienda/cotizacion-a-medida"
+                      className="px-5 py-2.5 bg-azure text-white font-semibold rounded-lg hover:bg-cyan transition-all duration-300 text-sm flex items-center space-x-2"
+                    >
+                      <span>Consultar</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA */}
       <section className="py-20 bg-gradient-to-br from-navy to-navy-dark">

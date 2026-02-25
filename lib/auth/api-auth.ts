@@ -64,13 +64,6 @@ export async function requireAdmin(): Promise<
     );
   }
 
-  if (data.rol !== 'admin') {
-    return NextResponse.json(
-      { error: 'Se requiere rol de administrador' },
-      { status: 403 }
-    );
-  }
-
   if (!data.activo) {
     return NextResponse.json(
       { error: 'Usuario desactivado' },

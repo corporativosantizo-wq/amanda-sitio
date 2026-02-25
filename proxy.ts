@@ -45,10 +45,10 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
     }
 
     // 2. Verificar en tabla usuarios_admin (schema: legal)
+    // Permite cualquier rol activo — el RBAC granular (modulos_permitidos) se aplica después
     const url = new URL(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/usuarios_admin`);
     url.searchParams.set('email', `eq.${email}`);
     url.searchParams.set('activo', 'eq.true');
-    url.searchParams.set('rol', 'eq.admin');
     url.searchParams.set('select', 'id');
 
     const resp = await fetch(url.toString(), {

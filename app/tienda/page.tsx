@@ -7,7 +7,7 @@ import TiendaClient from './TiendaClient'
 export default async function TiendaPage() {
   const supabase = await createClient()
   
-  // Obtener productos activos
+  // Obtener solo productos digitales activos (servicios se muestran en /servicios)
   const { data: productos, error } = await supabase
     .from('products')
     .select(`
@@ -15,6 +15,7 @@ export default async function TiendaPage() {
       category:categories(name, slug)
     `)
     .eq('status', 'active')
+    .eq('type', 'digital')
     .order('is_featured', { ascending: false })
   
   // Obtener categorías de productos
