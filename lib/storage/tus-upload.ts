@@ -40,7 +40,7 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
 
   console.log('[TUS] endpoint:', tusEndpoint);
   console.log('[TUS] bucket:', params.bucketName, 'object:', params.objectName);
-  console.log('[TUS] file size:', params.file.size, 'type:', params.file.type);
+  console.log('[TUS] file size:', (params.file.size / 1024 / 1024).toFixed(1), 'MB');
 
   // 2. Subir con tus-js-client (chunked, resumable)
   return new Promise((resolve, reject) => {
@@ -60,23 +60,37 @@ export async function tusUpload(params: TusUploadParams): Promise<void> {
         cacheControl: '3600',
       },
       chunkSize: 6 * 1024 * 1024, // 6 MB — requerido por Supabase Storage
+      onBeforeRequest: (req) => {
+        const method = req.getMethod();
+        const url = req.getURL();
+        console.log(`[TUS] ${method} ${url}`);
+
+        // Nuclear fix: garantizar que el POST de creación NO envíe body.
+        // Kong rechaza con 413 si detecta Upload-Length > 100MB con body.
+        // Interceptamos send() para forzar null body en POST.
+        if (method === 'POST') {
+          const originalSend = req.send.bind(req);
+          req.send = (_body?: any) => {
+            console.log('[TUS] POST intercepted — forcing empty body');
+            return originalSend(null);
+          };
+        }
+      },
       onError: (error) => {
+        console.error('[TUS] Error:', error.message);
         reject(new Error(`Error al subir archivo: ${error.message}`));
       },
       onProgress: (bytesUploaded, bytesTotal) => {
         params.onProgress(bytesUploaded, bytesTotal);
       },
       onSuccess: () => {
+        console.log('[TUS] Upload completado exitosamente');
         resolve();
       },
     });
 
-    // Buscar uploads anteriores para reanudar si la conexión se cortó
-    upload.findPreviousUploads().then((previousUploads) => {
-      if (previousUploads.length) {
-        upload.resumeFromPreviousUpload(previousUploads[0]);
-      }
-      upload.start();
-    });
+    // Iniciar upload directamente (sin buscar uploads previos para evitar
+    // reanudar uploads obsoletos que causan errores)
+    upload.start();
   });
 }
