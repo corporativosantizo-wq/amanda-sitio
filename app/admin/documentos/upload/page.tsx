@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 
 const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
 const MAX_FILES = 100;
@@ -48,25 +49,6 @@ interface FileEntry {
   error?: string;
   storagePath?: string;
   uploadProgress?: UploadProgress;
-}
-
-function xhrUpload(
-  url: string,
-  file: File,
-  contentType: string,
-  onProgress: (loaded: number, total: number) => void
-): Promise<{ ok: boolean; status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded, e.total);
-    };
-    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
-    xhr.onerror = () => reject(new Error('Error de conexión'));
-    xhr.send(file);
-  });
 }
 
 function formatBytes(bytes: number): string {
@@ -256,13 +238,13 @@ export default function UploadDocumentos() {
       }
 
       // PUT directo al signed URL (bypasea Kong, soporta archivos grandes)
-      const uploadRes = await xhrUpload(
+      const uploadRes = await signedUrlUpload(
         urlData.signed_url,
         f.file,
         f.file.type || 'application/octet-stream',
         (loaded, total) => {
           updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-        }
+        },
       );
 
       if (!uploadRes.ok) {
