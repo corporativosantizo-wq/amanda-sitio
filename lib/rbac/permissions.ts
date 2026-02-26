@@ -29,6 +29,7 @@ export type Modulo =
   | 'posts'
   | 'productos'
   | 'mensajes'
+  | 'email'
   | 'configuracion';
 
 export interface AdminUser {
@@ -64,6 +65,7 @@ export const MODULE_ROUTE_MAP: Record<Modulo, string> = {
   posts: '/admin/posts',
   productos: '/admin/productos',
   mensajes: '/admin/mensajes',
+  email: '/admin/email',
   configuracion: '/admin/configuracion',
 };
 

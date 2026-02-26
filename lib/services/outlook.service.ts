@@ -478,7 +478,7 @@ export async function getFreeBusy(startDate: string, endDate: string): Promise<B
 
 let appTokenCache: { token: string; expiresAt: number } | null = null;
 
-async function getAppToken(): Promise<string> {
+export async function getAppToken(): Promise<string> {
   // Return cached token if still valid (with 5-min buffer)
   if (appTokenCache && appTokenCache.expiresAt > Date.now() + 5 * 60 * 1000) {
     console.log('[getAppToken] Usando token cacheado, expira en', Math.round((appTokenCache.expiresAt - Date.now()) / 60000), 'min');
