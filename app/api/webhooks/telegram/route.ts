@@ -11,7 +11,7 @@ import {
   sendTelegramMessage,
   isAuthorizedChat,
 } from '@/lib/molly/telegram';
-import { approveDraft, rejectDraft, listPendingDrafts, getStats } from '@/lib/services/molly.service';
+import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability } from '@/lib/services/molly.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const db = () => createAdminClient();
@@ -143,10 +143,37 @@ async function handleTextMessage(message: any): Promise<void> {
     return;
   }
 
+  if (text.startsWith('/agenda')) {
+    const arg = text.replace('/agenda', '').trim().toLowerCase();
+    let range: 'hoy' | 'mañana' | 'semana' = 'hoy';
+    if (arg === 'mañana' || arg === 'manana') range = 'mañana';
+    else if (arg === 'semana') range = 'semana';
+
+    try {
+      const msg = await getAgenda(range);
+      await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo agenda: ${err.message}`);
+    }
+    return;
+  }
+
+  if (text.startsWith('/disponibilidad')) {
+    const arg = text.replace('/disponibilidad', '').trim();
+
+    try {
+      const msg = await getAvailability(arg || undefined);
+      await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo disponibilidad: ${err.message}`);
+    }
+    return;
+  }
+
   // Unknown command
   if (text.startsWith('/')) {
     await sendTelegramMessage(
-      `Comandos disponibles:\n/pendientes — ver borradores pendientes\n/stats — estadísticas`,
+      `Comandos disponibles:\n/pendientes — ver borradores pendientes\n/stats — estadísticas\n/agenda [hoy|mañana|semana] — ver eventos\n/disponibilidad [YYYY-MM-DD] — ver slots libres`,
     );
   }
 }

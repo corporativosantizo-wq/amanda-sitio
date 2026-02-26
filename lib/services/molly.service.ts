@@ -11,6 +11,14 @@ import {
   buildEmailNotification,
   buildUrgentAlert,
 } from '@/lib/molly/telegram';
+import {
+  getCalendarEvents,
+  findFreeSlots,
+  getDayBounds,
+  formatAgendaForTelegram,
+  formatAvailabilityForTelegram,
+  formatDateSpanish,
+} from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import type {
@@ -552,6 +560,73 @@ export async function getStats(): Promise<{
     emailsToday: todayMsgs.count ?? 0,
     threadsByClasificacion: byClasificacion,
   };
+}
+
+// ── Calendar / Agenda ──────────────────────────────────────────────────────
+
+export async function getAgenda(
+  range: 'hoy' | 'mañana' | 'semana',
+): Promise<string> {
+  const now = new Date();
+
+  let startDate: Date;
+  let endDate: Date;
+  let label: string;
+
+  switch (range) {
+    case 'hoy':
+      startDate = now;
+      endDate = now;
+      label = `Hoy (${formatDateSpanish(now)})`;
+      break;
+    case 'mañana': {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      startDate = tomorrow;
+      endDate = tomorrow;
+      label = `Mañana (${formatDateSpanish(tomorrow)})`;
+      break;
+    }
+    case 'semana': {
+      startDate = now;
+      endDate = new Date(now);
+      endDate.setDate(endDate.getDate() + 7);
+      label = `Próximos 7 días`;
+      break;
+    }
+  }
+
+  const { start, end } = range === 'semana'
+    ? { start: getDayBounds(startDate).start, end: getDayBounds(endDate).end }
+    : getDayBounds(startDate);
+
+  const events = await getCalendarEvents(start, end);
+  return formatAgendaForTelegram(events, label);
+}
+
+export async function getAvailability(
+  dateStr?: string,
+): Promise<string> {
+  let targetDate: Date;
+
+  if (dateStr) {
+    targetDate = new Date(dateStr + 'T12:00:00');
+    if (isNaN(targetDate.getTime())) {
+      return 'Fecha no válida. Usa formato YYYY-MM-DD';
+    }
+  } else {
+    // Default: tomorrow
+    targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + 1);
+    // Skip to Monday if tomorrow is weekend
+    while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+  }
+
+  const slots = await findFreeSlots(targetDate);
+  const label = formatDateSpanish(targetDate);
+  return formatAvailabilityForTelegram(slots, label);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

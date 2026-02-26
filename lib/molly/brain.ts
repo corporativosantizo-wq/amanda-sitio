@@ -108,7 +108,12 @@ Reglas:
 - Firma siempre: "Amanda Santizo | papeleo.legal"
 - En HTML usa etiquetas simples: <p>, <br>, <strong>
 - No incluyas "Estimado/a" genérico — usa el nombre si está disponible
-- Mantén la respuesta concisa (máximo 3-4 párrafos)`;
+- Mantén la respuesta concisa (máximo 3-4 párrafos)
+- IMPORTANTE: Si el email solicita reunión, consulta, cita, meeting o appointment, NUNCA sugieras horarios específicos. Incluye el link de agendamiento: https://amandasantizo.com/agendar
+  Hay dos tipos de cita (sugiere el correcto según el contexto):
+  * "Consulta Legal" — para asuntos nuevos, hasta 1 hora, Q500, virtual por Teams, disponible lunes/miércoles/viernes. Sugerir si el remitente NO es cliente existente o si plantea un asunto nuevo.
+  * "Seguimiento de Caso" — para clientes con caso activo, 15 min, sin costo, virtual por Teams, disponible martes/miércoles. Sugerir si el remitente es cliente existente con expediente activo.
+  Si no es claro, menciona ambas opciones brevemente.`;
 
 export async function generateDraft(
   email: EmailMessage,
