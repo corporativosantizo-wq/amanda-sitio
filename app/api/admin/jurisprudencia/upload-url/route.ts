@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
 
 export async function POST(req: NextRequest) {
   try {

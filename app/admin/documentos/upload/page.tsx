@@ -8,7 +8,6 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
 
 const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
 const MAX_FILES = 100;
@@ -256,31 +255,19 @@ export default function UploadDocumentos() {
         return null;
       }
 
-      if (f.file.size > TUS_THRESHOLD) {
-        // TUS resumable upload for large files
-        await tusUpload({
-          file: f.file,
-          bucketName: 'documentos',
-          objectName: urlData.storage_path,
-          onProgress: (loaded, total) => {
-            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-          },
-        });
-      } else {
-        // Standard XHR upload for small files
-        const uploadRes = await xhrUpload(
-          urlData.signed_url,
-          f.file,
-          f.file.type || 'application/octet-stream',
-          (loaded, total) => {
-            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-          }
-        );
-
-        if (!uploadRes.ok) {
-          updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
-          return null;
+      // PUT directo al signed URL (bypasea Kong, soporta archivos grandes)
+      const uploadRes = await xhrUpload(
+        urlData.signed_url,
+        f.file,
+        f.file.type || 'application/octet-stream',
+        (loaded, total) => {
+          updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
         }
+      );
+
+      if (!uploadRes.ok) {
+        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
+        return null;
       }
 
       updateFile(f.id, { storagePath: urlData.storage_path, uploadProgress: undefined });

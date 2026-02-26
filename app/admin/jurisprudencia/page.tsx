@@ -3,7 +3,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
-import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Toast system ─────────────────────────────────────────────────────────────
@@ -535,22 +534,14 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
         const uploadStart = Date.now();
         setByteProgress({ loaded: 0, total: file.size, startedAt: uploadStart });
 
-        if (file.size > TUS_THRESHOLD) {
-          await tusUpload({
-            file,
-            bucketName: 'jurisprudencia',
-            objectName: urlData.storage_path,
-            onProgress: (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart }),
-          });
-        } else {
-          const uploadRes = await xhrUpload(
-            urlData.signed_url,
-            file,
-            'application/pdf',
-            (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart })
-          );
-          if (!uploadRes.ok) throw new Error('Error al subir archivo al almacenamiento');
-        }
+        // PUT directo al signed URL (bypasea Kong, soporta archivos grandes)
+        const uploadRes = await xhrUpload(
+          urlData.signed_url,
+          file,
+          'application/pdf',
+          (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart })
+        );
+        if (!uploadRes.ok) throw new Error('Error al subir archivo al almacenamiento');
 
         // 3. Register tomo in DB
         const titulo = limpiarNombreArchivo(file.name);
