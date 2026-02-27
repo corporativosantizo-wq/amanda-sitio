@@ -185,7 +185,7 @@ export async function migrarTarea(id: string, nuevaFecha: string): Promise<Tarea
 // --- Resumen para dashboard ---
 
 export async function resumenTareas() {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
 
   const [pendientes, enProgreso, completadasHoy, vencidas] = await Promise.all([
     db().from('tareas').select('id', { count: 'exact', head: true })
@@ -211,7 +211,7 @@ export async function resumenTareas() {
 // --- Tareas programadas ---
 
 export async function obtenerTareasProgramadasPendientes() {
-  const ahora = new Date().toISOString();
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
 
   const { data, error } = await db()
     .from('tareas')
@@ -223,7 +223,7 @@ export async function obtenerTareasProgramadasPendientes() {
     .eq('asignado_a', 'asistente')
     .eq('ejecutada', false)
     .not('accion_automatica', 'is', null)
-    .lte('fecha_limite', ahora.split('T')[0])
+    .lte('fecha_limite', hoy)
     .order('fecha_limite', { ascending: true })
     .limit(20);
 

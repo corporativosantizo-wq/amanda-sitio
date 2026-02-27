@@ -13,8 +13,9 @@ import {
 } from '@/lib/molly/telegram';
 import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability } from '@/lib/services/molly.service';
 import { createCalendarEvent } from '@/lib/services/outlook.service';
-import { HORARIOS } from '@/lib/types';
-import type { TipoCita } from '@/lib/types';
+import { crearTarea, listarTareas, completarTarea, migrarTarea, resumenTareas } from '@/lib/services/tareas.service';
+import { HORARIOS, CategoriaTarea, EstadoTarea } from '@/lib/types';
+import type { TipoCita, TareaInsert } from '@/lib/types';
 import {
   getConversation,
   clearConversation,
@@ -99,6 +100,20 @@ async function handleCallbackQuery(query: any): Promise<void> {
     if (data.startsWith('followup_')) {
       await answerCallbackQuery(query.id);
       await handleFollowupCallback(data);
+      return;
+    }
+
+    // Task callbacks (complete, migrate)
+    if (data.startsWith('tarea_done:') || data.startsWith('tarea_migrar:')) {
+      await answerCallbackQuery(query.id);
+      await handleTareaCallback(data);
+      return;
+    }
+
+    // Habit callbacks
+    if (data.startsWith('habit_toggle:')) {
+      await answerCallbackQuery(query.id);
+      await handleHabitCallback(data);
       return;
     }
 
@@ -194,6 +209,30 @@ async function handleTextMessage(message: any): Promise<void> {
     return;
   }
 
+  // ── Task commands ───────────────────────────────────────────────────
+
+  if (text.startsWith('/tarea ')) {
+    await handleTareaCommand(text.slice(7).trim());
+    return;
+  }
+
+  if (text === '/tareas') {
+    await handleTareasListCommand();
+    return;
+  }
+
+  // ── Habit commands ────────────────────────────────────────────────
+
+  if (text === '/habitos') {
+    await handleHabitosCommand();
+    return;
+  }
+
+  if (text === '/racha') {
+    await handleRachaCommand();
+    return;
+  }
+
   // ── Existing commands ────────────────────────────────────────────────
 
   if (text === '/pendientes') {
@@ -268,6 +307,12 @@ async function handleTextMessage(message: any): Promise<void> {
       `/disponibilidad — slots libres\n` +
       `/crear — crear evento\n` +
       `/cancelar — cancelar evento de hoy\n\n` +
+      `<b>Tareas:</b>\n` +
+      `/tarea [texto] — crear tarea rápida\n` +
+      `/tareas — ver pendientes\n\n` +
+      `<b>Hábitos:</b>\n` +
+      `/habitos — hábitos de hoy\n` +
+      `/racha — ver rachas\n\n` +
       `<b>Email:</b>\n` +
       `/pendientes — borradores pendientes\n` +
       `/stats — estadísticas Molly Mail\n\n` +
@@ -486,6 +531,311 @@ async function handleFollowupCallback(data: string): Promise<void> {
     .from('citas')
     .update({ followup_enviado: true })
     .eq('id', citaId);
+}
+
+// ── Task commands ────────────────────────────────────────────────────────────
+
+const CATEGORIA_KEYWORDS: Array<{ cat: CategoriaTarea; keywords: string[] }> = [
+  { cat: CategoriaTarea.COBROS, keywords: ['cobr', 'pago', 'factur', 'honorar'] },
+  { cat: CategoriaTarea.DOCUMENTOS, keywords: ['documento', 'contrato', 'escritura', 'redact'] },
+  { cat: CategoriaTarea.AUDIENCIAS, keywords: ['audiencia', 'juzgado', 'tribunal'] },
+  { cat: CategoriaTarea.SEGUIMIENTO, keywords: ['seguimiento', 'revisar', 'llamar', 'contactar'] },
+  { cat: CategoriaTarea.PERSONAL, keywords: ['personal', 'gym', 'médico', 'doctor'] },
+];
+
+function detectCategoria(text: string): CategoriaTarea {
+  const lower = text.toLowerCase();
+  for (const { cat, keywords } of CATEGORIA_KEYWORDS) {
+    if (keywords.some((k) => lower.includes(k))) return cat;
+  }
+  return CategoriaTarea.TRAMITES;
+}
+
+function detectPrioridad(text: string): 'alta' | 'media' | 'baja' {
+  if (text.includes('!!!') || text.toLowerCase().includes('urgente')) return 'alta';
+  if (text.includes('!!')) return 'alta';
+  return 'media';
+}
+
+async function handleTareaCommand(text: string): Promise<void> {
+  if (!text) {
+    await sendTelegramMessage(
+      'Uso: <code>/tarea Revisar expediente López</code>\n\n' +
+      'Prefijos opcionales:\n' +
+      '<code>!</code> o <code>!!</code> para prioridad alta\n' +
+      '<code>@cobros</code> <code>@audiencias</code> etc. para categoría',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  let titulo = text;
+  const prioridad = detectPrioridad(titulo);
+  titulo = titulo.replace(/!+/g, '').trim();
+
+  // Detect @category tag
+  let categoria = detectCategoria(titulo);
+  const catMatch = titulo.match(/@(cobros|documentos|audiencias|tramites|personal|seguimiento)\b/i);
+  if (catMatch) {
+    categoria = catMatch[1].toLowerCase() as CategoriaTarea;
+    titulo = titulo.replace(catMatch[0], '').trim();
+  }
+
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+  const input: TareaInsert = {
+    titulo,
+    prioridad,
+    categoria,
+    fecha_limite: hoy,
+  };
+
+  try {
+    const tarea = await crearTarea(input);
+
+    const prioTag = prioridad === 'alta' ? ' <b>[ALTA]</b>' : '';
+    await sendTelegramMessage(
+      `\u2705 <b>Tarea creada</b>${prioTag}\n\n` +
+      `\u2022 ${escapeHtml(tarea.titulo)}\n` +
+      `\uD83C\uDFF7 ${categoria} | \uD83D\uDCC5 ${hoy}`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '\u2715 Completar', callback_data: `tarea_done:${tarea.id}` },
+            { text: '> Migrar', callback_data: `tarea_migrar:${tarea.id}` },
+          ]],
+        },
+      },
+    );
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error al crear tarea: ${err.message}`);
+  }
+}
+
+async function handleTareasListCommand(): Promise<void> {
+  try {
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+    const { data: tareas } = await listarTareas({
+      estado: 'pendiente',
+      limit: 15,
+    });
+
+    if (tareas.length === 0) {
+      await sendTelegramMessage('\u2705 No hay tareas pendientes. ¡Buen trabajo!');
+      return;
+    }
+
+    // Sort: overdue first, then high priority, then by date
+    const sorted = [...tareas].sort((a, b) => {
+      const aOverdue = a.fecha_limite && a.fecha_limite < hoy ? -1 : 0;
+      const bOverdue = b.fecha_limite && b.fecha_limite < hoy ? -1 : 0;
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+      const prio: Record<string, number> = { alta: 0, media: 1, baja: 2 };
+      return (prio[a.prioridad] ?? 1) - (prio[b.prioridad] ?? 1);
+    });
+
+    let msg = `\uD83D\uDCCB <b>Tareas pendientes</b> (${tareas.length})\n`;
+
+    const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+
+    for (const t of sorted.slice(0, 10)) {
+      const overdue = t.fecha_limite && t.fecha_limite < hoy ? '\uD83D\uDD34' : '';
+      const prio = t.prioridad === 'alta' ? '\u203C\uFE0F' : '';
+      const fecha = t.fecha_limite ? ` (${t.fecha_limite})` : '';
+      msg += `\n${overdue}${prio}\u2022 ${escapeHtml(t.titulo)}${fecha}`;
+
+      buttons.push([
+        { text: `\u2715 ${t.titulo.substring(0, 25)}`, callback_data: `tarea_done:${t.id}` },
+        { text: '>', callback_data: `tarea_migrar:${t.id}` },
+      ]);
+    }
+
+    if (tareas.length > 10) {
+      msg += `\n\n... y ${tareas.length - 10} más`;
+    }
+
+    // Add summary
+    const resumen = await resumenTareas();
+    if (resumen.vencidas > 0) {
+      msg += `\n\n\uD83D\uDD34 ${resumen.vencidas} vencidas`;
+    }
+
+    await sendTelegramMessage(msg, {
+      parse_mode: 'HTML',
+      reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
+    });
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+async function handleTareaCallback(data: string): Promise<void> {
+  const [action, tareaId] = data.split(':');
+
+  if (!tareaId) return;
+
+  try {
+    if (action === 'tarea_done') {
+      const tarea = await completarTarea(tareaId);
+      await sendTelegramMessage(
+        `\u2715 <b>Completada:</b> ${escapeHtml(tarea.titulo)}`,
+        { parse_mode: 'HTML' },
+      );
+    } else if (action === 'tarea_migrar') {
+      const manana = new Date();
+      manana.setDate(manana.getDate() + 1);
+      const mananaStr = manana.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+      const tarea = await migrarTarea(tareaId, mananaStr);
+      await sendTelegramMessage(
+        `> <b>Migrada a ${mananaStr}:</b> ${escapeHtml(tarea.titulo)}`,
+        { parse_mode: 'HTML' },
+      );
+    }
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+// ── Habit commands ──────────────────────────────────────────────────────────
+
+async function handleHabitosCommand(): Promise<void> {
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+  try {
+    // Get all active habits
+    const { data: habits } = await db()
+      .from('habits')
+      .select('*')
+      .eq('activo', true)
+      .order('orden', { ascending: true });
+
+    if (!habits || habits.length === 0) {
+      await sendTelegramMessage('No hay hábitos configurados.');
+      return;
+    }
+
+    // Get today's logs
+    const { data: logs } = await db()
+      .from('habit_logs')
+      .select('habit_id')
+      .eq('fecha', hoy);
+
+    const completedIds = new Set((logs ?? []).map((l: any) => l.habit_id));
+
+    let msg = `\uD83C\uDFAF <b>Hábitos de hoy</b> — ${hoy}\n`;
+    const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+
+    for (const h of habits) {
+      const done = completedIds.has(h.id);
+      const check = done ? '\u2705' : '\u2B1C';
+      msg += `\n${check} ${h.emoji} ${escapeHtml(h.nombre)}`;
+
+      buttons.push([{
+        text: `${done ? '\u2705' : '\u2B1C'} ${h.emoji} ${h.nombre}`,
+        callback_data: `habit_toggle:${h.id}`,
+      }]);
+    }
+
+    const doneCount = completedIds.size;
+    const total = habits.length;
+    msg += `\n\n${doneCount}/${total} completados`;
+
+    await sendTelegramMessage(msg, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons },
+    });
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+async function handleRachaCommand(): Promise<void> {
+  try {
+    const { data: habits } = await db()
+      .from('habits')
+      .select('*')
+      .eq('activo', true)
+      .order('orden', { ascending: true });
+
+    if (!habits || habits.length === 0) {
+      await sendTelegramMessage('No hay hábitos configurados.');
+      return;
+    }
+
+    // Calculate streaks: count consecutive days back from today (or yesterday)
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+    let msg = `\uD83D\uDD25 <b>Rachas de hábitos</b>\n`;
+
+    for (const h of habits) {
+      // Get last 30 logs for this habit, ordered descending
+      const { data: logs } = await db()
+        .from('habit_logs')
+        .select('fecha')
+        .eq('habit_id', h.id)
+        .order('fecha', { ascending: false })
+        .limit(60);
+
+      const fechas = new Set((logs ?? []).map((l: any) => l.fecha));
+
+      // Count streak from today or yesterday backwards
+      let streak = 0;
+      let checkDate = new Date(hoy + 'T12:00:00');
+
+      // If today not done, start from yesterday
+      if (!fechas.has(hoy)) {
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+
+      for (let i = 0; i < 60; i++) {
+        const dateStr = checkDate.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+        if (fechas.has(dateStr)) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      const fire = streak >= 7 ? '\uD83D\uDD25' : streak >= 3 ? '\u2B50' : '';
+      msg += `\n${h.emoji} ${escapeHtml(h.nombre)}: <b>${streak} días</b> ${fire}`;
+    }
+
+    await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+async function handleHabitCallback(data: string): Promise<void> {
+  const habitId = data.split(':')[1];
+  if (!habitId) return;
+
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+  try {
+    // Check if already logged today
+    const { data: existing } = await db()
+      .from('habit_logs')
+      .select('id')
+      .eq('habit_id', habitId)
+      .eq('fecha', hoy)
+      .maybeSingle();
+
+    if (existing) {
+      // Toggle off — delete log
+      await db().from('habit_logs').delete().eq('id', existing.id);
+    } else {
+      // Toggle on — create log
+      await db().from('habit_logs').insert({ habit_id: habitId, fecha: hoy });
+    }
+
+    // Re-render the habits list
+    await handleHabitosCommand();
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

@@ -19,7 +19,12 @@ import {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const HOY = new Date().toISOString().split('T')[0];
+/** Returns YYYY-MM-DD in Guatemala timezone */
+function fechaGT(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+}
+
+const HOY = fechaGT();
 
 function fechaDisplay(fecha: string | null): string {
   if (!fecha) return '';
@@ -87,7 +92,7 @@ export default function TareasPage() {
     } else if (filtroRapido === 'semana') {
       const weekEnd = new Date();
       weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
-      const weekEndStr = weekEnd.toISOString().split('T')[0];
+      const weekEndStr = fechaGT(weekEnd);
       list = list.filter((t: TareaConCliente) =>
         (t.fecha_limite && t.fecha_limite <= weekEndStr) || !t.fecha_limite
       );
@@ -146,7 +151,7 @@ export default function TareasPage() {
   const handleMigrate = useCallback(async (id: string) => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
-    const mananaStr = manana.toISOString().split('T')[0];
+    const mananaStr = fechaGT(manana);
     await mutate(`/api/admin/tareas/${id}`, {
       method: 'PATCH',
       body: { fecha_limite: mananaStr, estado: EstadoTarea.PENDIENTE },
