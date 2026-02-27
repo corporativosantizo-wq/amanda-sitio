@@ -148,7 +148,7 @@ export async function eliminarPlantilla(id: string) {
         .from('documentos')
         .remove([plantilla.archivo_original]);
     } catch {
-      console.warn(`[Plantillas] No se pudo eliminar archivo: ${plantilla.archivo_original}`);
+      console.warn('[Plantillas] No se pudo eliminar archivo:', plantilla.archivo_original);
     }
   }
 

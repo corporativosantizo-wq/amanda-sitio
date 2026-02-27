@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const documentoId = body.documento_id;
 
-    console.log(`[Classify] Iniciando clasificación para documento: ${documentoId}`);
+    console.log('[Classify] Iniciando clasificación para documento:', documentoId);
 
     if (!documentoId) {
       return NextResponse.json(
@@ -126,14 +126,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (!doc) {
-      console.error(`[Classify] Documento no encontrado: ${documentoId}`);
+      console.error('[Classify] Documento no encontrado:', documentoId);
       return NextResponse.json(
         { error: `Documento no encontrado: ${documentoId}` },
         { status: 404 }
       );
     }
 
-    console.log(`[Classify] Documento encontrado: ${doc.nombre_archivo}, estado: ${doc.estado}, path: ${doc.archivo_url}`);
+    console.log('[Classify] Documento encontrado:', doc.nombre_archivo, ', estado:', doc.estado, ', path:', doc.archivo_url);
 
     if (doc.estado !== 'pendiente') {
       return NextResponse.json(
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
 
     // Paso 2: Descargar archivo de Storage y preparar contenido para Claude
     const ext = getFileExtension(doc.nombre_archivo);
-    console.log(`[Classify] Paso 2: Descargando archivo de Storage: ${doc.archivo_url} (ext: ${ext})`);
+    console.log('[Classify] Paso 2: Descargando archivo de Storage:', doc.archivo_url, '(ext:', ext + ')');
 
     let clasificacion: any;
     let rawResponse = '';
@@ -236,11 +236,11 @@ export async function POST(req: NextRequest) {
           messages: [{ role: 'user', content: messageContent }],
         });
 
-        console.log(`[Classify] Claude respondió. stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+        console.log('[Classify] Claude respondió. stop_reason:', response.stop_reason, ', content blocks:', response.content.length);
 
         const textBlock = response.content.find((b: any) => b.type === 'text') as any;
         rawResponse = textBlock?.text ?? '';
-        console.log(`[Classify] Respuesta raw (primeros 500 chars): ${rawResponse.slice(0, 500)}`);
+        console.log('[Classify] Respuesta raw (primeros 500 chars):', rawResponse.slice(0, 500));
 
         const cleaned = rawResponse
           .replace(/^```json?\s*/i, '')
@@ -248,10 +248,10 @@ export async function POST(req: NextRequest) {
           .trim();
 
         clasificacion = JSON.parse(cleaned);
-        console.log(`[Classify] JSON parseado OK: tipo=${clasificacion.tipo}, confianza=${clasificacion.confianza}`);
+        console.log('[Classify] JSON parseado OK: tipo=', clasificacion.tipo, ', confianza=', clasificacion.confianza);
       } catch (parseErr: any) {
         console.error(`[Classify] Error en Claude API o JSON parse:`, parseErr.message);
-        console.error(`[Classify] Respuesta raw que falló el parse: ${rawResponse.slice(0, 1000)}`);
+        console.error('[Classify] Respuesta raw que falló el parse:', rawResponse.slice(0, 1000));
 
         if (parseErr.status || parseErr.error) {
           const apiMsg = parseErr.error?.message ?? parseErr.message ?? 'Error de API';
@@ -285,14 +285,14 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (docFull?.cliente_id) {
-      console.log(`[Classify] Documento ya tiene cliente_id asignado: ${docFull.cliente_id}`);
+      console.log('[Classify] Documento ya tiene cliente_id asignado:', docFull.cliente_id);
     } else {
       // 4b. Buscar por cliente_probable (del contenido del PDF)
       if (clasificacion.cliente_probable) {
         try {
           clienteMatch = await buscarClienteFuzzy(clasificacion.cliente_probable);
           if (clienteMatch) {
-            console.log(`[Classify] Match por contenido: ${clienteMatch.nombre} (${clienteMatch.codigo}), score: ${clienteMatch.confianza}`);
+            console.log('[Classify] Match por contenido:', clienteMatch.nombre, '(' + clienteMatch.codigo + '), score:', clienteMatch.confianza);
           }
         } catch (fuzzyErr: any) {
           console.error(`[Classify] Error en fuzzy match (no fatal):`, fuzzyErr.message);
@@ -307,7 +307,7 @@ export async function POST(req: NextRequest) {
             const match = await buscarClienteFuzzy(parte.nombre);
             if (match && match.confianza > (clienteMatch?.confianza ?? 0)) {
               clienteMatch = match;
-              console.log(`[Classify] Match por parte "${parte.nombre}": ${match.nombre} (${match.codigo}), score: ${match.confianza}`);
+              console.log('[Classify] Match por parte "' + parte.nombre + '":', match.nombre, '(' + match.codigo + '), score:', match.confianza);
             }
           } catch { /* skip */ }
         }
@@ -318,7 +318,7 @@ export async function POST(req: NextRequest) {
         try {
           clienteMatch = await buscarClientePorNombreArchivo(doc.nombre_archivo);
           if (clienteMatch) {
-            console.log(`[Classify] Match por filename: ${clienteMatch.nombre} (${clienteMatch.codigo}), score: ${clienteMatch.confianza}`);
+            console.log('[Classify] Match por filename:', clienteMatch.nombre, '(' + clienteMatch.codigo + '), score:', clienteMatch.confianza);
           }
         } catch { /* skip */ }
       }
@@ -344,7 +344,7 @@ export async function POST(req: NextRequest) {
         cliente_id: docFull?.cliente_id ?? clienteMatch?.id ?? null,
       });
 
-      console.log(`[Classify] Clasificación guardada OK: id=${resultado.id}, tipo=${resultado.tipo}`);
+      console.log('[Classify] Clasificación guardada OK: id=', resultado.id, ', tipo=', resultado.tipo);
 
       return NextResponse.json({
         documento: resultado,

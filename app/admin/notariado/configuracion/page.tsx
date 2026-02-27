@@ -7,6 +7,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { validateExternalUrl } from '@/lib/utils/validate-url';
+
+// 1x1 transparent PNG placeholder for when URL validation fails
+const PLACEHOLDER_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQABNjN9GQAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAA0lEQVQI12P4z8BQDwAEgAF/QualzQAAAABJRU5ErkJggg==';
 
 interface MembreteConfig {
   membrete_path: string | null;
@@ -150,7 +154,7 @@ export default function ConfiguracionNotariadoPage() {
               <div className="flex justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={config.previewUrl}
+                  src={validateExternalUrl(config.previewUrl ?? '') ?? PLACEHOLDER_IMG}
                   alt="Membrete actual"
                   className="max-h-32 object-contain border border-slate-200 rounded"
                 />

@@ -10,6 +10,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { generarAvisoGeneral, type TipoAviso } from '@/lib/generators/aviso-general';
 import { saveAs } from 'file-saver';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -267,7 +268,7 @@ export default function EscrituraDetallePage() {
       const res = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${doc.id}`);
       if (!res.ok) { alert('Error al descargar'); return; }
       const { url } = await res.json();
-      window.open(url, '_blank');
+      safeWindowOpen(url);
     } catch {
       alert('Error al descargar');
     }

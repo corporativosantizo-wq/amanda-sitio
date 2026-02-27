@@ -14,3 +14,4 @@ export * from './tareas';
 export * from './proveedor';
 export * from './representantes';
 export * from './expedientes';
+export * from './molly';

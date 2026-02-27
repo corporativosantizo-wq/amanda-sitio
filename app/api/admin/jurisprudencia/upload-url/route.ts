@@ -5,11 +5,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/auth/api-auth';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
 
 export async function POST(req: NextRequest) {
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const { filename, filesize, carpeta_path } = await req.json();
 
@@ -30,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     if (filesize > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'El archivo es demasiado grande. Máximo 150MB.' },
+        { error: 'El archivo es demasiado grande. Máximo 1GB.' },
         { status: 400 }
       );
     }

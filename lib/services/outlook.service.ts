@@ -173,11 +173,11 @@ export async function getValidAccessToken(): Promise<string> {
 
   if (expiresAt.getTime() - now.getTime() > bufferMs) {
     const minLeft = Math.round((expiresAt.getTime() - now.getTime()) / 60000);
-    console.log(`[Outlook] Token válido, expira en ${minLeft} min`);
+    console.log('[Outlook] Token válido, expira en', minLeft, 'min');
     return decrypt(config.outlook_access_token_encrypted);
   }
 
-  console.log(`[Outlook] Token expirado o por expirar (expires: ${expiresAt.toISOString()}, now: ${now.toISOString()}), refrescando...`);
+  console.log('[Outlook] Token expirado o por expirar (expires:', expiresAt.toISOString() + ', now:', now.toISOString() + '), refrescando...');
 
   // Token expired or about to expire — refresh
   if (!config.outlook_refresh_token_encrypted) {
@@ -298,18 +298,18 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 
     if (!calRes.ok) {
       const errText = await calRes.text();
-      console.error(`[Outlook] ERROR listando calendarios: ${calRes.status} ${errText.substring(0, 300)}`);
+      console.error('[Outlook] ERROR listando calendarios:', calRes.status, errText.substring(0, 300));
     } else {
       const calData = await calRes.json();
       calendars = (calData.value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
     }
 
-    console.log(`[Outlook] Calendarios encontrados: ${calendars.length}`);
+    console.log('[Outlook] Calendarios encontrados:', calendars.length);
     calendars.forEach((c: { id: string; name: string }, i: number) => {
-      console.log(`[Outlook]   ${i + 1}. "${c.name}"`);
+      console.log('[Outlook]  ', i + 1 + '.', '"' + c.name + '"');
     });
   } catch (err: any) {
-    console.error(`[Outlook] ERROR al listar calendarios: ${err.message ?? err}`);
+    console.error('[Outlook] ERROR al listar calendarios:', err.message ?? err);
   }
 
   // 2. Fetch calendarView from EACH calendar (or default if listing failed)
@@ -339,7 +339,7 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 
       if (!res.ok) {
         const errText = await res.text();
-        console.error(`[Outlook] ERROR en calendario "${cal.name}": ${res.status} ${errText.substring(0, 300)}`);
+        console.error('[Outlook] ERROR en calendario "' + cal.name + '":', res.status, errText.substring(0, 300));
         continue;
       }
 
@@ -355,22 +355,22 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
         }
       }
 
-      console.log(`[Outlook] Calendario "${cal.name}": ${events.length} eventos (${newCount} nuevos, ${events.length - newCount} duplicados)`);
+      console.log('[Outlook] Calendario "' + cal.name + '":', events.length, 'eventos (' + newCount, 'nuevos,', events.length - newCount, 'duplicados)');
       if (events.length > 0) {
         const first = events[0];
-        console.log(`[Outlook]   Timezone retornado: "${first.start?.timeZone}"`);
+        console.log('[Outlook]   Timezone retornado:', first.start?.timeZone);
         events.forEach((ev: any) => {
           const allDay = ev.isAllDay ? ' [TODO EL DÍA]' : '';
           const startDT = ev.start?.dateTime ?? '?';
-          console.log(`[Outlook]     • "${ev.subject}" start=${startDT.substring(0, 19)} tz=${ev.start?.timeZone}${allDay}`);
+          console.log('[Outlook]     *', '"' + ev.subject + '"', 'start=' + startDT.substring(0, 19), 'tz=' + ev.start?.timeZone + allDay);
         });
       }
     } catch (err: any) {
-      console.error(`[Outlook] ERROR en calendario "${cal.name}": ${err.message ?? err}`);
+      console.error('[Outlook] ERROR en calendario "' + cal.name + '":', err.message ?? err);
     }
   }
 
-  console.log(`[Outlook] ── Total: ${allEvents.length} eventos únicos de ${calendarTargets.length} calendarios ──`);
+  console.log('[Outlook] ── Total:', allEvents.length, 'eventos únicos de', calendarTargets.length, 'calendarios ──');
   return allEvents;
 }
 
@@ -422,7 +422,7 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
     ?? created.onlineMeetingUrl
     ?? null;
 
-  console.log(`[Outlook] Teams link final: ${teamsLink ? teamsLink.substring(0, 60) + '...' : 'NULL'}`);
+  console.log('[Outlook] Teams link final:', teamsLink ? teamsLink.substring(0, 60) + '...' : 'NULL');
   return { eventId: created.id, teamsLink };
 }
 
@@ -520,10 +520,10 @@ export async function getFreeBusy(startDate: string, endDate: string): Promise<B
 
 let appTokenCache: { token: string; expiresAt: number } | null = null;
 
-async function getAppToken(): Promise<string> {
+export async function getAppToken(): Promise<string> {
   // Return cached token if still valid (with 5-min buffer)
   if (appTokenCache && appTokenCache.expiresAt > Date.now() + 5 * 60 * 1000) {
-    console.log(`[getAppToken] Usando token cacheado, expira en ${Math.round((appTokenCache.expiresAt - Date.now()) / 60000)} min`);
+    console.log('[getAppToken] Usando token cacheado, expira en', Math.round((appTokenCache.expiresAt - Date.now()) / 60000), 'min');
     return appTokenCache.token;
   }
 
@@ -554,7 +554,7 @@ async function getAppToken(): Promise<string> {
   const text = await res.text();
 
   if (!res.ok) {
-    console.error(`[getAppToken] ERROR ${res.status}: ${text.substring(0, 500)}`);
+    console.error('[getAppToken] ERROR', res.status + ':', text.substring(0, 500));
     throw new OutlookError(`Error al obtener app token: ${res.status}`, text);
   }
 
@@ -566,7 +566,7 @@ async function getAppToken(): Promise<string> {
     expiresAt: Date.now() + expiresIn * 1000,
   };
 
-  console.log(`[getAppToken] Token obtenido OK, expira en ${expiresIn}s`);
+  console.log('[getAppToken] Token obtenido OK, expira en', expiresIn + 's');
   return data.access_token;
 }
 
@@ -584,17 +584,17 @@ export async function sendMail(params: {
 }): Promise<void> {
   const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log(`[sendMail] ── INICIO ──`);
-  console.log(`[sendMail] from: ${params.from}`);
-  console.log(`[sendMail] to: ${toMask}`);
-  console.log(`[sendMail] subject: ${params.subject}`);
-  console.log(`[sendMail] htmlBody length: ${params.htmlBody.length} chars`);
+  console.log('[sendMail] from:', params.from);
+  console.log('[sendMail] to:', toMask);
+  console.log('[sendMail] subject:', params.subject);
+  console.log('[sendMail] htmlBody length:', params.htmlBody.length, 'chars');
 
   // Use app token (client_credentials) — NOT the delegated user token
   const appToken = await getAppToken();
   console.log(`[sendMail] App token obtenido OK`);
 
   const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
-  console.log(`[sendMail] POST ${url}`);
+  console.log('[sendMail] POST', url);
 
   const message: any = {
     subject: params.subject,
@@ -614,7 +614,7 @@ export async function sendMail(params: {
       contentType: att.contentType,
       contentBytes: att.contentBytes,
     }));
-    console.log(`[sendMail] ${params.attachments.length} adjunto(s): ${params.attachments.map((a) => a.name).join(', ')}`);
+    console.log('[sendMail]', params.attachments.length, 'adjunto(s):', params.attachments.map((a) => a.name).join(', '));
   }
 
   const payload = { message, saveToSentItems: true };
@@ -631,12 +631,12 @@ export async function sendMail(params: {
   if (!res.ok) {
     const errBody = await res.text();
     console.error(`[sendMail] ── ERROR ──`);
-    console.error(`[sendMail] status: ${res.status}`);
-    console.error(`[sendMail] body: ${errBody.substring(0, 500)}`);
+    console.error('[sendMail] status:', res.status);
+    console.error('[sendMail] body:', errBody.substring(0, 500));
     throw new OutlookError(`Error al enviar email: ${res.status}`, errBody);
   }
 
-  console.log(`[sendMail] ── ÉXITO — email enviado (${res.status}) ──`);
+  console.log('[sendMail] ── ÉXITO — email enviado (' + res.status + ') ──');
 }
 
 /** @deprecated Use sendMail() with explicit `from` parameter instead */

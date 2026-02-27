@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs';
 import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
 import { Scale, Shield, Building2, AlertTriangle, Download } from 'lucide-react';
 import type { CargoRepresentante } from '@/lib/types';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 import {
   type OrigenExpediente,
@@ -1037,7 +1038,7 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
         const url = download
           ? `${data.signed_url}&download=${encodeURIComponent(doc.nombre_archivo)}`
           : data.signed_url;
-        window.open(url, '_blank');
+        safeWindowOpen(url);
       }
     } catch {
       // silently fail

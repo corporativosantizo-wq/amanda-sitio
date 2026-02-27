@@ -109,9 +109,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Sanitize fileName to prevent path traversal in downstream consumers
+    const safeName = file.name.replace(/\.\./g, '').replace(/[<>:"|?*\x00-\x1f\\\/]/g, '_');
+
     return NextResponse.json({
       storagePath,
-      fileName: file.name,
+      fileName: safeName,
       fileSize: file.size,
       textoExtraido,
     });

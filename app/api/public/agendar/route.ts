@@ -78,9 +78,9 @@ export async function POST(req: NextRequest) {
     const config = HORARIOS[tipoCita];
 
     // Double-check availability
-    console.log(`[Agendar] Verificando disponibilidad: fecha=${fecha}, hora=${hora}, tipo=${tipoCita}`);
+    console.log('[Agendar] Verificando disponibilidad: fecha=', fecha, ', hora=', hora, ', tipo=', tipoCita);
     const slots = await obtenerDisponibilidad(fecha, tipoCita);
-    console.log(`[Agendar] obtenerDisponibilidad retornó ${slots.length} slots:`, slots.map((s: any) => s.hora_inicio));
+    console.log('[Agendar] obtenerDisponibilidad retornó', slots.length, 'slots:', slots.map((s: any) => s.hora_inicio));
 
     // For consulta_nueva the public page sends the hour; match to a slot
     let matchedSlot: { hora_inicio: string; hora_fin: string; duracion_minutos: number } | null = null;
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       const hasStart = slots.some((s: any) => s.hora_inicio === hora);
       const halfHour = hora.replace(':00', ':30');
       const hasHalf = slots.some((s: any) => s.hora_inicio === halfHour);
-      console.log(`[Agendar] consulta_nueva check: hora=${hora}, halfHour=${halfHour}, hasStart=${hasStart}, hasHalf=${hasHalf}`);
+      console.log('[Agendar] consulta_nueva check: hora=', hora, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf);
 
       if (hasStart && hasHalf) {
         const [h] = hora.split(':').map(Number);
@@ -103,26 +103,26 @@ export async function POST(req: NextRequest) {
     } else {
       // Seguimiento — exact 15-min slot
       const found = slots.find((s: any) => s.hora_inicio === hora);
-      console.log(`[Agendar] seguimiento check: hora=${hora}, found=${!!found}`);
+      console.log('[Agendar] seguimiento check: hora=', hora, ', found=', !!found);
       if (found) matchedSlot = found;
     }
 
     if (!matchedSlot) {
-      console.error(`[Agendar] RECHAZADO: No se encontró slot para fecha=${fecha}, hora=${hora}, tipo=${tipoCita}`);
+      console.error('[Agendar] RECHAZADO: No se encontró slot para fecha=', fecha, ', hora=', hora, ', tipo=', tipoCita);
       return NextResponse.json(
         { error: 'El horario seleccionado ya no está disponible. Por favor elige otro.' },
         { status: 409 }
       );
     }
 
-    console.log(`[Agendar] Slot matched: ${matchedSlot.hora_inicio}-${matchedSlot.hora_fin} (${matchedSlot.duracion_minutos}min)`);
+    console.log('[Agendar] Slot matched:', matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin, '(' + matchedSlot.duracion_minutos + 'min)');
 
     // Find or create client
     const db = createAdminClient();
     let clienteId: string;
 
     const emailMask = email.trim().replace(/(.{2}).+(@.+)/, '$1***$2');
-    console.log(`[Agendar] Buscando cliente con email: ${emailMask}`);
+    console.log('[Agendar] Buscando cliente con email:', emailMask);
     const { data: existing, error: lookupErr } = await db
       .from('clientes')
       .select('id')
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       clienteId = existing.id;
-      console.log(`[Agendar] Cliente existente encontrado: ${clienteId}`);
+      console.log('[Agendar] Cliente existente encontrado:', clienteId);
     } else {
       console.log('[Agendar] Cliente no encontrado, creando nuevo...');
       const codigo = `CLI-${Date.now().toString(36).toUpperCase()}`;
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
         );
       }
       clienteId = nuevo.id;
-      console.log(`[Agendar] Cliente creado: ${clienteId}`);
+      console.log('[Agendar] Cliente creado:', clienteId);
     }
 
     // Build title
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
     const titulo = `${tipoLabel} — ${nombreCompleto}`;
 
     // Create cita (handles Outlook event + confirmation email automatically)
-    console.log(`[Agendar] Creando cita: ${titulo} — ${fecha} ${matchedSlot.hora_inicio}-${matchedSlot.hora_fin}`);
+    console.log('[Agendar] Creando cita:', titulo, '—', fecha, matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin);
     const cita = await crearCita({
       tipo: tipoCita,
       titulo,
@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
     });
 
-    console.log(`[Agendar] Cita creada OK: ${cita.id}, teams_link=${cita.teams_link ? 'sí' : 'no'}`);
+    console.log('[Agendar] Cita creada OK:', cita.id, ', teams_link=', cita.teams_link ? 'sí' : 'no');
 
     return NextResponse.json(
       {

@@ -8,9 +8,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
+import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
 const MAX_FILES = 100;
 const BATCH_SIZE = 5; // Concurrent uploads/classifications per batch
 const ALLOWED_TYPES: Record<string, string> = {
@@ -49,25 +49,6 @@ interface FileEntry {
   error?: string;
   storagePath?: string;
   uploadProgress?: UploadProgress;
-}
-
-function xhrUpload(
-  url: string,
-  file: File,
-  contentType: string,
-  onProgress: (loaded: number, total: number) => void
-): Promise<{ ok: boolean; status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded, e.total);
-    };
-    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
-    xhr.onerror = () => reject(new Error('Error de conexión'));
-    xhr.send(file);
-  });
 }
 
 function formatBytes(bytes: number): string {
@@ -194,7 +175,7 @@ export default function UploadDocumentos() {
         continue;
       }
       if (f.size > MAX_FILE_SIZE) {
-        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 150MB.`);
+        rejected.push(`${f.name}: el archivo es demasiado grande (${formatSize(f.size)}). Máximo 1GB.`);
         continue;
       }
       newFiles.push({
@@ -256,31 +237,19 @@ export default function UploadDocumentos() {
         return null;
       }
 
-      if (f.file.size > TUS_THRESHOLD) {
-        // TUS resumable upload for large files
-        await tusUpload({
-          file: f.file,
-          bucketName: 'documentos',
-          objectName: urlData.storage_path,
-          onProgress: (loaded, total) => {
-            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-          },
-        });
-      } else {
-        // Standard XHR upload for small files
-        const uploadRes = await xhrUpload(
-          urlData.signed_url,
-          f.file,
-          f.file.type || 'application/octet-stream',
-          (loaded, total) => {
-            updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
-          }
-        );
+      // PUT directo al signed URL (bypasea Kong, soporta archivos grandes)
+      const uploadRes = await signedUrlUpload(
+        urlData.signed_url,
+        f.file,
+        f.file.type || 'application/octet-stream',
+        (loaded, total) => {
+          updateFile(f.id, { uploadProgress: { loaded, total, startedAt } });
+        },
+      );
 
-        if (!uploadRes.ok) {
-          updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
-          return null;
-        }
+      if (!uploadRes.ok) {
+        updateFile(f.id, { status: 'error', error: `Error al subir a Storage: HTTP ${uploadRes.status} — ${uploadRes.text.slice(0, 200)}` });
+        return null;
       }
 
       updateFile(f.id, { storagePath: urlData.storage_path, uploadProgress: undefined });
@@ -544,7 +513,7 @@ export default function UploadDocumentos() {
               {dragOver ? 'Suelte los archivos aquí' : 'Arrastre sus archivos aquí'}
             </p>
             <p className="text-sm text-slate-400 mt-1">
-              o haga clic para seleccionar — PDF, DOCX, XLSX, JPG, PNG (máx. 100, 150MB c/u)
+              o haga clic para seleccionar — PDF, DOCX, XLSX, JPG, PNG (máx. 100, 1GB c/u)
             </p>
           </div>
 

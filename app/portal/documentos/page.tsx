@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePortal } from '../layout';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 interface Escritura {
   id: string;
@@ -96,7 +97,7 @@ export default function PortalDocumentos() {
       if (res.ok) {
         const data = await res.json();
         // Abrir URL firmada en nueva pestaña
-        window.open(data.url, '_blank');
+        safeWindowOpen(data.url);
       }
     } catch {
       // silenciar

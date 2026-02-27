@@ -9,6 +9,7 @@ import { useState, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { ArrowLeft, Pencil, X, Save, Plus, Trash2 } from 'lucide-react';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 import {
   type TramiteLaboralConCliente,
   type HistorialLaboral,
@@ -195,7 +196,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
       const res = await fetch(`/api/admin/cumplimiento/documentos/download?modulo=laboral&tramite_id=${id}&tipo=${tipo}`);
       if (!res.ok) throw new Error('Error al obtener URL');
       const { url } = await res.json();
-      window.open(url, '_blank');
+      safeWindowOpen(url);
     } catch {
       alert('Error al descargar archivo');
     }

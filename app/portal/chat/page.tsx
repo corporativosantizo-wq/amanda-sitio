@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePortal } from '../layout';
+import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 
 interface Message {
   id: string;
@@ -334,7 +335,7 @@ export default function PortalChat() {
                     <div
                       style={{ whiteSpace: 'pre-wrap' }}
                       dangerouslySetInnerHTML={{
-                        __html: formatMarkdown(msg.content),
+                        __html: sanitizeHtml(formatMarkdown(msg.content)),
                       }}
                     />
                   ) : (

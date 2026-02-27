@@ -8,6 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 const TIPOS: Record<string, string> = {
   contrato_comercial: 'Contrato Comercial',
@@ -242,7 +243,7 @@ export default function DocumentosPage() {
     try {
       const res = await fetch(`/api/admin/documentos/${docId}`);
       const d = await res.json();
-      if (d.signed_url) window.open(d.signed_url, '_blank');
+      if (d.signed_url) safeWindowOpen(d.signed_url);
     } catch { /* ignore */ }
   };
 
@@ -314,7 +315,7 @@ export default function DocumentosPage() {
     try {
       const res = await fetch(`/api/admin/documentos/${id}`);
       const data = await res.json();
-      if (data.signed_url) window.open(data.signed_url, '_blank');
+      if (data.signed_url) safeWindowOpen(data.signed_url);
     } catch { /* ignore */ }
   };
 

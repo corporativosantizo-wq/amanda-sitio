@@ -474,7 +474,7 @@ export async function extraerYGuardarTexto(docId: string, archivoUrl: string): P
     const buffer = await descargarPDF(archivoUrl);
 
     if (buffer.length > MAX_FILE_SIZE_OCR) {
-      console.log(`[OCR] Saltado ${archivoUrl} (${(buffer.length / 1024 / 1024).toFixed(1)} MB > 150 MB)`);
+      console.log('[OCR] Saltado', archivoUrl, '(' + (buffer.length / 1024 / 1024).toFixed(1) + ' MB > 150 MB)');
       await db().from('documentos').update({ texto_extraido: '[archivo demasiado grande]' }).eq('id', docId);
       return;
     }
@@ -497,7 +497,7 @@ export async function extraerYGuardarTexto(docId: string, archivoUrl: string): P
       await db().from('documentos').update({ texto_extraido: '[sin texto extraible]' }).eq('id', docId);
     }
   } catch (err: any) {
-    console.error(`[OCR] Error extrayendo texto de ${archivoUrl}:`, err.message);
+    console.error('[OCR] Error extrayendo texto de', archivoUrl + ':', err.message);
     // No throw — extraction failure must not affect the upload
   }
 }

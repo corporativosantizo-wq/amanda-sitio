@@ -31,13 +31,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const tareas = await obtenerTareasProgramadasPendientes();
-    console.log(`[Cron Tareas] Encontradas ${tareas.length} tareas programadas pendientes`);
+    console.log('[Cron Tareas] Encontradas', tareas.length, 'tareas programadas pendientes');
 
     for (const tarea of tareas) {
       try {
         const accion = tarea.accion_automatica;
         if (!accion || accion.tipo !== 'enviar_email') {
-          console.log(`[Cron Tareas] Tarea ${tarea.id}: tipo de acción no soportado (${accion?.tipo})`);
+          console.log('[Cron Tareas] Tarea', tarea.id + ': tipo de acción no soportado', '(' + accion?.tipo + ')');
           resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: false, detalle: `Tipo no soportado: ${accion?.tipo}` });
           continue;
         }
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
 
         if (!destinatarioEmail) {
           const msg = `No se encontró email del destinatario para tarea "${tarea.titulo}"`;
-          console.error(`[Cron Tareas] ${msg}`);
+          console.error('[Cron Tareas]', msg);
           resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: false, detalle: msg });
           continue;
         }
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
           }
           default: {
             const msg = `Template no soportado: ${accion.template}`;
-            console.error(`[Cron Tareas] ${msg}`);
+            console.error('[Cron Tareas]', msg);
             resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: false, detalle: msg });
             continue;
           }
@@ -155,21 +155,21 @@ export async function GET(req: NextRequest) {
         // Send email — CC a Amanda para que tenga copia de todo correo programado
         await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: 'amanda@papeleo.legal' });
         const maskedEmail = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
-        console.log(`[Cron Tareas] Email enviado: ${accion.template} a ${maskedEmail} desde ${from}`);
+        console.log('[Cron Tareas] Email enviado:', accion.template, 'a', maskedEmail, 'desde', from);
 
         // Mark as executed
         await marcarTareaEjecutada(tarea.id, `Email ${accion.template} enviado a ${maskedEmail}`);
         resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: true, detalle: `Email enviado a ${maskedEmail}` });
 
       } catch (err: any) {
-        console.error(`[Cron Tareas] Error procesando tarea ${tarea.id}:`, err.message);
+        console.error('[Cron Tareas] Error procesando tarea', tarea.id + ':', err.message);
         resultados.push({ id: tarea.id, titulo: tarea.titulo, ok: false, detalle: err.message });
       }
     }
 
     const exitosas = resultados.filter((r: any) => r.ok).length;
     const fallidas = resultados.filter((r: any) => !r.ok).length;
-    console.log(`[Cron Tareas] Resultado: ${exitosas} exitosas, ${fallidas} fallidas de ${tareas.length} total`);
+    console.log('[Cron Tareas] Resultado:', exitosas, 'exitosas,', fallidas, 'fallidas de', tareas.length, 'total');
 
     return NextResponse.json({
       ok: true,

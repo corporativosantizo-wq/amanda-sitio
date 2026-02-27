@@ -55,7 +55,7 @@ export async function PUT(
 
   const db = getAdminPublicClient();
 
-  console.log(`[Posts API] Updating post ${id}: title="${title}", slug="${slug}", status="${status}"`);
+  console.log('[Posts API] Updating post', id + ':', 'title=', title, ', slug=', slug, ', status=', status);
 
   const { data, error } = await db
     .from('posts')
@@ -73,10 +73,10 @@ export async function PUT(
     .single();
 
   if (error) {
-    console.error(`[Posts API] UPDATE error for post ${id}:`, JSON.stringify(error));
+    console.error('[Posts API] UPDATE error for post', id + ':', JSON.stringify(error));
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  console.log(`[Posts API] Post ${id} updated OK`);
+  console.log('[Posts API] Post', id, 'updated OK');
   return NextResponse.json(data);
 }

@@ -12,6 +12,7 @@ import {
   PageHeader, Badge, Section, KPICard,
   EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ export default function CotizacionDetallePage() {
       const res = await fetch(`/api/admin/contabilidad/cotizaciones/${id}/pdf`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Error al obtener PDF');
-      window.open(data.url, '_blank');
+      safeWindowOpen(data.url);
     } catch (err: any) {
       alert(err.message);
     } finally {

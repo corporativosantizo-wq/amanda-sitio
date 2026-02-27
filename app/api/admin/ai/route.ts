@@ -46,6 +46,41 @@ import {
 } from '@/lib/services/cotizaciones.service';
 import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
 
+// ── Retry wrapper for Anthropic API (handles 529 Overloaded) ─────────────
+class AnthropicOverloadedError extends Error {
+  constructor() {
+    super('El asistente está ocupado en este momento, intenta de nuevo en unos segundos.');
+    this.name = 'AnthropicOverloadedError';
+  }
+}
+
+async function callAnthropicWithRetry(
+  anthropic: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  maxRetries = 3,
+): Promise<Anthropic.Message> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err: any) {
+      const status = err?.status ?? err?.error?.status;
+      if (status === 529 && attempt < maxRetries) {
+        const delay = attempt * 2000; // 2s, 4s
+        console.warn('[AI] Anthropic 529 overloaded – retry', attempt, '/', maxRetries, 'in', delay, 'ms');
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      if (status === 529) {
+        console.error('[AI] Anthropic 529 overloaded – all', maxRetries, 'retries exhausted');
+        throw new AnthropicOverloadedError();
+      }
+      throw err;
+    }
+  }
+  // Unreachable, but satisfies TS
+  throw new AnthropicOverloadedError();
+}
+
 const SYSTEM_PROMPT = `Eres el asistente IA de IURISLEX, el sistema de gestión legal de Amanda Santizo — Despacho Jurídico, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales.
 
 ## TU PERSONALIDAD
@@ -525,7 +560,7 @@ async function buscarContacto(
   nombre: string,
   limit: number = 5,
 ): Promise<{ id: string; nombre: string; email: string | null; telefono: string | null; tipo_contacto: 'cliente' | 'proveedor'; codigo: string }[]> {
-  console.log(`[AI] Búsqueda de contacto: "${nombre}"`);
+  console.log('[AI] Búsqueda de contacto:', nombre);
   // @ts-ignore
   const { data, error } = await db.schema('public').rpc('buscar_contacto', { nombre });
   if (error) throw new Error(`Error buscando contacto: ${error.message}`);
@@ -599,7 +634,7 @@ async function queryDatabase(query: string): Promise<string> {
 // ── Generación de documentos ──────────────────────────────────────────────
 
 async function generateDocument(tipo: string, datos: any): Promise<string> {
-  console.log(`[AI] Generando documento: tipo=${tipo}, datos keys:`, Object.keys(datos || {}));
+  console.log('[AI] Generando documento: tipo=', tipo, ', datos keys:', Object.keys(datos || {}));
 
   // Validar env vars
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -607,18 +642,18 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
   }
 
   // Paso 1: Generar buffer .docx
-  console.log(`[AI] Paso 1: Generando buffer docx...`);
+  console.log('[AI] Paso 1: Generando buffer docx...');
   let buffer: Buffer;
   try {
     buffer = await generarDocumento(tipo as TipoDocumentoGenerable, datos);
-    console.log(`[AI] Buffer generado OK: ${(buffer.length / 1024).toFixed(0)} KB`);
+    console.log('[AI] Buffer generado OK:', (buffer.length / 1024).toFixed(0), 'KB');
   } catch (err: any) {
-    console.error(`[AI] Error generando docx:`, err.message, err.stack);
-    throw new Error(`Error al generar el documento .docx (tipo: ${tipo}): ${err.message}`);
+    console.error('[AI] Error generando docx:', err.message, err.stack);
+    throw new Error('Error al generar el documento .docx (tipo: ' + tipo + '): ' + err.message);
   }
 
   // Paso 2: Subir a Storage
-  console.log(`[AI] Paso 2: Subiendo a Storage...`);
+  console.log('[AI] Paso 2: Subiendo a Storage...');
   const storage = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -635,24 +670,24 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
     });
 
   if (uploadError) {
-    console.error(`[AI] Error upload Storage:`, uploadError);
+    console.error('[AI] Error upload Storage:', uploadError);
     throw new Error(`Error al subir a Storage: ${uploadError.message}`);
   }
-  console.log(`[AI] Subido OK: ${storagePath}`);
+  console.log('[AI] Subido OK:', storagePath);
 
   // Paso 3: Generar URL firmada
-  console.log(`[AI] Paso 3: Generando URL firmada...`);
+  console.log('[AI] Paso 3: Generando URL firmada...');
   const { data: signedData, error: signError } = await storage.storage
     .from('documentos')
     .createSignedUrl(storagePath, 600);
 
   if (signError || !signedData) {
-    console.error(`[AI] Error signed URL:`, signError);
+    console.error('[AI] Error signed URL:', signError);
     throw new Error(`Error al generar URL de descarga: ${signError?.message}`);
   }
 
   const nombre = PLANTILLAS_DISPONIBLES[tipo as TipoDocumentoGenerable] ?? tipo;
-  console.log(`[AI] Documento generado exitosamente: ${nombre}`);
+  console.log('[AI] Documento generado exitosamente:', nombre);
 
   return `Documento "${nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
@@ -660,34 +695,34 @@ async function generateDocument(tipo: string, datos: any): Promise<string> {
 // ── Generación desde plantilla custom ────────────────────────────────────
 
 async function generateCustomDocument(plantillaId: string, datos: any): Promise<string> {
-  console.log(`[AI] Generando documento custom: plantilla_id=${plantillaId}`);
+  console.log('[AI] Generando documento custom: plantilla_id=', plantillaId);
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('Faltan variables de entorno de Supabase');
   }
 
   // Paso 1: Obtener plantilla
-  console.log(`[AI] Custom paso 1: Obteniendo plantilla...`);
+  console.log('[AI] Custom paso 1: Obteniendo plantilla...');
   const plantilla = await obtenerPlantilla(plantillaId);
   if (!plantilla.activa) throw new Error('La plantilla está inactiva');
-  console.log(`[AI] Plantilla: "${plantilla.nombre}", ${(plantilla.campos as any[]).length} campos`);
+  console.log('[AI] Plantilla:', plantilla.nombre, ',', (plantilla.campos as any[]).length, 'campos');
 
   // Paso 2: Reemplazar campos y generar docx
-  console.log(`[AI] Custom paso 2: Generando docx...`);
+  console.log('[AI] Custom paso 2: Generando docx...');
   let buffer: Buffer;
   try {
     const textoFinal = generarDesdeCustomPlantilla(plantilla, datos);
     const paragraphs = convertirTextoAParagraphs(textoFinal);
     const doc = buildDocument(paragraphs);
     buffer = Buffer.from(await Packer.toBuffer(doc));
-    console.log(`[AI] Buffer custom generado: ${(buffer.length / 1024).toFixed(0)} KB`);
+    console.log('[AI] Buffer custom generado:', (buffer.length / 1024).toFixed(0), 'KB');
   } catch (err: any) {
-    console.error(`[AI] Error generando docx custom:`, err.message, err.stack);
+    console.error('[AI] Error generando docx custom:', err.message, err.stack);
     throw new Error(`Error al generar .docx custom: ${err.message}`);
   }
 
   // Paso 3: Subir a Storage
-  console.log(`[AI] Custom paso 3: Subiendo a Storage...`);
+  console.log('[AI] Custom paso 3: Subiendo a Storage...');
   const storage = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -704,22 +739,22 @@ async function generateCustomDocument(plantillaId: string, datos: any): Promise<
     });
 
   if (uploadError) {
-    console.error(`[AI] Error upload custom:`, uploadError);
+    console.error('[AI] Error upload custom:', uploadError);
     throw new Error(`Error al subir a Storage: ${uploadError.message}`);
   }
 
   // Paso 4: URL firmada
-  console.log(`[AI] Custom paso 4: Generando URL firmada...`);
+  console.log('[AI] Custom paso 4: Generando URL firmada...');
   const { data: signedData, error: signError } = await storage.storage
     .from('documentos')
     .createSignedUrl(storagePath, 600);
 
   if (signError || !signedData) {
-    console.error(`[AI] Error signed URL custom:`, signError);
+    console.error('[AI] Error signed URL custom:', signError);
     throw new Error(`Error al generar URL: ${signError?.message}`);
   }
 
-  console.log(`[AI] Documento custom generado exitosamente: ${plantilla.nombre}`);
+  console.log('[AI] Documento custom generado exitosamente:', plantilla.nombre);
   return `Documento "${plantilla.nombre}" generado exitosamente.\nEnlace de descarga (válido por 10 minutos): ${signedData.signedUrl}`;
 }
 
@@ -743,7 +778,7 @@ async function handleEnviarEmail(
     // Direct email — no DB lookup needed
     destinatarioEmail = emailDirecto.trim();
     destinatarioNombre = nombreDestinatario?.trim() || destinatarioEmail;
-    console.log(`[AI] Email directo a: ${destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2')} (${destinatarioNombre})`);
+    console.log('[AI] Email directo a:', destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2'), '(' + destinatarioNombre + ')');
   } else if (clienteId) {
     // Lookup by UUID or name
     let cliente: any;
@@ -906,7 +941,7 @@ async function handleEnviarEmail(
   await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: 'amanda@papeleo.legal' });
 
   const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
-  console.log(`[AI] Email enviado: tipo=${tipoEmail}, from=${from}, to=${emailMask}, asunto=${subject}`);
+  console.log('[AI] Email enviado: tipo=', tipoEmail, ', from=', from, ', to=', emailMask, ', asunto=', subject);
   return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}`;
 }
 
@@ -999,7 +1034,7 @@ async function handleEnviarEmailConAdjunto(
   });
 
   const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
-  console.log(`[AI] Email con adjunto enviado: to=${emailMask}, archivo=${displayName}`);
+  console.log('[AI] Email con adjunto enviado: to=', emailMask, ', archivo=', displayName);
   return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) con adjunto "${displayName}" desde asistente@papeleo.legal — Asunto: ${asunto}`;
 }
 
@@ -1039,7 +1074,7 @@ async function handleConfirmarPago(
     notas: concepto,
   });
 
-  console.log(`[AI] Pago registrado y confirmado: ${pago.numero} — Q${monto} — ${cliente.nombre}`);
+  console.log('[AI] Pago registrado y confirmado:', pago.numero, '— Q', monto, '—', cliente.nombre);
 
   // 3. Send comprobante email from contador@
   if (cliente.email) {
@@ -1051,10 +1086,10 @@ async function handleConfirmarPago(
         fechaPago: pago.fecha_pago ?? new Date().toISOString().split('T')[0],
       });
       await sendMail({ from: t.from, to: cliente.email, subject: t.subject, htmlBody: t.html, cc: 'amanda@papeleo.legal' });
-      console.log(`[AI] Comprobante enviado a ${cliente.email} desde ${t.from}`);
+      console.log('[AI] Comprobante enviado a', cliente.email, 'desde', t.from);
       return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. Comprobante enviado a ${cliente.email} desde contador@papeleo.legal.`;
     } catch (emailErr: any) {
-      console.error(`[AI] Error enviando comprobante:`, emailErr.message);
+      console.error('[AI] Error enviando comprobante:', emailErr.message);
       return `Pago confirmado: ${pago.numero} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} de ${cliente.nombre}. ADVERTENCIA: no se pudo enviar el comprobante por email (${emailErr.message}).`;
     }
   }
@@ -1246,7 +1281,7 @@ async function handleGestionarClientes(
       if (!busqueda?.trim()) throw new Error('Se requiere busqueda (nombre, email, empresa, NIT, etc.)');
       const q = busqueda.trim();
       const words = q.split(/\s+/).filter(Boolean);
-      console.log(`[AI] gestionar_clientes buscar: "${q}" → palabras: [${words.join(', ')}]`);
+      console.log('[AI] gestionar_clientes buscar:', q, '-> palabras:', words);
 
       // Build query: each word must match nombre (AND), OR full query matches email/empresa/nit
       const selectCols = 'id, codigo, tipo, nombre, nit, dpi, telefono, email, direccion, empresa, representante_legal, razon_social, nit_facturacion, direccion_facturacion, notas, activo';
@@ -1475,7 +1510,7 @@ async function handleCrearCotizacionCompleta(
     notas_internas: notas ?? null,
   });
 
-  console.log(`[AI] Cotización creada: ${cotizacion.numero} — cliente: ${cliente.nombre}`);
+  console.log('[AI] Cotización creada:', cotizacion.numero, '— cliente:', cliente.nombre);
 
   // 3. Fetch full cotizacion with client join + items (for PDF)
   const cotizacionCompleta = await obtenerCotizacion(cotizacion.id);
@@ -1483,7 +1518,7 @@ async function handleCrearCotizacionCompleta(
 
   // 4. Generate PDF
   const pdfBuffer = await generarPDFCotizacion(cotizacionCompleta, config);
-  console.log(`[AI] PDF generado: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+  console.log('[AI] PDF generado:', (pdfBuffer.length / 1024).toFixed(0), 'KB');
 
   // 5. Upload to Storage
   const storage = createClient(
@@ -1501,7 +1536,7 @@ async function handleCrearCotizacionCompleta(
     });
 
   if (uploadError) throw new Error(`Error al subir PDF: ${uploadError.message}`);
-  console.log(`[AI] PDF subido: ${storagePath}`);
+  console.log('[AI] PDF subido:', storagePath);
 
   // 6. Update pdf_url
   await db.from('cotizaciones').update({
@@ -1528,7 +1563,13 @@ async function handleCrearCotizacionCompleta(
 
       let logoBase64: string | undefined;
       try {
-        logoBase64 = fs.readFileSync(path.join(process.cwd(), 'public', 'Logo_Amanda_Santizo_2021_Full_Color.png')).toString('base64');
+        const LOGO_FILE = 'Logo_Amanda_Santizo_2021_Full_Color.png';
+        const logoPath = path.resolve(process.cwd(), 'public', LOGO_FILE);
+        // Path traversal guard: ensure resolved path stays inside public/
+        if (!logoPath.startsWith(path.resolve(process.cwd(), 'public'))) {
+          throw new Error('Invalid logo path');
+        }
+        logoBase64 = fs.readFileSync(logoPath).toString('base64');
       } catch { /* fallback to text */ }
 
       const emailTemplate = emailCotizacion({
@@ -1571,7 +1612,7 @@ async function handleCrearCotizacionCompleta(
 
       const emailMask = cliente.email.replace(/(.{2}).+(@.+)/, '$1***$2');
       emailInfo = ` Email enviado a ${cliente.nombre} (${emailMask}) desde contador@papeleo.legal con PDF adjunto.`;
-      console.log(`[AI] Cotización enviada por email a ${emailMask}`);
+      console.log('[AI] Cotización enviada por email a', emailMask);
     }
   }
 
@@ -1601,7 +1642,7 @@ async function handleBuscarJurisprudencia(
   }
 
   // 1. Generate embedding for the query
-  console.log(`[AI] Jurisprudencia: generando embedding para "${consulta.slice(0, 80)}..."`);
+  console.log('[AI] Jurisprudencia: generando embedding para', consulta.slice(0, 80));
   const embResponse = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
     headers: {
@@ -2733,7 +2774,7 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    let response = await anthropic.messages.create({
+    let response = await callAnthropicWithRetry(anthropic, {
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: dynamicPrompt,
@@ -2746,13 +2787,13 @@ export async function POST(req: Request) {
 
     while (response.stop_reason === 'tool_use' && rounds < MAX_ROUNDS) {
       rounds++;
-      console.log(`[AI] Tool use round ${rounds}`);
+      console.log('[AI] Tool use round', rounds);
 
       // Procesar todos los tool_use blocks
       const toolResults: any[] = [];
       for (const block of response.content) {
         if (block.type === 'tool_use') {
-          console.log(`[AI] Tool: ${block.name}, input:`, JSON.stringify(block.input).slice(0, 200));
+          console.log('[AI] Tool:', block.name, ', input:', JSON.stringify(block.input).slice(0, 200));
           let result: string;
           try {
             if (block.name === 'consultar_base_datos') {
@@ -2844,8 +2885,8 @@ export async function POST(req: Request) {
               result = `Herramienta desconocida: ${block.name}`;
             }
           } catch (err: any) {
-            console.error(`[AI] Tool error (${block.name}):`, err.message);
-            console.error(`[AI] Stack:`, err.stack);
+            console.error('[AI] Tool error (' + block.name + '):', err.message);
+            console.error('[AI] Stack:', err.stack);
             result = `Error al ejecutar ${block.name}: ${err.message}. Muestra este error exacto al usuario para que pueda reportarlo.`;
           }
           toolResults.push({
@@ -2863,7 +2904,7 @@ export async function POST(req: Request) {
         { role: 'user' as const, content: toolResults },
       ];
 
-      response = await anthropic.messages.create({
+      response = await callAnthropicWithRetry(anthropic, {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: dynamicPrompt,
@@ -2879,6 +2920,12 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('AI Error:', error);
+    if (error instanceof AnthropicOverloadedError) {
+      return Response.json({
+        role: 'assistant',
+        content: 'El asistente está ocupado en este momento, intenta de nuevo en unos segundos.',
+      });
+    }
     return Response.json({ error: error.message ?? 'Error interno del asistente' }, { status: 500 });
   }
 }

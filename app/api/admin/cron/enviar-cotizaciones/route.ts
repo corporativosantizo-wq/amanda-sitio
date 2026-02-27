@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const resultado = await enviarCotizacionesProgramadas();
-    console.log(`[CronCotizaciones] Enviadas: ${resultado.enviadas}, Errores: ${resultado.errores}`);
+    console.log('[CronCotizaciones] Enviadas:', resultado.enviadas + ', Errores:', resultado.errores);
     return NextResponse.json(resultado);
   } catch (error) {
     if (error instanceof CotizacionError) {

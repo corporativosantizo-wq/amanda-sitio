@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
-import { tusUpload, TUS_THRESHOLD } from '@/lib/storage/tus-upload';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 
 // ── Toast system ─────────────────────────────────────────────────────────────
 
@@ -44,26 +45,7 @@ interface ListResponse {
   totalPages: number;
 }
 
-// ── Upload helper ───────────────────────────────────────────────────────────
-
-function xhrUpload(
-  url: string,
-  file: File,
-  contentType: string,
-  onProgress: (loaded: number, total: number) => void
-): Promise<{ ok: boolean; status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded, e.total);
-    };
-    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
-    xhr.onerror = () => reject(new Error('Error de conexión'));
-    xhr.send(file);
-  });
-}
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatBytesShort(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -199,7 +181,7 @@ export default function JurisprudenciaPage() {
     const res = await fetch(`/api/admin/jurisprudencia/${id}`);
     const data = await res.json();
     if (data.signed_url) {
-      window.open(data.signed_url, '_blank');
+      safeWindowOpen(data.signed_url);
     }
   };
 
@@ -534,22 +516,14 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
         const uploadStart = Date.now();
         setByteProgress({ loaded: 0, total: file.size, startedAt: uploadStart });
 
-        if (file.size > TUS_THRESHOLD) {
-          await tusUpload({
-            file,
-            bucketName: 'jurisprudencia',
-            objectName: urlData.storage_path,
-            onProgress: (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart }),
-          });
-        } else {
-          const uploadRes = await xhrUpload(
-            urlData.signed_url,
-            file,
-            'application/pdf',
-            (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart })
-          );
-          if (!uploadRes.ok) throw new Error('Error al subir archivo al almacenamiento');
-        }
+        // PUT directo al signed URL (bypasea Kong, soporta archivos grandes)
+        const uploadRes = await signedUrlUpload(
+          urlData.signed_url,
+          file,
+          'application/pdf',
+          (loaded, total) => setByteProgress({ loaded, total, startedAt: uploadStart }),
+        );
+        if (!uploadRes.ok) throw new Error('Error al subir archivo al almacenamiento');
 
         // 3. Register tomo in DB
         const titulo = limpiarNombreArchivo(file.name);

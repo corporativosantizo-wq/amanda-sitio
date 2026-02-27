@@ -20,6 +20,14 @@ function Q(n: number): string {
   return `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Validate that a href is an internal route (starts with /, no protocol) */
+function safeHref(href: string): string {
+  if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//') && !href.includes(':')) {
+    return href;
+  }
+  return '/portal';
+}
+
 export default function PortalDashboard() {
   const { cliente, clienteId, accessToken } = usePortal();
   const [resumen, setResumen] = useState<Resumen | null>(null);
@@ -116,7 +124,7 @@ export default function PortalDashboard() {
         {cards.map((card: any) => (
           <Link
             key={card.title}
-            href={card.href}
+            href={safeHref(card.href)}
             style={{
               display: 'block',
               textDecoration: 'none',
@@ -235,7 +243,7 @@ export default function PortalDashboard() {
         {quickLinks.map((link: any) => (
           <Link
             key={link.title}
-            href={link.href}
+            href={safeHref(link.href)}
             style={{
               display: 'block',
               textDecoration: 'none',

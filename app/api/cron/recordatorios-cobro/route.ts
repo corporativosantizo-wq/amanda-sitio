@@ -101,16 +101,16 @@ export async function GET(req: NextRequest) {
           detalle: `${tipo} enviado a ${maskedEmail}`,
         });
 
-        console.log(`[Cron Cobros] ${tipo} enviado: COB-${cobro.numero_cobro} → ${maskedEmail}`);
+        console.log('[Cron Cobros]', tipo, 'enviado: COB-' + cobro.numero_cobro, '→', maskedEmail);
       } catch (err: any) {
         await registrarRecordatorio(cobro.id, tipo, false, err.message);
         resultados.push({ cobro_id: cobro.id, tipo, ok: false, detalle: err.message });
-        console.error(`[Cron Cobros] Error COB-${cobro.numero_cobro}:`, err.message);
+        console.error('[Cron Cobros] Error COB-' + cobro.numero_cobro + ':', err.message);
       }
     }
 
     const exitosas = resultados.filter((r: any) => r.ok).length;
-    console.log(`[Cron Cobros] Resultado: ${exitosas}/${resultados.length} exitosos de ${cobros.length} cobros evaluados`);
+    console.log('[Cron Cobros] Resultado:', exitosas + '/' + resultados.length, 'exitosos de', cobros.length, 'cobros evaluados');
 
     return NextResponse.json({
       ok: true,

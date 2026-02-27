@@ -166,6 +166,17 @@ async function processPDF(pdfPath, tomoIndex, totalTomos) {
   const filename = path.basename(pdfPath);
   const prefix = `[Tomo ${tomoIndex}/${totalTomos}]`;
 
+  // Validate path: resolve to absolute and ensure it's a real .pdf file
+  const resolvedPdf = path.resolve(pdfPath);
+  if (!resolvedPdf.toLowerCase().endsWith('.pdf')) {
+    console.error(`${prefix} Ruta no es un archivo PDF: ${resolvedPdf}`);
+    return { error: 'not_pdf' };
+  }
+  if (!fs.existsSync(resolvedPdf)) {
+    console.error(`${prefix} Archivo no encontrado: ${resolvedPdf}`);
+    return { error: 'not_found' };
+  }
+
   console.log(`\n${prefix} Procesando: ${filename}`);
 
   // Check if already processed
@@ -182,7 +193,7 @@ async function processPDF(pdfPath, tomoIndex, totalTomos) {
 
   // Read and parse PDF
   console.log(`${prefix} Extrayendo texto del PDF...`);
-  const pdfBuffer = fs.readFileSync(pdfPath);
+  const pdfBuffer = fs.readFileSync(resolvedPdf);
   const pdf = await pdfParse(pdfBuffer);
   const text = pdf.text;
   const totalPages = pdf.numpages;
