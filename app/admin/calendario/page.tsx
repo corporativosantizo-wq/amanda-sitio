@@ -172,6 +172,7 @@ function CalendarioPage() {
   const [citas, setCitas] = useState<CitaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [outlookConnected, setOutlookConnected] = useState<boolean | null>(null);
+  const [compact, setCompact] = useState(true);
 
   // Modal states
   const [showDetail, setShowDetail] = useState<CitaItem | null>(null);
@@ -307,6 +308,22 @@ function CalendarioPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
+        {vista === 'semana' && (
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setCompact(true)}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${compact ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
+            >
+              Compacta
+            </button>
+            <button
+              onClick={() => setCompact(false)}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${!compact ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
+            >
+              Completa
+            </button>
+          </div>
+        )}
         <div className="ml-auto flex items-center bg-gray-100 rounded-lg p-0.5">
           <button
             onClick={() => setVista('semana')}
@@ -344,6 +361,7 @@ function CalendarioPage() {
           citasForDate={citasForDate}
           onClickCita={(c: CitaItem) => setShowDetail(c)}
           onClickSlot={(dateStr: string) => { setCreateDate(dateStr); setShowCreate(true); }}
+          compact={compact}
         />
       ) : (
         <DayView
@@ -387,16 +405,97 @@ function CalendarioPage() {
 
 // ── Week View ───────────────────────────────────────────────────────────────
 
+// Helper: snap a cita's hora_inicio to the nearest HORAS slot
+function snapToSlot(horaInicio: string): string {
+  const [ch, cm] = horaInicio.split(':').map(Number);
+  const totalMin = ch * 60 + cm;
+  const gridStart = 6 * 60;  // 06:00
+  const gridEnd = 21 * 60;   // 21:00
+  const clamped = Math.max(gridStart, Math.min(gridEnd, totalMin));
+  const clampedH = Math.floor(clamped / 60);
+  const clampedM = (clamped % 60) < 30 ? '00' : '30';
+  return `${String(clampedH).padStart(2, '0')}:${clampedM}`;
+}
+
+type WeekSegment =
+  | { type: 'visible'; hours: string[] }
+  | { type: 'collapsed'; from: string; to: string };
+
+function buildCompactSegments(
+  weekDays: Date[],
+  citasForDate: (d: string) => CitaItem[],
+): WeekSegment[] {
+  // 1. Find all slots that have events in ANY day
+  const activeSlots = new Set<string>();
+  for (const d of weekDays) {
+    const dateStr = formatDate(d);
+    for (const c of citasForDate(dateStr)) {
+      if (c.isAllDay) continue;
+      activeSlots.add(snapToSlot(c.hora_inicio));
+    }
+  }
+
+  // 2. Add 1 slot of context before/after each active slot
+  const withContext = new Set<string>(activeSlots);
+  for (let i = 0; i < HORAS.length; i++) {
+    if (activeSlots.has(HORAS[i])) {
+      if (i > 0) withContext.add(HORAS[i - 1]);
+      if (i < HORAS.length - 1) withContext.add(HORAS[i + 1]);
+    }
+  }
+
+  // 3. Add current time slot
+  const now = new Date();
+  const curH = now.getHours();
+  const curM = now.getMinutes() < 30 ? '00' : '30';
+  const currentSlot = `${String(curH).padStart(2, '0')}:${curM}`;
+  if (HORAS.includes(currentSlot)) {
+    withContext.add(currentSlot);
+    // Also add neighbors for context
+    const idx = HORAS.indexOf(currentSlot);
+    if (idx > 0) withContext.add(HORAS[idx - 1]);
+    if (idx < HORAS.length - 1) withContext.add(HORAS[idx + 1]);
+  }
+
+  // 4. If no events at all, show a reasonable default range (8:00-18:00)
+  if (activeSlots.size === 0) {
+    for (const h of HORAS) {
+      const hour = parseInt(h.split(':')[0], 10);
+      if (hour >= 8 && hour <= 17) withContext.add(h);
+    }
+  }
+
+  // 5. Build segments
+  const segments: WeekSegment[] = [];
+  let i = 0;
+  while (i < HORAS.length) {
+    if (withContext.has(HORAS[i])) {
+      const start = i;
+      while (i < HORAS.length && withContext.has(HORAS[i])) i++;
+      segments.push({ type: 'visible', hours: HORAS.slice(start, i) });
+    } else {
+      const from = HORAS[i];
+      while (i < HORAS.length && !withContext.has(HORAS[i])) i++;
+      const to = i < HORAS.length ? HORAS[i] : '21:30';
+      segments.push({ type: 'collapsed', from, to });
+    }
+  }
+
+  return segments;
+}
+
 function WeekView({
   weekDays,
   citasForDate,
   onClickCita,
   onClickSlot,
+  compact,
 }: {
   weekDays: Date[];
   citasForDate: (d: string) => CitaItem[];
   onClickCita: (c: CitaItem) => void;
   onClickSlot: (d: string) => void;
+  compact: boolean;
 }) {
   const todayStr = formatDate(new Date());
 
@@ -405,6 +504,65 @@ function WeekView({
     const dateStr = formatDate(d);
     return citasForDate(dateStr).some((c: CitaItem) => c.isAllDay);
   });
+
+  // Build segments for compact mode
+  const segments = compact ? buildCompactSegments(weekDays, citasForDate) : null;
+  // In full mode, just use all HORAS as a single visible segment
+  const horasToRender = segments ?? [{ type: 'visible' as const, hours: HORAS }];
+
+  // Render a single time row
+  const renderTimeRow = (hora: string) => (
+    <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100">
+      <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
+      {weekDays.map((d: Date, di: number) => {
+        const dateStr = formatDate(d);
+        const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
+          if (c.isAllDay) return false;
+          return snapToSlot(c.hora_inicio) === hora;
+        });
+
+        return (
+          <div
+            key={di}
+            className="border-l border-gray-100 min-h-[32px] min-w-0 overflow-hidden relative cursor-pointer hover:bg-gray-50 transition"
+            onClick={() => onClickSlot(dateStr)}
+          >
+            {citasEnSlot.map((cita: CitaItem) => {
+              const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
+              return (
+                <div
+                  key={cita.id}
+                  onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
+                  className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} border-l-3 ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer hover:shadow-md transition z-10`}
+                  style={{ borderLeftWidth: '3px' }}
+                >
+                  <div className="font-medium truncate">{cita.titulo}</div>
+                  <div className="text-[10px] opacity-70 truncate">
+                    {cita.cliente?.nombre ?? (cita._source === 'outlook' ? `${cita.hora_inicio}` : formatHora12(cita.hora_inicio))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // Render a collapsed divider
+  const renderCollapsed = (seg: { from: string; to: string }) => (
+    <div
+      key={`collapsed-${seg.from}`}
+      className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-dashed border-gray-200 bg-gray-50/50"
+    >
+      <div className="py-1 pr-2 text-right">
+        <span className="text-[10px] text-gray-300">{seg.from} – {seg.to}</span>
+      </div>
+      {weekDays.map((_: Date, di: number) => (
+        <div key={di} className="border-l border-dashed border-gray-200 h-3" />
+      ))}
+    </div>
+  );
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -453,54 +611,13 @@ function WeekView({
       )}
 
       {/* Time Grid */}
-      <div className="max-h-[600px] overflow-y-auto">
-        {HORAS.map((hora: string) => (
-          <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100">
-            <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
-            {weekDays.map((d: Date, di: number) => {
-              const dateStr = formatDate(d);
-              const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
-                if (c.isAllDay) return false; // shown in the bar above
-                // Snap to nearest 30-min slot, clamped to grid range
-                const [ch, cm] = c.hora_inicio.split(':').map(Number);
-                const totalMin = ch * 60 + cm;
-                const gridStart = 6 * 60;  // 06:00
-                const gridEnd = 21 * 60;   // 21:00
-                // Clamp to grid range
-                const clamped = Math.max(gridStart, Math.min(gridEnd, totalMin));
-                const clampedH = Math.floor(clamped / 60);
-                const clampedM = (clamped % 60) < 30 ? '00' : '30';
-                const snapped = `${String(clampedH).padStart(2, '0')}:${clampedM}`;
-                return snapped === hora;
-              });
-
-              return (
-                <div
-                  key={di}
-                  className="border-l border-gray-100 min-h-[32px] min-w-0 overflow-hidden relative cursor-pointer hover:bg-gray-50 transition"
-                  onClick={() => onClickSlot(dateStr)}
-                >
-                  {citasEnSlot.map((cita: CitaItem) => {
-                    const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
-                    return (
-                      <div
-                        key={cita.id}
-                        onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
-                        className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} border-l-3 ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer hover:shadow-md transition z-10`}
-                        style={{ borderLeftWidth: '3px' }}
-                      >
-                        <div className="font-medium truncate">{cita.titulo}</div>
-                        <div className="text-[10px] opacity-70 truncate">
-                          {cita.cliente?.nombre ?? (cita._source === 'outlook' ? `${cita.hora_inicio}` : formatHora12(cita.hora_inicio))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+      <div className={compact ? 'overflow-y-auto' : 'max-h-[600px] overflow-y-auto'}>
+        {horasToRender.map((seg: WeekSegment) => {
+          if (seg.type === 'collapsed') {
+            return renderCollapsed(seg);
+          }
+          return seg.hours.map((hora: string) => renderTimeRow(hora));
+        })}
       </div>
     </div>
   );

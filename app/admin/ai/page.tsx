@@ -329,8 +329,9 @@ export default function AIAssistantPage() {
 
       const res = await fetch('/api/admin/ai/upload', { method: 'POST', body: formData });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? `Error ${res.status}`);
+        let errMsg = `Error ${res.status}`;
+        try { const err = await res.json(); errMsg = err.error ?? errMsg; } catch {}
+        throw new Error(errMsg);
       }
 
       const data = await res.json();
@@ -380,11 +381,26 @@ export default function AIAssistantPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? `Error ${res.status}`);
+        let errMsg = `Error ${res.status}`;
+        try {
+          const err = await res.json();
+          errMsg = err.error ?? errMsg;
+        } catch {
+          // Body vacío o truncado (ej: Vercel timeout 504)
+          if (res.status === 504) errMsg = 'El asistente tardó demasiado. Intenta con una pregunta más corta.';
+        }
+        throw new Error(errMsg);
       }
 
-      const data = await res.json();
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error('La respuesta del servidor se cortó. Intenta de nuevo.');
+      }
+      if (!data?.content) {
+        throw new Error('El asistente no generó respuesta. Intenta de nuevo.');
+      }
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
