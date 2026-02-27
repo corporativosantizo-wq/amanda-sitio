@@ -30,6 +30,9 @@ const SCOPES = [
   'offline_access',
 ];
 
+// ── Calendar user (application permissions → /users/{upn}/...) ──────────────
+const CALENDAR_USER = 'amanda@papeleo.legal';
+
 function getRedirectUri(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL
     || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
@@ -231,20 +234,10 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 }
 
 export async function isOutlookConnected(): Promise<boolean> {
-  const { data: config, error } = await db()
-    .from('configuracion')
-    .select('outlook_access_token_encrypted, outlook_token_expires_at')
-    .limit(1)
-    .single();
-
-  if (error) {
-    console.error(`[isOutlookConnected] Error consultando configuracion: ${JSON.stringify(error)}`);
-    return false;
-  }
-
-  const hasToken = !!config?.outlook_access_token_encrypted;
-  console.log(`[isOutlookConnected] hasToken=${hasToken}, expires_at=${config?.outlook_token_expires_at ?? 'NULL'}, token_length=${config?.outlook_access_token_encrypted?.length ?? 0}`);
-  return hasToken;
+  // With app-level permissions (client_credentials), we only need the Azure env vars
+  const ok = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET && process.env.AZURE_TENANT_ID);
+  console.log(`[isOutlookConnected] App credentials configured: ${ok}`);
+  return ok;
 }
 
 // ── Graph Client ────────────────────────────────────────────────────────────
@@ -281,25 +274,25 @@ export interface CreateEventParams {
 }
 
 export async function getCalendarEvents(startDate: string, endDate: string): Promise<OutlookEvent[]> {
-  // Use direct fetch (NOT the Graph SDK) to ensure the Prefer timezone header
-  // is sent correctly and calendar IDs are properly URL-encoded.
-  const accessToken = await getValidAccessToken();
+  const appToken = await getAppToken();
   const GRAPH = 'https://graph.microsoft.com/v1.0';
   const SELECT_FIELDS = 'id,subject,start,end,isAllDay,isOnlineMeeting,onlineMeeting,categories,bodyPreview';
+  const userBase = `${GRAPH}/users/${CALENDAR_USER}`;
 
-  const authHeaders = { Authorization: `Bearer ${accessToken}` };
+  const authHeaders = { Authorization: `Bearer ${appToken}` };
   const calViewHeaders = {
-    Authorization: `Bearer ${accessToken}`,
+    Authorization: `Bearer ${appToken}`,
     Prefer: 'outlook.timezone="America/Guatemala"',
   };
 
-  console.log(`[Outlook] ── getCalendarEvents ──`);
+  console.log(`[Outlook] ── getCalendarEvents (app token) ──`);
+  console.log(`[Outlook] Usuario: ${CALENDAR_USER}`);
   console.log(`[Outlook] Rango: ${startDate} → ${endDate}`);
 
-  // 1. List ALL calendars via direct fetch
+  // 1. List ALL calendars
   let calendars: { id: string; name: string }[] = [];
   try {
-    const calRes = await fetch(`${GRAPH}/me/calendars?$select=id,name&$top=50`, {
+    const calRes = await fetch(`${userBase}/calendars?$select=id,name&$top=50`, {
       headers: authHeaders,
     });
 
@@ -338,8 +331,8 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
   for (const cal of calendarTargets) {
     try {
       const basePath = cal.id === '__default__'
-        ? `${GRAPH}/me/calendarView`
-        : `${GRAPH}/me/calendars/${encodeURIComponent(cal.id)}/calendarView`;
+        ? `${userBase}/calendarView`
+        : `${userBase}/calendars/${encodeURIComponent(cal.id)}/calendarView`;
 
       const url = `${basePath}?${queryParams}`;
       const res = await fetch(url, { headers: calViewHeaders });
@@ -364,7 +357,6 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 
       console.log(`[Outlook] Calendario "${cal.name}": ${events.length} eventos (${newCount} nuevos, ${events.length - newCount} duplicados)`);
       if (events.length > 0) {
-        // Log timezone from first event to verify Prefer header works
         const first = events[0];
         console.log(`[Outlook]   Timezone retornado: "${first.start?.timeZone}"`);
         events.forEach((ev: any) => {
@@ -383,7 +375,8 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
 }
 
 export async function createCalendarEvent(params: CreateEventParams): Promise<{ eventId: string; teamsLink: string | null }> {
-  const client = await getGraphClient();
+  const appToken = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${CALENDAR_USER}/events`;
 
   const event: any = {
     subject: params.subject,
@@ -402,22 +395,29 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
     event.onlineMeetingProvider = 'teamsForBusiness';
   }
 
-  console.log(`[Outlook] createCalendarEvent: isOnlineMeeting=${event.isOnlineMeeting}, provider=${event.onlineMeetingProvider}`);
+  console.log(`[Outlook] createCalendarEvent (app token): subject="${event.subject}", user=${CALENDAR_USER}`);
 
-  const created = await client.api('/me/events').post(event);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${appToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(event),
+  });
 
-  // Log FULL response to diagnose Teams link issues
-  console.log(`[Outlook] ── createCalendarEvent FULL RESPONSE ──`);
-  console.log(`[Outlook] ${JSON.stringify(created, null, 2).substring(0, 3000)}`);
-  console.log(`[Outlook] ── END FULL RESPONSE ──`);
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`[Outlook] ERROR createCalendarEvent: ${res.status} ${errBody.substring(0, 500)}`);
+    throw new OutlookError(`Error al crear evento: ${res.status}`, errBody);
+  }
+
+  const created = await res.json();
+
   console.log(`[Outlook] Evento creado: id=${created.id}`);
   console.log(`[Outlook] isOnlineMeeting response: ${created.isOnlineMeeting}`);
-  console.log(`[Outlook] onlineMeetingProvider response: ${created.onlineMeetingProvider}`);
   console.log(`[Outlook] onlineMeeting object: ${JSON.stringify(created.onlineMeeting ?? null)}`);
-  console.log(`[Outlook] onlineMeetingUrl: ${created.onlineMeetingUrl ?? 'null'}`);
-  console.log(`[Outlook] webLink: ${created.webLink ?? 'null'}`);
 
-  // Graph API may return the join URL in different fields
   const teamsLink = created.onlineMeeting?.joinUrl
     ?? created.onlineMeetingUrl
     ?? null;
@@ -427,7 +427,8 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
 }
 
 export async function updateCalendarEvent(eventId: string, updates: Partial<CreateEventParams>): Promise<void> {
-  const client = await getGraphClient();
+  const appToken = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${CALENDAR_USER}/events/${eventId}`;
 
   const patch: any = {};
   if (updates.subject) patch.subject = updates.subject;
@@ -436,13 +437,39 @@ export async function updateCalendarEvent(eventId: string, updates: Partial<Crea
   if (updates.body) patch.body = { contentType: 'HTML', content: updates.body };
   if (updates.categories) patch.categories = updates.categories;
 
-  await client.api(`/me/events/${eventId}`).patch(patch);
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${appToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`[Outlook] ERROR updateCalendarEvent: ${res.status} ${errBody.substring(0, 500)}`);
+    throw new OutlookError(`Error al actualizar evento: ${res.status}`, errBody);
+  }
+
   console.log(`[Outlook] Evento actualizado: ${eventId}`);
 }
 
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
-  const client = await getGraphClient();
-  await client.api(`/me/events/${eventId}`).delete();
+  const appToken = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${CALENDAR_USER}/events/${eventId}`;
+
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${appToken}` },
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`[Outlook] ERROR deleteCalendarEvent: ${res.status} ${errBody.substring(0, 500)}`);
+    throw new OutlookError(`Error al eliminar evento: ${res.status}`, errBody);
+  }
+
   console.log(`[Outlook] Evento eliminado: ${eventId}`);
 }
 
@@ -454,15 +481,30 @@ export interface BusySlot {
 }
 
 export async function getFreeBusy(startDate: string, endDate: string): Promise<BusySlot[]> {
-  const client = await getGraphClient();
+  const appToken = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${CALENDAR_USER}/calendar/getSchedule`;
 
-  const result = await client.api('/me/calendar/getSchedule').post({
-    schedules: ['me'],
-    startTime: { dateTime: startDate, timeZone: 'America/Guatemala' },
-    endTime: { dateTime: endDate, timeZone: 'America/Guatemala' },
-    availabilityViewInterval: 15,
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${appToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      schedules: [CALENDAR_USER],
+      startTime: { dateTime: startDate, timeZone: 'America/Guatemala' },
+      endTime: { dateTime: endDate, timeZone: 'America/Guatemala' },
+      availabilityViewInterval: 15,
+    }),
   });
 
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`[Outlook] ERROR getFreeBusy: ${res.status} ${errBody.substring(0, 500)}`);
+    throw new OutlookError(`Error al obtener disponibilidad: ${res.status}`, errBody);
+  }
+
+  const result = await res.json();
   const schedule = result.value?.[0];
   if (!schedule?.scheduleItems) return [];
 
