@@ -23,6 +23,7 @@ import {
   getFreeBusy,
   sendMail,
 } from './outlook.service';
+import { sendTelegramMessage } from '@/lib/molly/telegram';
 import {
   emailConfirmacionCita,
   emailRecordatorio24h,
@@ -526,6 +527,7 @@ export async function enviarRecordatorios(): Promise<{
   enviados_24h: number;
   enviados_1h: number;
   completadas: number;
+  followups: number;
 }> {
   const ahora = new Date();
   const zonaGT = new Intl.DateTimeFormat('en-CA', {
@@ -621,8 +623,62 @@ export async function enviarRecordatorios(): Promise<{
     completadas = ids.length;
   }
 
-  console.log('[Citas] Recordatorios: 24h=', enviados_24h, ', 1h=', enviados_1h, ', completadas=', completadas);
-  return { enviados_24h, enviados_1h, completadas };
+  // Post-consultation follow-up: citas de hoy que terminaron hace ~2 horas
+  let followups = 0;
+  const [curH, curM] = horaActual.split(':').map(Number);
+  const currentMinutes = curH * 60 + curM;
+
+  const { data: citasFollowup } = await db()
+    .from('citas')
+    .select('*, cliente:clientes(id, nombre, email)')
+    .eq('fecha', hoyStr)
+    .in('tipo', ['consulta_nueva', 'seguimiento'])
+    .in('estado', ['pendiente', 'confirmada', 'completada'])
+    .eq('followup_enviado', false);
+
+  for (const cita of citasFollowup ?? []) {
+    const [fh, fm] = cita.hora_fin.split(':').map(Number);
+    const endMinutes = fh * 60 + fm;
+    const elapsed = currentMinutes - endMinutes;
+
+    // Send followup if cita ended 90-150 min ago (~2 hours, with 30-min cron window)
+    if (elapsed >= 90 && elapsed <= 150) {
+      const clienteName = cita.cliente?.nombre || 'cliente';
+      const tipoLabel = cita.tipo === 'consulta_nueva' ? 'Consulta' : 'Seguimiento';
+
+      const buttons = [
+        [
+          { text: '\uD83D\uDCC4 Cotizaci\u00F3n', callback_data: `followup_quote:${cita.id}` },
+          { text: '\uD83D\uDCDD Resumen', callback_data: `followup_summary:${cita.id}` },
+        ],
+        [
+          { text: '\u23F0 M\u00E1s tarde', callback_data: `followup_tomorrow:${cita.id}` },
+          { text: '\u274C No', callback_data: `followup_no:${cita.id}` },
+        ],
+      ];
+
+      try {
+        await sendTelegramMessage(
+          `\uD83D\uDCCB <b>${tipoLabel} con ${clienteName} termin\u00F3</b>\n\n` +
+          `\u23F0 ${cita.hora_inicio} \u2014 ${cita.hora_fin}\n` +
+          `\u00BFEnviar cotizaci\u00F3n o agregar notas?`,
+          { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } },
+        );
+
+        await db()
+          .from('citas')
+          .update({ followup_enviado: true })
+          .eq('id', cita.id);
+
+        followups++;
+      } catch {
+        console.warn('[Citas] Error enviando followup para cita', cita.id);
+      }
+    }
+  }
+
+  console.log('[Citas] Recordatorios: 24h=', enviados_24h, ', 1h=', enviados_1h, ', completadas=', completadas, ', followups=', followups);
+  return { enviados_24h, enviados_1h, completadas, followups };
 }
 
 // ── Calendar Event Body (NOT an email template — used for Outlook event) ────

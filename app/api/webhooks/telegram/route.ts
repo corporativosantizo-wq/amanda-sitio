@@ -12,6 +12,9 @@ import {
   isAuthorizedChat,
 } from '@/lib/molly/telegram';
 import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability } from '@/lib/services/molly.service';
+import { createCalendarEvent } from '@/lib/services/outlook.service';
+import { HORARIOS } from '@/lib/types';
+import type { TipoCita } from '@/lib/types';
 import {
   getConversation,
   clearConversation,
@@ -82,6 +85,20 @@ async function handleCallbackQuery(query: any): Promise<void> {
     if (data.startsWith('cal_cancel:') || data.startsWith('cal_confirm_cancel:')) {
       await answerCallbackQuery(query.id);
       await handleCancelCallback(data);
+      return;
+    }
+
+    // Scheduling intent callbacks
+    if (data.startsWith('sched_book:') || data.startsWith('sched_ignore:')) {
+      await answerCallbackQuery(query.id);
+      await handleSchedulingCallback(data);
+      return;
+    }
+
+    // Post-consultation followup callbacks
+    if (data.startsWith('followup_')) {
+      await answerCallbackQuery(query.id);
+      await handleFollowupCallback(data);
       return;
     }
 
@@ -259,6 +276,216 @@ async function handleTextMessage(message: any): Promise<void> {
       { parse_mode: 'HTML' },
     );
   }
+}
+
+// ── Scheduling intent callbacks ──────────────────────────────────────────────
+
+const SCHED_TYPE_LABELS: Record<string, string> = {
+  consulta_nueva: 'Consulta Nueva',
+  seguimiento: 'Seguimiento',
+};
+
+async function handleSchedulingCallback(data: string): Promise<void> {
+  // ── Book a slot
+  if (data.startsWith('sched_book:')) {
+    const parts = data.split(':');
+    const intentId = parts[1];
+    const slotIndex = parseInt(parts[2], 10);
+
+    const { data: intent } = await db()
+      .from('email_scheduling_intents')
+      .select('*')
+      .eq('id', intentId)
+      .single();
+
+    if (!intent) {
+      await sendTelegramMessage('Solicitud no encontrada.');
+      return;
+    }
+
+    if (intent.status !== 'pendiente') {
+      await sendTelegramMessage('Esta solicitud ya fue procesada.');
+      return;
+    }
+
+    const slots = intent.available_slots as Array<{
+      start: string;
+      end: string;
+      durationMin: number;
+      preferred: boolean;
+    }>;
+    const slot = slots[slotIndex];
+    if (!slot) {
+      await sendTelegramMessage('Slot no v\u00E1lido.');
+      return;
+    }
+
+    // Extract local datetime from ISO (strip Z/timezone)
+    const startLocal = slot.start.substring(0, 19);
+    const endLocal = slot.end.substring(0, 19);
+
+    const eventType = intent.event_type as TipoCita;
+    const config = HORARIOS[eventType];
+    const typeLabel = SCHED_TYPE_LABELS[eventType] || eventType;
+
+    // Get sender name from email_messages
+    const { data: msg } = await db()
+      .from('email_messages')
+      .select('from_name, from_email')
+      .eq('id', intent.message_id)
+      .single();
+
+    const contactName = msg?.from_name || msg?.from_email || intent.from_email;
+
+    // Create calendar event
+    const { eventId } = await createCalendarEvent({
+      subject: `${typeLabel} \u2014 ${contactName}`,
+      startDateTime: startLocal,
+      endDateTime: endLocal,
+      attendees: [intent.from_email],
+      isOnlineMeeting: true,
+      categories: [config?.categoria_outlook ?? 'Azul'],
+      body: `<p>Cita agendada autom\u00E1ticamente por Molly desde email.</p><p>Thread: ${intent.thread_id}</p>`,
+    });
+
+    // Update intent status
+    await db()
+      .from('email_scheduling_intents')
+      .update({ status: 'agendada' })
+      .eq('id', intentId);
+
+    // Format time for confirmation message
+    const startDate = new Date(slot.start);
+    const h = startDate.getHours();
+    const m = startDate.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+    const timeStr = `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    const dateStr = intent.suggested_date;
+
+    await sendTelegramMessage(
+      `\u2705 <b>Cita agendada</b>\n\n` +
+      `<b>${escapeHtml(typeLabel)}</b> con ${escapeHtml(contactName)}\n` +
+      `\uD83D\uDCC5 ${dateStr}\n` +
+      `\u23F0 ${timeStr}`,
+      { parse_mode: 'HTML' },
+    );
+
+    // Append scheduling info to pending draft if it exists
+    await appendSchedulingToDraft(intent.thread_id, typeLabel, dateStr, timeStr);
+    return;
+  }
+
+  // ── Ignore scheduling intent
+  if (data.startsWith('sched_ignore:')) {
+    const intentId = data.split(':')[1];
+
+    await db()
+      .from('email_scheduling_intents')
+      .update({ status: 'ignorada' })
+      .eq('id', intentId);
+
+    await sendTelegramMessage('\u274C Solicitud de cita ignorada');
+    return;
+  }
+}
+
+async function appendSchedulingToDraft(
+  threadId: string,
+  typeLabel: string,
+  dateStr: string,
+  timeStr: string,
+): Promise<void> {
+  try {
+    const { data: draft } = await db()
+      .from('email_drafts')
+      .select('id, body_text, body_html')
+      .eq('thread_id', threadId)
+      .eq('status', 'pendiente')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!draft) return;
+
+    const appendText = `\n\nSu cita ha sido agendada:\n- Tipo: ${typeLabel}\n- Fecha: ${dateStr}\n- Hora: ${timeStr}\n\nLe enviaremos un enlace de Teams para la reuni\u00F3n.`;
+    const appendHtml = `<br><br><p><strong>Su cita ha sido agendada:</strong></p><ul><li>Tipo: ${typeLabel}</li><li>Fecha: ${dateStr}</li><li>Hora: ${timeStr}</li></ul><p>Le enviaremos un enlace de Teams para la reuni\u00F3n.</p>`;
+
+    await db()
+      .from('email_drafts')
+      .update({
+        body_text: draft.body_text + appendText,
+        body_html: (draft.body_html || '') + appendHtml,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', draft.id);
+
+    await sendTelegramMessage(
+      '\uD83D\uDCDD Borrador actualizado con confirmaci\u00F3n de cita. Revisa antes de aprobar.',
+    );
+  } catch {
+    // Non-critical
+  }
+}
+
+// ── Post-consultation followup callbacks ────────────────────────────────────
+
+async function handleFollowupCallback(data: string): Promise<void> {
+  const parts = data.split(':');
+  const action = parts[0]; // followup_quote, followup_summary, followup_tomorrow, followup_no
+  const citaId = parts[1];
+
+  if (!citaId) return;
+
+  // Get cita info
+  const { data: cita } = await db()
+    .from('citas')
+    .select('id, titulo, tipo, cliente:clientes(nombre, email)')
+    .eq('id', citaId)
+    .single();
+
+  const clienteName = (cita as any)?.cliente?.nombre || 'cliente';
+
+  switch (action) {
+    case 'followup_quote':
+      await sendTelegramMessage(
+        `\uD83D\uDCC4 <b>Cotizaci\u00F3n pendiente</b> para ${escapeHtml(clienteName)}\n\n` +
+        `Crea la cotizaci\u00F3n en el dashboard:\nhttps://papeleo.legal/admin/cotizaciones`,
+        { parse_mode: 'HTML' },
+      );
+      break;
+
+    case 'followup_summary':
+      await sendTelegramMessage(
+        `\uD83D\uDCDD <b>Agrega notas</b> de la consulta con ${escapeHtml(clienteName)}\n\n` +
+        `Dashboard: https://papeleo.legal/admin/calendario`,
+        { parse_mode: 'HTML' },
+      );
+      break;
+
+    case 'followup_tomorrow':
+      // Reset followup so it triggers again on next cron cycle
+      await db()
+        .from('citas')
+        .update({ followup_enviado: false })
+        .eq('id', citaId);
+
+      await sendTelegramMessage('\u23F0 Te recordar\u00E9 de nuevo m\u00E1s tarde.');
+      return; // Don't mark followup_enviado
+
+    case 'followup_no':
+      await sendTelegramMessage('\u274C Seguimiento descartado');
+      break;
+
+    default:
+      return;
+  }
+
+  // Mark followup as handled (followup_tomorrow returns early above)
+  await db()
+    .from('citas')
+    .update({ followup_enviado: true })
+    .eq('id', citaId);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
