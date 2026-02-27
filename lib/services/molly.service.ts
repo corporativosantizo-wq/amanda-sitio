@@ -47,7 +47,7 @@ export class MollyError extends Error {
 
 // ── Accounts to poll ───────────────────────────────────────────────────────
 
-const ACCOUNTS: MailboxAlias[] = ['asistente@papeleo.legal', 'contador@papeleo.legal', 'amanda@papeleo.legal'];
+const ACCOUNTS: MailboxAlias[] = ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'];
 
 // ── Main pipeline ──────────────────────────────────────────────────────────
 
@@ -208,8 +208,8 @@ async function processOneEmail(
   // Try to match contact to client
   await matchContactToClient(fromEmail, classification.cliente_probable);
 
-  // Check scheduling intent
-  if (classification.scheduling_intent) {
+  // Check scheduling intent (skip for contador@ — financial emails don't schedule)
+  if (classification.scheduling_intent && account !== 'contador@papeleo.legal') {
     try {
       await handleSchedulingIntent(classification, emailMsg as EmailMessage, thread);
     } catch (err: any) {

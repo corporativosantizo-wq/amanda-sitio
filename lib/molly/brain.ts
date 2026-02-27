@@ -39,7 +39,7 @@ interface AccountDraftConfig {
 
 const ACCOUNT_CLASSIFY: Record<string, AccountClassifyConfig> = {
   'contador@papeleo.legal': {
-    hint: 'Cuenta destino: contador@papeleo.legal — departamento contable. Emails financieros (facturas, pagos, retenciones, SAT, constancias) deben clasificarse como "financiero". Priorizar este tipo para esta cuenta.',
+    hint: 'Cuenta destino: contador@papeleo.legal — departamento contable. Emails financieros (facturas, pagos, retenciones, SAT, constancias) deben clasificarse como "financiero". Priorizar este tipo para esta cuenta. IMPORTANTE: scheduling_intent SIEMPRE debe ser false para esta cuenta — los emails contables no agendan citas.',
   },
   'asistente@papeleo.legal': {
     hint: 'Cuenta destino: asistente@papeleo.legal — asistencia general. Recibe consultas nuevas, solicitudes de información, agendamiento. Clasificar según contenido normalmente.',
