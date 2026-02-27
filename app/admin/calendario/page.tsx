@@ -618,6 +618,7 @@ function DetailModal({
   const isOutlook = cita._source === 'outlook';
   const isExpediente = cita._source === 'expediente';
   const isLocal = !isOutlook && !isExpediente;
+  const canEdit = !isExpediente && cita.estado !== 'cancelada'; // local + outlook
   const activo = isLocal && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
 
   return (
@@ -705,10 +706,10 @@ function DetailModal({
         </div>
 
         {/* Action buttons */}
-        {(isLocal || activo) && (
+        {(canEdit || activo) && (
           <div className="p-6 border-t border-gray-100 space-y-3">
-            {/* Edit / Delete — available for ALL local events regardless of estado */}
-            {isLocal && cita.estado !== 'cancelada' && (
+            {/* Edit / Delete — available for local + Outlook events (not expediente) */}
+            {canEdit && (
               <div className="flex gap-3">
                 <button
                   onClick={() => onEdit(cita)}
