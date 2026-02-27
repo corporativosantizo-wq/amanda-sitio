@@ -15,6 +15,7 @@ import {
 } from '@/lib/services/outlook.service';
 import { actuacionesCalendario } from '@/lib/services/expedientes.service';
 import type { TipoCita, EstadoCita } from '@/lib/types';
+import { ADMIN_ONLY_TIPOS } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
   try {
@@ -83,6 +84,10 @@ export async function GET(req: NextRequest) {
           const cats = (ev.categories ?? []).map((c: string) => c.toLowerCase());
           if (cats.includes('azul') || cats.includes('blue category')) tipo = 'consulta_nueva';
           else if (cats.includes('verde') || cats.includes('green category')) tipo = 'seguimiento';
+          else if (cats.includes('rojo') || cats.includes('red category')) tipo = 'audiencia';
+          else if (cats.includes('amarillo') || cats.includes('yellow category')) tipo = 'reunion';
+          else if (cats.includes('gris') || cats.includes('grey category')) tipo = 'bloqueo_personal';
+          else if (cats.includes('púrpura') || cats.includes('purple category')) tipo = 'evento_libre';
 
           outlookEvents.push({
             id: `outlook_${ev.id}`,

@@ -3,7 +3,24 @@
 // Tipos e interfaces para el sistema de citas
 // ============================================================================
 
-export type TipoCita = 'consulta_nueva' | 'seguimiento';
+export type TipoCita =
+  | 'consulta_nueva'
+  | 'seguimiento'
+  | 'audiencia'
+  | 'reunion'
+  | 'bloqueo_personal'
+  | 'evento_libre';
+
+// Tipos que solo se crean desde admin (sin validación de slots/rate limit)
+export const ADMIN_ONLY_TIPOS: ReadonlySet<TipoCita> = new Set([
+  'audiencia',
+  'reunion',
+  'bloqueo_personal',
+  'evento_libre',
+]);
+
+// Bullet Journal: trabajo profundo termina a las 2pm
+export const DEEP_WORK_END_HOUR = 14;
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'cancelada' | 'completada' | 'no_asistio';
 
@@ -100,5 +117,45 @@ export const HORARIOS: Record<TipoCita, HorarioConfig> = {
     costo: 0,
     categoria_outlook: 'Verde',
     color_admin: '#10B981',
+  },
+  audiencia: {
+    dias: [1, 2, 3, 4, 5],
+    hora_inicio: '06:00',
+    hora_fin: '21:00',
+    duracion_max: 480,
+    duracion_min: 30,
+    costo: 0,
+    categoria_outlook: 'Rojo',
+    color_admin: '#EF4444',
+  },
+  reunion: {
+    dias: [1, 2, 3, 4, 5],
+    hora_inicio: '08:00',
+    hora_fin: '18:00',
+    duracion_max: 240,
+    duracion_min: 30,
+    costo: 0,
+    categoria_outlook: 'Amarillo',
+    color_admin: '#F59E0B',
+  },
+  bloqueo_personal: {
+    dias: [0, 1, 2, 3, 4, 5, 6],
+    hora_inicio: '00:00',
+    hora_fin: '23:59',
+    duracion_max: 1440,
+    duracion_min: 15,
+    costo: 0,
+    categoria_outlook: 'Gris',
+    color_admin: '#6B7280',
+  },
+  evento_libre: {
+    dias: [1, 2, 3, 4, 5],
+    hora_inicio: '08:00',
+    hora_fin: '18:00',
+    duracion_max: 240,
+    duracion_min: 30,
+    costo: 0,
+    categoria_outlook: 'Púrpura',
+    color_admin: '#8B5CF6',
   },
 } as const;

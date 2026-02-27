@@ -13,6 +13,7 @@ import {
   TipoCita,
   EstadoCita,
   HORARIOS,
+  ADMIN_ONLY_TIPOS,
 } from '@/lib/types';
 import {
   isOutlookConnected,
@@ -226,49 +227,55 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   const config = HORARIOS[input.tipo];
   if (!config) throw new CitaError(`Tipo de cita inválido: ${input.tipo}`);
 
-  // Validar que el slot esté disponible
-  const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo);
+  const isAdminOnly = ADMIN_ONLY_TIPOS.has(input.tipo);
 
-  let slotValido: boolean;
-  if (input.tipo === 'consulta_nueva') {
-    // consulta_nueva books a 60-min block but disponibilidad returns 30-min sub-slots.
-    // Validate that both the :00 and :30 sub-slots are available.
-    const halfHour = input.hora_inicio.replace(':00', ':30');
-    const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
-    const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
-    slotValido = hasStart && hasHalf;
-    console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
-  } else {
-    slotValido = disponibles.some(
-      (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
-    );
-    console.log('[crearCita] seguimiento validation: hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, ', slotValido=', slotValido);
-  }
+  if (!isAdminOnly) {
+    // Validar que el slot esté disponible (solo para tipos públicos)
+    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo);
 
-  if (!slotValido) {
-    console.error('[crearCita] Slot NO disponible. fecha=', input.fecha, ', tipo=', input.tipo, ', hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, '. Slots disponibles:', JSON.stringify(disponibles));
-    throw new CitaError('El horario seleccionado ya no está disponible.');
-  }
-
-  // Rate limit: 10 citas por semana por cliente
-  if (input.cliente_id) {
-    const hoy = new Date();
-    const lunes = new Date(hoy);
-    lunes.setDate(hoy.getDate() - hoy.getDay() + 1);
-    const domingo = new Date(lunes);
-    domingo.setDate(lunes.getDate() + 6);
-
-    const { count } = await db()
-      .from('citas')
-      .select('id', { count: 'exact', head: true })
-      .eq('cliente_id', input.cliente_id)
-      .neq('estado', 'cancelada')
-      .gte('fecha', lunes.toISOString().split('T')[0])
-      .lte('fecha', domingo.toISOString().split('T')[0]);
-
-    if ((count ?? 0) >= 10) {
-      throw new CitaError('Límite de citas por semana alcanzado (máximo 10).');
+    let slotValido: boolean;
+    if (input.tipo === 'consulta_nueva') {
+      // consulta_nueva books a 60-min block but disponibilidad returns 30-min sub-slots.
+      // Validate that both the :00 and :30 sub-slots are available.
+      const halfHour = input.hora_inicio.replace(':00', ':30');
+      const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
+      const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
+      slotValido = hasStart && hasHalf;
+      console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
+    } else {
+      slotValido = disponibles.some(
+        (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
+      );
+      console.log('[crearCita] seguimiento validation: hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, ', slotValido=', slotValido);
     }
+
+    if (!slotValido) {
+      console.error('[crearCita] Slot NO disponible. fecha=', input.fecha, ', tipo=', input.tipo, ', hora_inicio=', input.hora_inicio, ', hora_fin=', input.hora_fin, '. Slots disponibles:', JSON.stringify(disponibles));
+      throw new CitaError('El horario seleccionado ya no está disponible.');
+    }
+
+    // Rate limit: 10 citas por semana por cliente (solo para tipos públicos)
+    if (input.cliente_id) {
+      const hoy = new Date();
+      const lunes = new Date(hoy);
+      lunes.setDate(hoy.getDate() - hoy.getDay() + 1);
+      const domingo = new Date(lunes);
+      domingo.setDate(lunes.getDate() + 6);
+
+      const { count } = await db()
+        .from('citas')
+        .select('id', { count: 'exact', head: true })
+        .eq('cliente_id', input.cliente_id)
+        .neq('estado', 'cancelada')
+        .gte('fecha', lunes.toISOString().split('T')[0])
+        .lte('fecha', domingo.toISOString().split('T')[0]);
+
+      if ((count ?? 0) >= 10) {
+        throw new CitaError('Límite de citas por semana alcanzado (máximo 10).');
+      }
+    }
+  } else {
+    console.log('[crearCita] Tipo admin-only:', input.tipo, '— saltando validación de slots/rate limit');
   }
 
   // Insertar cita
@@ -620,11 +627,20 @@ export async function enviarRecordatorios(): Promise<{
 
 // ── Calendar Event Body (NOT an email template — used for Outlook event) ────
 
+const TIPO_LABELS: Record<string, string> = {
+  consulta_nueva: 'Consulta Nueva',
+  seguimiento: 'Seguimiento',
+  audiencia: 'Audiencia',
+  reunion: 'Reunión',
+  bloqueo_personal: 'Bloqueo Personal',
+  evento_libre: 'Evento Libre',
+};
+
 function generarBodyEvento(cita: any): string {
   const clienteNombre = cita.cliente?.nombre ?? 'Sin cliente asignado';
-  const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
+  const tipo = TIPO_LABELS[cita.tipo] ?? cita.tipo;
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
-<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>
+${cita.costo > 0 ? `<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>` : ''}
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
 }

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS legal.citas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cliente_id UUID REFERENCES legal.clientes(id),
   expediente_id UUID REFERENCES legal.expedientes(id),
-  tipo TEXT NOT NULL CHECK (tipo IN ('consulta_nueva', 'seguimiento')),
+  tipo TEXT NOT NULL CHECK (tipo IN ('consulta_nueva', 'seguimiento', 'audiencia', 'reunion', 'bloqueo_personal', 'evento_libre')),
   titulo TEXT NOT NULL,
   descripcion TEXT,
   fecha DATE NOT NULL,
