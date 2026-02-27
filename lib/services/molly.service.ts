@@ -47,7 +47,7 @@ export class MollyError extends Error {
 
 // ── Accounts to poll ───────────────────────────────────────────────────────
 
-const ACCOUNTS: MailboxAlias[] = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
+const ACCOUNTS: MailboxAlias[] = ['asistente@papeleo.legal', 'contador@papeleo.legal', 'amanda@papeleo.legal'];
 
 // ── Main pipeline ──────────────────────────────────────────────────────────
 
@@ -181,9 +181,9 @@ async function processOneEmail(
     return { draftCreated: false };
   }
 
-  // Classify with Claude
+  // Classify with Claude (account-aware)
   const knownContact = await getContactName(fromEmail);
-  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact);
+  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact, account);
 
   // Update message with classification
   await db()
@@ -224,7 +224,7 @@ async function processOneEmail(
       const clientContext = await getClientContext(fromEmail);
       const recentMessages = await getRecentThreadMessages(thread.id);
 
-      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages);
+      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages, account);
 
       const { data: draft } = await db()
         .from('email_drafts')

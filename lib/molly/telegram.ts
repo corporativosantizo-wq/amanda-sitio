@@ -57,6 +57,19 @@ const CLASIFICACION_EMOJI: Record<string, string> = {
   pendiente: '\u23F3',
 };
 
+// Account-specific display for Telegram notifications
+const ACCOUNT_DISPLAY: Record<string, { emoji: string; label: string }> = {
+  'asistente@papeleo.legal': { emoji: '\uD83D\uDCE7', label: 'asistente' },
+  'contador@papeleo.legal':  { emoji: '\uD83D\uDCB0', label: 'contador' },
+  'amanda@papeleo.legal':    { emoji: '\u2B50',       label: 'amanda' },
+};
+
+function accountTag(account: string): string {
+  const cfg = ACCOUNT_DISPLAY[account];
+  if (!cfg) return '';
+  return `${cfg.emoji} [${cfg.label}] `;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -70,12 +83,11 @@ export function buildEmailNotification(
   classification: MollyClassification,
   draft?: EmailDraft | null,
 ): { text: string; reply_markup: unknown } {
-  const emoji = CLASIFICACION_EMOJI[classification.tipo] || '\uD83D\uDCE7';
+  const tag = accountTag(thread.account);
   const urgLabel = URGENCIA_LABELS[classification.urgencia] || 'info';
 
-  let text = `${emoji} <b>Nuevo email</b> [${urgLabel}]\n\n`;
+  let text = `${tag}<b>Nuevo email</b> [${urgLabel}]\n\n`;
   text += `<b>De:</b> ${escapeHtml(message.from_name || message.from_email)}\n`;
-  text += `<b>Para:</b> ${escapeHtml(thread.account)}\n`;
   text += `<b>Asunto:</b> ${escapeHtml(message.subject)}\n`;
   text += `<b>Tipo:</b> ${classification.tipo}\n\n`;
   text += `<b>Resumen:</b> ${escapeHtml(classification.resumen)}\n`;
@@ -115,9 +127,9 @@ export function buildUrgentAlert(
   message: EmailMessage,
   classification: MollyClassification,
 ): { text: string } {
-  let text = `\uD83D\uDEA8 <b>Alerta — email urgente</b>\n\n`;
+  const tag = accountTag(thread.account);
+  let text = `\uD83D\uDEA8 ${tag}<b>Alerta \u2014 email urgente</b>\n\n`;
   text += `<b>De:</b> ${escapeHtml(message.from_name || message.from_email)}\n`;
-  text += `<b>Para:</b> ${escapeHtml(thread.account)}\n`;
   text += `<b>Asunto:</b> ${escapeHtml(message.subject)}\n`;
   text += `<b>Urgencia:</b> ${URGENCIA_LABELS[classification.urgencia]}\n\n`;
   text += `<b>Resumen:</b> ${escapeHtml(classification.resumen)}`;

@@ -26,9 +26,47 @@ function parseJsonResponse<T>(text: string): T {
   return JSON.parse(cleaned);
 }
 
+// ── Account-specific config ─────────────────────────────────────────────────
+
+interface AccountClassifyConfig {
+  hint: string;
+}
+
+interface AccountDraftConfig {
+  firma: string;
+  tono: string;
+}
+
+const ACCOUNT_CLASSIFY: Record<string, AccountClassifyConfig> = {
+  'contador@papeleo.legal': {
+    hint: 'Cuenta destino: contador@papeleo.legal — departamento contable. Emails financieros (facturas, pagos, retenciones, SAT, constancias) deben clasificarse como "financiero". Priorizar este tipo para esta cuenta.',
+  },
+  'asistente@papeleo.legal': {
+    hint: 'Cuenta destino: asistente@papeleo.legal — asistencia general. Recibe consultas nuevas, solicitudes de información, agendamiento. Clasificar según contenido normalmente.',
+  },
+  'amanda@papeleo.legal': {
+    hint: 'Cuenta destino: amanda@papeleo.legal — cuenta personal de la abogada. Emails de clientes VIP, juzgados, colegas abogados. IMPORTANTE: sumar +1 a la urgencia base (mínimo urgencia 1 para esta cuenta).',
+  },
+};
+
+const ACCOUNT_DRAFT: Record<string, AccountDraftConfig> = {
+  'contador@papeleo.legal': {
+    firma: 'Departamento Contable | papeleo.legal',
+    tono: 'Tono contable y profesional. Respuestas técnicas sobre facturas, pagos, retenciones fiscales. No mencionar servicios legales ni citas.',
+  },
+  'asistente@papeleo.legal': {
+    firma: 'Amanda Santizo | papeleo.legal',
+    tono: 'Tono cordial y profesional. Respuestas amables para consultas generales y agendamiento.',
+  },
+  'amanda@papeleo.legal': {
+    firma: 'Lcda. Amanda Santizo | IURISLEX',
+    tono: 'Tono personal y directo, de abogada a colega o cliente VIP. Más breve y cercano que las otras cuentas.',
+  },
+};
+
 // ── Classify email ─────────────────────────────────────────────────────────
 
-const CLASSIFY_PROMPT = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
+const CLASSIFY_PROMPT_BASE = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
 Hoy es ${new Date().toISOString().substring(0, 10)}.
 
 Clasifica el siguiente email y responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
@@ -76,32 +114,39 @@ export async function classifyEmail(
   subject: string,
   bodyText: string,
   knownContact?: string | null,
+  account?: string,
 ): Promise<MollyClassification> {
   const client = getClient();
+
+  // Build account-aware prompt
+  const accountHint = account && ACCOUNT_CLASSIFY[account]
+    ? `\n\n${ACCOUNT_CLASSIFY[account].hint}`
+    : '';
+  const prompt = CLASSIFY_PROMPT_BASE + accountHint;
 
   const contactInfo = knownContact ? `\nContacto conocido: ${knownContact}` : '';
   const userMessage = `De: ${fromEmail}${contactInfo}\nAsunto: ${subject}\n\nCuerpo:\n${bodyText.substring(0, 3000)}`;
 
-  console.log('[molly-brain] Clasificando email de', fromEmail, '| asunto:', subject.substring(0, 60));
+  console.log('[molly-brain] Clasificando email de', fromEmail, '| cuenta:', account ?? 'n/a', '| asunto:', subject.substring(0, 60));
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 512,
     messages: [
-      { role: 'user', content: `${CLASSIFY_PROMPT}\n\n---\n\n${userMessage}` },
+      { role: 'user', content: `${prompt}\n\n---\n\n${userMessage}` },
     ],
   });
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const result = parseJsonResponse<MollyClassification>(text);
 
-  console.log('[molly-brain] Clasificación:', result.tipo, '| urgencia:', result.urgencia, '| respuesta:', result.requiere_respuesta);
+  console.log('[molly-brain] Clasificación:', result.tipo, '| urgencia:', result.urgencia, '| cuenta:', account ?? 'n/a');
   return result;
 }
 
 // ── Generate draft response ────────────────────────────────────────────────
 
-const DRAFT_PROMPT = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
+const DRAFT_PROMPT_BASE = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
 
 Genera un borrador de respuesta profesional al email recibido. Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks):
 
@@ -114,26 +159,37 @@ Genera un borrador de respuesta profesional al email recibido. Responde ÚNICAME
 
 Reglas:
 - Detecta el idioma del email y responde en el mismo idioma (español o inglés)
-- Tono profesional pero amable, apropiado para un despacho jurídico
 - No inventes información legal, plazos o montos
 - Si hay una pregunta, proporciona una respuesta general y sugiere coordinar detalles
-- Firma siempre: "Amanda Santizo | papeleo.legal"
 - En HTML usa etiquetas simples: <p>, <br>, <strong>
 - No incluyas "Estimado/a" genérico — usa el nombre si está disponible
 - Mantén la respuesta concisa (máximo 3-4 párrafos)
 - IMPORTANTE: Si el email solicita reunión, consulta, cita, meeting o appointment, NUNCA sugieras horarios específicos. Incluye el link de agendamiento: https://amandasantizo.com/agendar
   Hay dos tipos de cita (sugiere el correcto según el contexto):
-  * "Consulta Legal" — para asuntos nuevos, hasta 1 hora, Q500, virtual por Teams, disponible lunes/miércoles/viernes. Sugerir si el remitente NO es cliente existente o si plantea un asunto nuevo.
-  * "Seguimiento de Caso" — para clientes con caso activo, 15 min, sin costo, virtual por Teams, disponible martes/miércoles. Sugerir si el remitente es cliente existente con expediente activo.
+  * "Consulta Legal" — para asuntos nuevos, hasta 1 hora, Q500, virtual por Teams. Sugerir si el remitente NO es cliente existente o si plantea un asunto nuevo.
+  * "Seguimiento de Caso" — para clientes con caso activo, 15 min, sin costo, virtual por Teams. Sugerir si el remitente es cliente existente con expediente activo.
   Si no es claro, menciona ambas opciones brevemente.`;
+
+function buildDraftPrompt(account?: string): string {
+  const config = account && ACCOUNT_DRAFT[account]
+    ? ACCOUNT_DRAFT[account]
+    : ACCOUNT_DRAFT['asistente@papeleo.legal'];
+
+  return DRAFT_PROMPT_BASE +
+    `\n- Firma siempre: "${config.firma}"` +
+    `\n- ${config.tono}`;
+}
 
 export async function generateDraft(
   email: EmailMessage,
   threadSubject: string,
   clientContext?: string | null,
   recentMessages?: Array<{ from: string; body: string }>,
+  account?: string,
 ): Promise<MollyDraftResult> {
   const client = getClient();
+
+  const prompt = buildDraftPrompt(account);
 
   let context = `Email a responder:\nDe: ${email.from_name || email.from_email} <${email.from_email}>\nAsunto: ${email.subject}\n\nCuerpo:\n${(email.body_text || '').substring(0, 4000)}`;
 
@@ -148,19 +204,19 @@ export async function generateDraft(
     }
   }
 
-  console.log('[molly-brain] Generando borrador para', email.from_email, '| asunto:', threadSubject.substring(0, 60));
+  console.log('[molly-brain] Generando borrador para', email.from_email, '| cuenta:', account ?? 'n/a', '| asunto:', threadSubject.substring(0, 60));
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
     messages: [
-      { role: 'user', content: `${DRAFT_PROMPT}\n\n---\n\n${context}` },
+      { role: 'user', content: `${prompt}\n\n---\n\n${context}` },
     ],
   });
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const result = parseJsonResponse<MollyDraftResult>(text);
 
-  console.log('[molly-brain] Borrador generado | tone:', result.tone, '| length:', result.body_text.length);
+  console.log('[molly-brain] Borrador generado | tone:', result.tone, '| cuenta:', account ?? 'n/a');
   return result;
 }
