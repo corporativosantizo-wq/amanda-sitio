@@ -1,6 +1,6 @@
 // ============================================================================
 // POST /api/webhooks/telegram
-// Telegram webhook — botones de aprobación y comandos de texto
+// Telegram webhook — botones de aprobación, comandos de texto, calendario
 // NO usa Clerk auth — Telegram envía requests directamente
 // ============================================================================
 
@@ -12,6 +12,15 @@ import {
   isAuthorizedChat,
 } from '@/lib/molly/telegram';
 import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability } from '@/lib/services/molly.service';
+import {
+  getConversation,
+  clearConversation,
+  startCreateFlow,
+  handleCreateCallback,
+  handleCreateText,
+  startCancelFlow,
+  handleCancelCallback,
+} from '@/lib/molly/telegram-calendar';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const db = () => createAdminClient();
@@ -57,20 +66,36 @@ async function handleCallbackQuery(query: any): Promise<void> {
   }
 
   const data = query.data as string;
-  const [action, draftId] = data.split(':');
+  const [action] = data.split(':');
 
   // Log command
-  await logCommand(String(chatId), `callback:${action}`, { draftId });
+  await logCommand(String(chatId), `callback:${data}`, {});
 
   try {
+    // Calendar flow callbacks
+    if (data.startsWith('cal_type:') || data.startsWith('cal_day:') || data.startsWith('cal_slot:')) {
+      await answerCallbackQuery(query.id);
+      await handleCreateCallback(data);
+      return;
+    }
+
+    if (data.startsWith('cal_cancel:') || data.startsWith('cal_confirm_cancel:')) {
+      await answerCallbackQuery(query.id);
+      await handleCancelCallback(data);
+      return;
+    }
+
+    // Email draft callbacks
     switch (action) {
       case 'approve': {
+        const draftId = data.split(':')[1];
         await approveDraft(draftId, 'telegram');
         await answerCallbackQuery(query.id, 'Aprobado y enviado');
         await sendTelegramMessage(`\u2705 Borrador aprobado y enviado`);
         break;
       }
       case 'reject': {
+        const draftId = data.split(':')[1];
         await rejectDraft(draftId);
         await answerCallbackQuery(query.id, 'Rechazado');
         await sendTelegramMessage(`\u274C Borrador rechazado`);
@@ -108,6 +133,51 @@ async function handleTextMessage(message: any): Promise<void> {
 
   // Log command
   await logCommand(String(chatId), text, {});
+
+  // Check if there's an active conversation flow expecting text input
+  const conv = getConversation();
+  if (conv && !text.startsWith('/')) {
+    if (conv.flow === 'crear') {
+      await handleCreateText(text);
+      return;
+    }
+    // cancelar flow doesn't need text input
+  }
+
+  // Commands that cancel any active flow
+  if (text === '/cancelar_flujo' || text === '/x') {
+    if (conv) {
+      clearConversation();
+      await sendTelegramMessage('Flujo cancelado.');
+    }
+    return;
+  }
+
+  // ── Calendar commands ────────────────────────────────────────────────
+
+  if (text === '/semana') {
+    try {
+      const msg = await getAgenda('semana');
+      await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo agenda: ${err.message}`);
+    }
+    return;
+  }
+
+  if (text === '/crear') {
+    clearConversation();
+    await startCreateFlow();
+    return;
+  }
+
+  if (text === '/cancelar') {
+    clearConversation();
+    await startCancelFlow();
+    return;
+  }
+
+  // ── Existing commands ────────────────────────────────────────────────
 
   if (text === '/pendientes') {
     const drafts = await listPendingDrafts();
@@ -173,7 +243,20 @@ async function handleTextMessage(message: any): Promise<void> {
   // Unknown command
   if (text.startsWith('/')) {
     await sendTelegramMessage(
-      `Comandos disponibles:\n/pendientes — ver borradores pendientes\n/stats — estadísticas\n/agenda [hoy|mañana|semana] — ver eventos\n/disponibilidad [YYYY-MM-DD] — ver slots libres`,
+      `<b>Comandos disponibles:</b>\n\n` +
+      `<b>Calendario:</b>\n` +
+      `/agenda — agenda de hoy\n` +
+      `/agenda mañana — agenda de mañana\n` +
+      `/semana — agenda de la semana\n` +
+      `/disponibilidad — slots libres\n` +
+      `/crear — crear evento\n` +
+      `/cancelar — cancelar evento de hoy\n\n` +
+      `<b>Email:</b>\n` +
+      `/pendientes — borradores pendientes\n` +
+      `/stats — estadísticas Molly Mail\n\n` +
+      `<b>Otros:</b>\n` +
+      `/x — cancelar flujo activo`,
+      { parse_mode: 'HTML' },
     );
   }
 }

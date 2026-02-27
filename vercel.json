@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/check-email",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/agenda-matutina",
+      "schedule": "30 13 * * 1-5"
     }
   ]
 }
