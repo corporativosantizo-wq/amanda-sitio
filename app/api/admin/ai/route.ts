@@ -1,5 +1,10 @@
 export const maxDuration = 300; // Allow 5 min for transcription tool
 
+// Health check — confirms the module loaded and POST handler is available
+export function GET() {
+  return Response.json({ status: 'ok', handler: 'POST' });
+}
+
 import fs from 'fs';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';

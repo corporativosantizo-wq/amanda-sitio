@@ -386,8 +386,10 @@ export default function AIAssistantPage() {
           const err = await res.json();
           errMsg = err.error ?? errMsg;
         } catch {
-          // Body vacío o truncado (ej: Vercel timeout 504)
+          // Body vacío o truncado
           if (res.status === 504) errMsg = 'El asistente tardó demasiado. Intenta con una pregunta más corta.';
+          else if (res.status === 405) errMsg = 'Sesión expirada o error de conexión. Recarga la página.';
+          else if (res.status === 401 || res.status === 403) errMsg = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
         }
         throw new Error(errMsg);
       }

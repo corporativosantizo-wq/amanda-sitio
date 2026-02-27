@@ -57,14 +57,14 @@ interface ClienteOption {
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const TIPO_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  consulta_nueva: { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-800' },
-  seguimiento: { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-800' },
-  outlook: { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-800' },
-  audiencia_expediente: { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-800' },
-  audiencia: { bg: 'bg-red-50', border: 'border-red-400', text: 'text-red-800' },
-  reunion: { bg: 'bg-yellow-50', border: 'border-yellow-400', text: 'text-yellow-800' },
-  bloqueo_personal: { bg: 'bg-gray-100', border: 'border-gray-400', text: 'text-gray-700' },
-  evento_libre: { bg: 'bg-violet-50', border: 'border-violet-400', text: 'text-violet-800' },
+  consulta_nueva: { bg: 'bg-blue-100', border: 'border-blue-500', text: 'text-blue-900' },
+  seguimiento: { bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-900' },
+  outlook: { bg: 'bg-purple-100', border: 'border-purple-500', text: 'text-purple-900' },
+  audiencia_expediente: { bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-900' },
+  audiencia: { bg: 'bg-red-100', border: 'border-red-500', text: 'text-red-900' },
+  reunion: { bg: 'bg-yellow-100', border: 'border-yellow-500', text: 'text-yellow-900' },
+  bloqueo_personal: { bg: 'bg-gray-200', border: 'border-gray-500', text: 'text-gray-800' },
+  evento_libre: { bg: 'bg-violet-100', border: 'border-violet-500', text: 'text-violet-900' },
 };
 
 const TIPO_LABELS: Record<string, string> = {
@@ -179,6 +179,7 @@ function CalendarioPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState<CitaItem | null>(null);
   const [createDate, setCreateDate] = useState('');
+  const [createTime, setCreateTime] = useState('');
 
   // Show OAuth result from URL params
   useEffect(() => {
@@ -285,7 +286,7 @@ function CalendarioPage() {
             Bloqueos
           </Link>
           <button
-            onClick={() => { setCreateDate(formatDate(new Date())); setShowCreate(true); }}
+            onClick={() => { setCreateDate(formatDate(new Date())); setCreateTime(''); setShowCreate(true); }}
             className="px-4 py-2 text-sm font-semibold bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition"
           >
             + Nuevo evento
@@ -360,7 +361,7 @@ function CalendarioPage() {
           weekDays={weekDays}
           citasForDate={citasForDate}
           onClickCita={(c: CitaItem) => setShowDetail(c)}
-          onClickSlot={(dateStr: string) => { setCreateDate(dateStr); setShowCreate(true); }}
+          onClickSlot={(dateStr: string, hora?: string) => { setCreateDate(dateStr); setCreateTime(hora ?? ''); setShowCreate(true); }}
           compact={compact}
         />
       ) : (
@@ -395,6 +396,7 @@ function CalendarioPage() {
       {showCreate && (
         <CreateModal
           initialDate={createDate}
+          initialTime={createTime}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); fetchCitas(); }}
         />
@@ -494,10 +496,25 @@ function WeekView({
   weekDays: Date[];
   citasForDate: (d: string) => CitaItem[];
   onClickCita: (c: CitaItem) => void;
-  onClickSlot: (d: string) => void;
+  onClickSlot: (d: string, hora?: string) => void;
   compact: boolean;
 }) {
   const todayStr = formatDate(new Date());
+  const [hoveredCita, setHoveredCita] = useState<CitaItem | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Current time indicator — updates every minute
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  // Position within a 30-min slot: fraction 0–1
+  const currentSlotStr = `${String(currentHour).padStart(2, '0')}:${currentMinute < 30 ? '00' : '30'}`;
+  const currentFraction = (currentMinute % 30) / 30;
 
   // Separate all-day events from timed events
   const hasAllDay = weekDays.some((d: Date) => {
@@ -507,47 +524,76 @@ function WeekView({
 
   // Build segments for compact mode
   const segments = compact ? buildCompactSegments(weekDays, citasForDate) : null;
-  // In full mode, just use all HORAS as a single visible segment
   const horasToRender = segments ?? [{ type: 'visible' as const, hours: HORAS }];
 
-  // Render a single time row
-  const renderTimeRow = (hora: string) => (
-    <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100">
-      <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
-      {weekDays.map((d: Date, di: number) => {
-        const dateStr = formatDate(d);
-        const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
-          if (c.isAllDay) return false;
-          return snapToSlot(c.hora_inicio) === hora;
-        });
+  // Hover handlers
+  const handleMouseEnter = (cita: CitaItem, e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+    setHoveredCita(cita);
+  };
+  const handleMouseLeave = () => setHoveredCita(null);
 
-        return (
-          <div
-            key={di}
-            className="border-l border-gray-100 min-h-[32px] min-w-0 overflow-hidden relative cursor-pointer hover:bg-gray-50 transition"
-            onClick={() => onClickSlot(dateStr)}
-          >
-            {citasEnSlot.map((cita: CitaItem) => {
-              const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
-              return (
+  // Render a single time row
+  const renderTimeRow = (hora: string) => {
+    const isCurrentSlot = hora === currentSlotStr && formatDate(now) >= formatDate(weekDays[0]) && formatDate(now) <= formatDate(weekDays[6]);
+
+    return (
+      <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100 relative">
+        <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
+        {weekDays.map((d: Date, di: number) => {
+          const dateStr = formatDate(d);
+          const isToday = dateStr === todayStr;
+          const citasEnSlot = citasForDate(dateStr).filter((c: CitaItem) => {
+            if (c.isAllDay) return false;
+            return snapToSlot(c.hora_inicio) === hora;
+          });
+
+          return (
+            <div
+              key={di}
+              className={`border-l border-gray-100 min-h-[32px] min-w-0 overflow-visible relative cursor-pointer transition-colors ${
+                isToday ? 'hover:bg-cyan-50/50' : 'hover:bg-gray-50'
+              }`}
+              onClick={() => onClickSlot(dateStr, hora)}
+            >
+              {/* Current time indicator */}
+              {isCurrentSlot && isToday && (
                 <div
-                  key={cita.id}
-                  onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
-                  className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} border-l-3 ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer hover:shadow-md transition z-10`}
-                  style={{ borderLeftWidth: '3px' }}
+                  className="absolute left-0 right-0 z-20 pointer-events-none"
+                  style={{ top: `${currentFraction * 100}%` }}
                 >
-                  <div className="font-medium truncate">{cita.titulo}</div>
-                  <div className="text-[10px] opacity-70 truncate">
-                    {cita.cliente?.nombre ?? (cita._source === 'outlook' ? `${cita.hora_inicio}` : formatHora12(cita.hora_inicio))}
+                  <div className="flex items-center">
+                    <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shrink-0" />
+                    <div className="flex-1 h-[2px] bg-red-500" />
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
+              )}
+
+              {citasEnSlot.map((cita: CitaItem) => {
+                const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
+                return (
+                  <div
+                    key={cita.id}
+                    onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
+                    onMouseEnter={(e) => handleMouseEnter(cita, e)}
+                    onMouseLeave={handleMouseLeave}
+                    className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer z-10 transition-all duration-150 hover:shadow-lg hover:scale-[1.02] hover:z-30`}
+                    style={{ borderLeftWidth: '3px', borderLeftStyle: 'solid' }}
+                  >
+                    <div className="font-semibold truncate">{cita.titulo}</div>
+                    <div className="text-[10px] opacity-75 truncate">
+                      {cita.cliente?.nombre ?? (cita._source === 'outlook' ? cita.hora_inicio : formatHora12(cita.hora_inicio))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Render a collapsed divider
   const renderCollapsed = (seg: { from: string; to: string }) => (
@@ -565,22 +611,28 @@ function WeekView({
   );
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden transition-all duration-300">
       {/* Header */}
       <div className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
         <div className="p-2" />
         {weekDays.map((d: Date, i: number) => {
           const dateStr = formatDate(d);
           const isToday = dateStr === todayStr;
+          const dayEventCount = citasForDate(dateStr).filter((c: CitaItem) => !c.isAllDay).length;
           return (
             <div
               key={i}
-              className={`p-2 text-center border-l border-gray-200 ${isToday ? 'bg-cyan-50' : ''}`}
+              className={`p-2 text-center border-l border-gray-200 transition-colors ${isToday ? 'bg-cyan-50' : ''}`}
             >
               <div className="text-xs text-gray-500">{DAY_NAMES[i]}</div>
               <div className={`text-lg font-semibold ${isToday ? 'text-cyan-700' : 'text-gray-800'}`}>
                 {d.getDate()}
               </div>
+              {dayEventCount > 0 && (
+                <div className="flex justify-center mt-0.5">
+                  <span className="text-[9px] text-gray-400">{dayEventCount} evento{dayEventCount !== 1 ? 's' : ''}</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -599,7 +651,7 @@ function WeekView({
                   <div
                     key={cita.id}
                     onClick={() => onClickCita(cita)}
-                    className="bg-amber-100 text-amber-900 border-l-2 border-amber-500 rounded px-1.5 py-0.5 text-[10px] font-medium truncate cursor-pointer hover:bg-amber-200 transition"
+                    className="bg-amber-200 text-amber-900 border-l-2 border-amber-500 rounded px-1.5 py-0.5 text-[10px] font-medium truncate cursor-pointer hover:bg-amber-300 transition"
                   >
                     {cita.titulo}
                   </div>
@@ -619,6 +671,29 @@ function WeekView({
           return seg.hours.map((hora: string) => renderTimeRow(hora));
         })}
       </div>
+
+      {/* Hover Tooltip */}
+      {hoveredCita && (
+        <div
+          className="fixed z-50 pointer-events-none animate-in fade-in duration-150"
+          style={{
+            left: Math.min(tooltipPos.x, window.innerWidth - 260),
+            top: Math.max(tooltipPos.y - 8, 8),
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <div className="bg-gray-900 text-white rounded-lg shadow-xl px-3 py-2 text-xs max-w-[240px]">
+            <div className="font-semibold mb-1">{hoveredCita.titulo}</div>
+            <div className="space-y-0.5 text-gray-300">
+              <div>{formatHora12(hoveredCita.hora_inicio)} — {formatHora12(hoveredCita.hora_fin)}</div>
+              <div>{TIPO_LABELS[hoveredCita.tipo] ?? hoveredCita.tipo}</div>
+              {hoveredCita.cliente && <div>{hoveredCita.cliente.nombre}</div>}
+              {hoveredCita.descripcion && <div className="text-gray-400 truncate">{hoveredCita.descripcion}</div>}
+            </div>
+            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1059,10 +1134,12 @@ function EditModal({
 
 function CreateModal({
   initialDate,
+  initialTime,
   onClose,
   onCreated,
 }: {
   initialDate: string;
+  initialTime?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -1071,8 +1148,8 @@ function CreateModal({
   const [duracion, setDuracion] = useState(30);
   const [slots, setSlots] = useState<SlotItem[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotItem | null>(null);
-  const [customTime, setCustomTime] = useState('14:00');
-  const [useCustomTime, setUseCustomTime] = useState(false);
+  const [customTime, setCustomTime] = useState(initialTime || '14:00');
+  const [useCustomTime, setUseCustomTime] = useState(!!initialTime);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [clienteId, setClienteId] = useState('');
