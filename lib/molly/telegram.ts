@@ -3,7 +3,8 @@
 // Telegram Bot — notificaciones y botones para Molly Mail
 // ============================================================================
 
-import type { EmailThread, EmailMessage, MollyClassification, EmailDraft } from '@/lib/types/molly';
+import type { EmailThread, EmailMessage, MollyClassification, EmailDraft, EmailSchedulingIntent } from '@/lib/types/molly';
+import type { FreeSlot } from '@/lib/molly/calendar';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID!;
@@ -150,6 +151,78 @@ export async function answerCallbackQuery(
       text: text || 'OK',
     }),
   });
+}
+
+// ── Build scheduling intent notification with inline "Agendar" buttons ────
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  consulta_nueva: 'Consulta Nueva (60 min, Q500)',
+  seguimiento: 'Seguimiento de Caso (30 min, sin costo)',
+};
+
+export function buildSchedulingNotification(
+  intent: EmailSchedulingIntent,
+  message: EmailMessage,
+  classification: MollyClassification,
+  slots: FreeSlot[],
+  dateLabel: string,
+): { text: string; reply_markup: unknown } {
+  const typeLabel = EVENT_TYPE_LABELS[intent.event_type] || intent.event_type;
+
+  let text = `\uD83D\uDCC5 <b>Solicitud de cita detectada</b>\n\n`;
+  text += `<b>De:</b> ${escapeHtml(message.from_name || message.from_email)}\n`;
+  text += `<b>Asunto:</b> ${escapeHtml(message.subject)}\n`;
+  text += `<b>Tipo sugerido:</b> ${escapeHtml(typeLabel)}\n`;
+  text += `<b>Fecha:</b> ${escapeHtml(dateLabel)}\n`;
+
+  if (classification.resumen) {
+    text += `\n<b>Resumen:</b> ${escapeHtml(classification.resumen)}\n`;
+  }
+
+  if (slots.length === 0) {
+    text += `\n\u26A0\uFE0F No hay horarios disponibles para esta fecha.`;
+  } else {
+    text += `\n<b>Horarios disponibles:</b>`;
+    for (const slot of slots.slice(0, 6)) {
+      const star = slot.preferred ? ' \u2B50' : '';
+      text += `\n  ${formatSlotTime(slot.start)} \u2014 ${formatSlotTime(slot.end)}${star}`;
+    }
+  }
+
+  // Build buttons: up to 6 slot buttons in rows of 2, plus Ignorar
+  const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  const slotBtns = slots.slice(0, 6).map((slot, i) => {
+    const star = slot.preferred ? ' \u2B50' : '';
+    return {
+      text: `\uD83D\uDCC5 ${formatSlotTime(slot.start)}${star}`,
+      callback_data: `sched_book:${intent.id}:${i}`,
+    };
+  });
+
+  // Rows of 2
+  for (let i = 0; i < slotBtns.length; i += 2) {
+    buttons.push(slotBtns.slice(i, i + 2));
+  }
+
+  buttons.push([
+    { text: '\u274C Ignorar', callback_data: `sched_ignore:${intent.id}` },
+  ]);
+
+  return {
+    text,
+    reply_markup: { inline_keyboard: buttons },
+  };
+}
+
+function formatSlotTime(isoStr: string): string {
+  const d = new Date(isoStr);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 // ── Verify chat ID ─────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ function parseJsonResponse<T>(text: string): T {
 // ── Classify email ─────────────────────────────────────────────────────────
 
 const CLASSIFY_PROMPT = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
+Hoy es ${new Date().toISOString().substring(0, 10)}.
 
 Clasifica el siguiente email y responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
 
@@ -38,7 +39,11 @@ Clasifica el siguiente email y responde ÚNICAMENTE con un JSON válido (sin mar
   "resumen": "resumen de 1-2 oraciones",
   "cliente_probable": "nombre del cliente probable o null",
   "requiere_respuesta": true,
-  "confianza": 0.85
+  "confianza": 0.85,
+  "scheduling_intent": false,
+  "suggested_date": null,
+  "suggested_time": null,
+  "event_type": null
 }
 
 Reglas de urgencia (0-3):
@@ -57,7 +62,14 @@ Reglas de tipo:
 
 Reglas de respuesta:
 - requiere_respuesta = false para: spam, newsletters, notificaciones automáticas, emails donde Amanda es CC
-- requiere_respuesta = true para: preguntas directas, solicitudes, citas, asuntos legales`;
+- requiere_respuesta = true para: preguntas directas, solicitudes, citas, asuntos legales
+
+Reglas de intención de cita (scheduling_intent):
+- scheduling_intent = true si el email solicita, propone o pregunta por: cita, reunión, consulta, meeting, appointment, agendar, disponibilidad, horario, "cuándo podemos vernos", "me gustaría agendar"
+- scheduling_intent = false para: confirmaciones de citas ya agendadas, recordatorios, cancelaciones, y emails que NO solicitan agendar algo nuevo
+- suggested_date: si mencionan una fecha específica, convertirla a formato YYYY-MM-DD. Si dicen "mañana", "el lunes", "la próxima semana", calcular la fecha real a partir de hoy. Si no mencionan fecha, null.
+- suggested_time: si mencionan hora específica ("a las 3", "por la tarde", "10 AM"), convertir a formato HH:mm en 24h. Si dicen "por la tarde" usar "14:00". Si no mencionan hora, null.
+- event_type: "consulta_nueva" si es un asunto nuevo, remitente desconocido, o primera consulta. "seguimiento" si es un cliente existente con caso activo que pide reunión de seguimiento. null si scheduling_intent es false.`;
 
 export async function classifyEmail(
   fromEmail: string,

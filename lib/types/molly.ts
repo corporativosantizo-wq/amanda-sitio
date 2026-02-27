@@ -133,6 +133,26 @@ export interface MollyClassification {
   cliente_probable: string | null;
   requiere_respuesta: boolean;
   confianza: number;
+  // Scheduling intent detection
+  scheduling_intent: boolean;
+  suggested_date: string | null;   // YYYY-MM-DD or null
+  suggested_time: string | null;   // HH:mm or null
+  event_type: 'consulta_nueva' | 'seguimiento' | null;
+}
+
+export type SchedulingIntentStatus = 'pendiente' | 'agendada' | 'ignorada';
+
+export interface EmailSchedulingIntent {
+  id: string;
+  thread_id: string;
+  message_id: string;
+  from_email: string;
+  event_type: 'consulta_nueva' | 'seguimiento';
+  suggested_date: string;          // YYYY-MM-DD
+  suggested_time: string | null;   // HH:mm or null
+  available_slots: unknown;        // JSONB array of FreeSlot
+  status: SchedulingIntentStatus;
+  created_at: string;
 }
 
 export interface MollyDraftResult {

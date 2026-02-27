@@ -10,6 +10,7 @@ import {
   sendTelegramMessage,
   buildEmailNotification,
   buildUrgentAlert,
+  buildSchedulingNotification,
 } from '@/lib/molly/telegram';
 import {
   getCalendarEvents,
@@ -25,6 +26,7 @@ import type {
   EmailThread,
   EmailMessage,
   EmailDraft,
+  EmailSchedulingIntent,
   GraphMailMessage,
   MollyClassification,
   ApprovedVia,
@@ -206,6 +208,15 @@ async function processOneEmail(
   // Try to match contact to client
   await matchContactToClient(fromEmail, classification.cliente_probable);
 
+  // Check scheduling intent
+  if (classification.scheduling_intent) {
+    try {
+      await handleSchedulingIntent(classification, emailMsg as EmailMessage, thread);
+    } catch (err: any) {
+      console.error('[molly] Error procesando scheduling intent:', err.message);
+    }
+  }
+
   // Generate draft if needed
   let draftCreated = false;
   if (classification.requiere_respuesta && classification.tipo !== 'spam') {
@@ -255,6 +266,90 @@ async function processOneEmail(
   }
 
   return { draftCreated };
+}
+
+// ── Scheduling intent handler ─────────────────────────────────────────────
+
+async function handleSchedulingIntent(
+  classification: MollyClassification,
+  message: EmailMessage,
+  thread: EmailThread,
+): Promise<void> {
+  const eventType = classification.event_type ?? 'consulta_nueva';
+  const durationMin = eventType === 'consulta_nueva' ? 60 : 30;
+
+  // Determine target date
+  let targetDate: Date;
+  if (classification.suggested_date) {
+    targetDate = new Date(classification.suggested_date + 'T12:00:00');
+    if (isNaN(targetDate.getTime())) {
+      targetDate = getNextBusinessDay();
+    }
+  } else {
+    targetDate = getNextBusinessDay();
+  }
+
+  // Skip weekends
+  while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
+    targetDate.setDate(targetDate.getDate() + 1);
+  }
+
+  // Find free slots
+  const slots = await findFreeSlots(targetDate, durationMin);
+
+  // Save intent to DB
+  const { data: intent, error } = await db()
+    .from('email_scheduling_intents')
+    .insert({
+      thread_id: thread.id,
+      message_id: message.id,
+      from_email: message.from_email,
+      event_type: eventType,
+      suggested_date: formatDateYMD(targetDate),
+      suggested_time: classification.suggested_time ?? null,
+      available_slots: slots,
+      status: 'pendiente',
+    })
+    .select()
+    .single();
+
+  if (error || !intent) {
+    console.error('[molly] Error guardando scheduling intent:', error);
+    return;
+  }
+
+  // Send Telegram notification with slot buttons
+  const dateLabel = formatDateSpanish(targetDate);
+  const notification = buildSchedulingNotification(
+    intent as EmailSchedulingIntent,
+    message,
+    classification,
+    slots,
+    dateLabel,
+  );
+
+  await sendTelegramMessage(notification.text, {
+    parse_mode: 'HTML',
+    reply_markup: notification.reply_markup,
+  });
+
+  console.log(`[molly] Scheduling intent detectado: ${eventType} para ${formatDateYMD(targetDate)}, ${slots.length} slots disponibles`);
+}
+
+function getNextBusinessDay(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+function formatDateYMD(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // ── Thread management ──────────────────────────────────────────────────────
