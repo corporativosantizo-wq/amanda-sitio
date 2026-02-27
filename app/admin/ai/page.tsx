@@ -327,7 +327,10 @@ export default function AIAssistantPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/admin/ai/upload', { method: 'POST', body: formData });
+      const res = await fetch('/api/admin/ai/upload', { method: 'POST', body: formData, redirect: 'manual' });
+      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
+        throw new Error('Tu sesión expiró. Recarga la página.');
+      }
       if (!res.ok) {
         let errMsg = `Error ${res.status}`;
         try { const err = await res.json(); errMsg = err.error ?? errMsg; } catch {}
@@ -367,8 +370,10 @@ export default function AIAssistantPage() {
     setError(null);
 
     try {
+      // Limit conversation history: keep last 20 messages to avoid huge payloads
+      const recentMessages = newMessages.slice(-20);
       const body: any = {
-        messages: newMessages.map((m: Message) => ({ role: m.role, content: m.content })),
+        messages: recentMessages.map((m: Message) => ({ role: m.role, content: m.content })),
       };
       if (currentAttachment) {
         body.attachment = currentAttachment;
@@ -378,7 +383,13 @@ export default function AIAssistantPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        redirect: 'manual', // Don't follow redirects — catch Clerk auth redirects
       });
+
+      // Clerk redirect (session expired) → browser would follow to /sign-in → 405
+      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
+        throw new Error('Tu sesión expiró. Recarga la página para volver a iniciar sesión.');
+      }
 
       if (!res.ok) {
         let errMsg = `Error ${res.status}`;
@@ -386,10 +397,8 @@ export default function AIAssistantPage() {
           const err = await res.json();
           errMsg = err.error ?? errMsg;
         } catch {
-          // Body vacío o truncado
           if (res.status === 504) errMsg = 'El asistente tardó demasiado. Intenta con una pregunta más corta.';
-          else if (res.status === 405) errMsg = 'Sesión expirada o error de conexión. Recarga la página.';
-          else if (res.status === 401 || res.status === 403) errMsg = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
+          else if (res.status === 405 || res.status === 401 || res.status === 403) errMsg = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
         }
         throw new Error(errMsg);
       }
