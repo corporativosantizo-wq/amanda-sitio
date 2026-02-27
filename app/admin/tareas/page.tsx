@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import type { TareaConCliente } from '@/lib/types';
 import {
@@ -25,6 +25,20 @@ function fechaGT(date: Date = new Date()): string {
 }
 
 const HOY = fechaGT();
+
+function getManana(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return fechaGT(d);
+}
+
+function getProximoLunes(): string {
+  const d = new Date();
+  const day = d.getDay(); // 0=dom, 1=lun, ...
+  const daysUntilMonday = day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + daysUntilMonday);
+  return fechaGT(d);
+}
 
 function fechaDisplay(fecha: string | null): string {
   if (!fecha) return '';
@@ -148,13 +162,10 @@ export default function TareasPage() {
     });
   }, [mutate, refetch]);
 
-  const handleMigrate = useCallback(async (id: string) => {
-    const manana = new Date();
-    manana.setDate(manana.getDate() + 1);
-    const mananaStr = fechaGT(manana);
+  const handleMigrate = useCallback(async (id: string, targetDate: string) => {
     await mutate(`/api/admin/tareas/${id}`, {
       method: 'PATCH',
-      body: { fecha_limite: mananaStr, estado: EstadoTarea.PENDIENTE },
+      body: { fecha_limite: targetDate, estado: EstadoTarea.PENDIENTE },
       onSuccess: () => refetch(),
     });
   }, [mutate, refetch]);
@@ -341,7 +352,7 @@ export default function TareasPage() {
               <div className="flex gap-1">
                 <ActionBtn label={'\u2192'} title="Iniciar" onClick={() => handleStartProgress(t.id)} color="blue" />
                 <ActionBtn label={'\u2715'} title="Completar" onClick={() => handleComplete(t.id)} color="green" />
-                <ActionBtn label=">" title="Migrar a ma\u00f1ana" onClick={() => handleMigrate(t.id)} color="purple" />
+                <MigrateBtn onMigrate={(date) => handleMigrate(t.id, date)} />
                 <ActionBtn label={'\u00D7'} title="Eliminar" onClick={() => handleDelete(t.id)} color="red" />
               </div>
             )}
@@ -560,5 +571,89 @@ function ActionBtn({
     >
       {label}
     </button>
+  );
+}
+
+// ── Migrate Button with Popover ─────────────────────────────────────────────
+
+function MigrateBtn({ onMigrate }: { onMigrate: (date: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setShowDatePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const manana = getManana();
+  const lunes = getProximoLunes();
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        title="Migrar tarea"
+        className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold transition-colors hover:bg-purple-100 text-purple-600"
+      >
+        {'>'}
+      </button>
+
+      {open && (
+        <div
+          className="absolute bottom-full right-0 mb-1 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 min-w-[180px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-xs hover:bg-purple-50 text-slate-700 flex items-center gap-2"
+            onClick={() => { onMigrate(manana); setOpen(false); }}
+          >
+            <span className="text-purple-500">{'>'}</span>
+            <span>Ma{'\u00f1'}ana <span className="text-slate-400">({fechaDisplay(manana)})</span></span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-2 text-xs hover:bg-purple-50 text-slate-700 flex items-center gap-2"
+            onClick={() => { onMigrate(lunes); setOpen(false); }}
+          >
+            <span className="text-purple-500">{'>>'}</span>
+            <span>Pr{'\u00f3'}ximo lunes <span className="text-slate-400">({fechaDisplay(lunes)})</span></span>
+          </button>
+          <div className="border-t border-slate-100 my-1" />
+          {!showDatePicker ? (
+            <button
+              className="w-full text-left px-3 py-2 text-xs hover:bg-purple-50 text-slate-700 flex items-center gap-2"
+              onClick={() => setShowDatePicker(true)}
+            >
+              <span className="text-purple-500">{'\uD83D\uDCC5'}</span>
+              <span>Elegir fecha...</span>
+            </button>
+          ) : (
+            <div className="px-3 py-2">
+              <input
+                type="date"
+                min={manana}
+                autoFocus
+                className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-purple-400"
+                onChange={(e) => {
+                  if (e.target.value) {
+                    onMigrate(e.target.value);
+                    setOpen(false);
+                    setShowDatePicker(false);
+                  }
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
