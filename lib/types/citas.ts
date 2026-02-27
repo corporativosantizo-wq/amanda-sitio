@@ -99,17 +99,17 @@ export interface HorarioConfig {
 
 export const HORARIOS: Record<TipoCita, HorarioConfig> = {
   consulta_nueva: {
-    dias: [1, 3, 5],
-    hora_inicio: '07:00',
-    hora_fin: '12:15',
+    dias: [1, 2, 3, 4, 5],
+    hora_inicio: '08:00',
+    hora_fin: '18:00',
     duracion_max: 60,
     duracion_min: 30,
-    costo: 75,
+    costo: 500,
     categoria_outlook: 'Azul',
     color_admin: '#3B82F6',
   },
   seguimiento: {
-    dias: [2, 3],
+    dias: [1, 2, 3, 4, 5],
     hora_inicio: '14:00',
     hora_fin: '18:00',
     duracion_max: 15,

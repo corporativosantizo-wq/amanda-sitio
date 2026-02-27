@@ -705,60 +705,62 @@ function DetailModal({
         </div>
 
         {/* Action buttons */}
-        <div className="p-6 border-t border-gray-100 space-y-3">
-          {/* Edit / Delete row for local events */}
-          {isLocal && activo && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => onEdit(cita)}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm font-medium"
-              >
-                Editar
-              </button>
-              {!showDeleteConfirm ? (
+        {(isLocal || activo) && (
+          <div className="p-6 border-t border-gray-100 space-y-3">
+            {/* Edit / Delete — available for ALL local events regardless of estado */}
+            {isLocal && cita.estado !== 'cancelada' && (
+              <div className="flex gap-3">
                 <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+                  onClick={() => onEdit(cita)}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm font-medium"
                 >
-                  Eliminar
+                  Editar
                 </button>
-              ) : (
-                <div className="flex gap-2">
+                {!showDeleteConfirm ? (
                   <button
-                    onClick={() => onDelete(cita.id)}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
                   >
-                    Confirmar
+                    Eliminar
                   </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="px-3 py-2 text-gray-500 text-sm hover:text-gray-700 transition"
-                  >
-                    No
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onDelete(cita.id)}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                    >
+                      Confirmar
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-3 py-2 text-gray-500 text-sm hover:text-gray-700 transition"
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* Completar / Cancelar */}
-          {activo && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => onAction(cita.id, 'completar')}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-sm font-medium"
-              >
-                Marcar completada
-              </button>
-              <button
-                onClick={() => onAction(cita.id, 'cancelar')}
-                className="flex-1 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition text-sm font-medium"
-              >
-                Cancelar cita
-              </button>
-            </div>
-          )}
-        </div>
+            {/* Completar / Cancelar — only for active (pendiente/confirmada) local events */}
+            {activo && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onAction(cita.id, 'completar')}
+                  className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-sm font-medium"
+                >
+                  Marcar completada
+                </button>
+                <button
+                  onClick={() => onAction(cita.id, 'cancelar')}
+                  className="flex-1 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+                >
+                  Cancelar cita
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1105,7 +1107,7 @@ function CreateModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
             >
               <optgroup label="Citas con cliente">
-                <option value="consulta_nueva">Consulta Nueva (Q75, 30-60 min)</option>
+                <option value="consulta_nueva">Consulta Nueva (Q500, 30-60 min)</option>
                 <option value="seguimiento">Seguimiento (gratis, 15 min)</option>
               </optgroup>
               <optgroup label="Eventos admin">
