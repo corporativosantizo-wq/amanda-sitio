@@ -81,3 +81,101 @@ export function stripHtmlToText(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+// ── Search emails with KQL query ──────────────────────────────────────────
+
+export async function searchEmails(
+  account: MailboxAlias,
+  query: string,
+  days: number = 7,
+): Promise<GraphMailMessage[]> {
+  const token = await getAppToken();
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const filter = `receivedDateTime ge ${since}`;
+  const select = [
+    'id',
+    'conversationId',
+    'subject',
+    'bodyPreview',
+    'from',
+    'toRecipients',
+    'receivedDateTime',
+    'hasAttachments',
+  ].join(',');
+
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${account}/messages` +
+    `?$search="${encodeURIComponent(query)}"` +
+    `&$filter=${encodeURIComponent(filter)}` +
+    `&$select=${select}` +
+    `&$orderby=receivedDateTime desc` +
+    `&$top=15`;
+
+  console.log(`[graph-mail] SEARCH ${account} q="${query}" days=${days}`);
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: 'outlook.body.contentType="text"',
+    },
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[graph-mail] SEARCH ERROR ${res.status}:`, errText.substring(0, 500));
+    throw new Error(`Graph API search error ${res.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const messages: GraphMailMessage[] = data.value ?? [];
+  console.log(`[graph-mail] SEARCH: ${messages.length} resultados para "${query}" en ${account}`);
+  return messages;
+}
+
+// ── Get full conversation thread by conversationId ────────────────────────
+
+export async function getConversationThread(
+  account: MailboxAlias,
+  conversationId: string,
+): Promise<GraphMailMessage[]> {
+  const token = await getAppToken();
+
+  const filter = `conversationId eq '${conversationId}'`;
+  const select = [
+    'id',
+    'conversationId',
+    'subject',
+    'body',
+    'bodyPreview',
+    'from',
+    'toRecipients',
+    'ccRecipients',
+    'receivedDateTime',
+    'hasAttachments',
+  ].join(',');
+
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${account}/messages` +
+    `?$filter=${encodeURIComponent(filter)}` +
+    `&$select=${select}` +
+    `&$orderby=receivedDateTime asc` +
+    `&$top=25`;
+
+  console.log(`[graph-mail] THREAD ${account} convId=${conversationId.substring(0, 30)}...`);
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[graph-mail] THREAD ERROR ${res.status}:`, errText.substring(0, 500));
+    throw new Error(`Graph API thread error ${res.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const messages: GraphMailMessage[] = data.value ?? [];
+  console.log(`[graph-mail] THREAD: ${messages.length} mensajes en hilo`);
+  return messages;
+}

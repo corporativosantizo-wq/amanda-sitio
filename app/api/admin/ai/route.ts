@@ -18,6 +18,7 @@ import { listarPlantillasActivas, obtenerPlantilla, generarDesdeCustomPlantilla 
 import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-utils';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { searchEmails, getConversationThread, stripHtmlToText } from '@/lib/molly/graph-mail';
 import { registrarYConfirmar } from '@/lib/services/pagos.service';
 import { listarTareas, crearTarea, completarTarea, migrarTarea } from '@/lib/services/tareas.service';
 import {
@@ -546,6 +547,37 @@ Documentos de referencia: legislación, formularios, modelos de documentos, juri
 **Ejemplos:**
 - "Busca el modelo de contrato individual de trabajo" → consultar_legal(consulta="biblioteca_buscar", params={busqueda:"contrato individual trabajo"})
 - "Encuentra el Código de Comercio" → consultar_legal(consulta="biblioteca_buscar", params={busqueda:"Código de Comercio"})
+
+## LECTURA DE EMAILS
+Puedes buscar y leer emails del buzón del despacho usando las herramientas buscar_emails y leer_hilo_email. Las tres cuentas disponibles son:
+- **asistente@papeleo.legal** — consultas generales, agendamiento, solicitudes
+- **contador@papeleo.legal** — facturas, pagos, retenciones, SAT
+- **amanda@papeleo.legal** — clientes VIP, juzgados, colegas abogados
+
+### Flujo para leer emails:
+1. Usa buscar_emails con la cuenta apropiada y un término de búsqueda
+2. Revisa los resultados (asunto, remitente, preview)
+3. Si Amanda quiere el detalle, usa leer_hilo_email con el conversationId para ver el hilo completo
+4. Si Amanda quiere responder, redacta la respuesta y usa enviar_email tipo=personalizado
+
+### Cómo elegir la cuenta:
+- Si Amanda dice "emails nuevos" o "bandeja" sin especificar → busca en asistente@papeleo.legal
+- Si menciona facturas, pagos, contabilidad → busca en contador@papeleo.legal
+- Si dice "mis emails" o "mi correo" → busca en amanda@papeleo.legal
+- Si menciona un remitente específico, busca en las tres cuentas si no está claro
+
+### Reglas:
+- NUNCA inventes contenido de emails. Solo reporta lo que retorna la herramienta.
+- Presenta los resultados de forma clara: fecha, de, asunto, preview
+- Cuando muestres un hilo, ordénalo cronológicamente y resume si es largo
+- Si Amanda dice "responde ese email", primero lee el hilo completo, luego redacta y envía con enviar_email tipo=personalizado
+
+### Ejemplos:
+- "¿Qué emails nuevos hay?" → buscar_emails(cuenta="asistente@papeleo.legal", busqueda="*", dias=1)
+- "Busca emails de Procapeli" → buscar_emails(cuenta="asistente@papeleo.legal", busqueda="Procapeli")
+- "¿Qué facturas llegaron esta semana?" → buscar_emails(cuenta="contador@papeleo.legal", busqueda="factura", dias=7)
+- "Lee el hilo de ese email" → leer_hilo_email con el conversationId del resultado anterior
+- "Respóndele que ya tenemos la resolución" → leer hilo + enviar_email tipo=personalizado
 
 ## INSTRUCCIONES GENERALES
 - Sé conciso y profesional, pero con personalidad
@@ -1701,6 +1733,80 @@ async function handleBuscarJurisprudencia(
   return result;
 }
 
+// ── Buscar emails en buzón ─────────────────────────────────────────────────
+
+async function handleBuscarEmails(
+  cuenta: MailboxAlias,
+  busqueda: string,
+  dias: number = 7,
+): Promise<string> {
+  console.log(`[AI] buscar_emails: cuenta=${cuenta}, q="${busqueda}", dias=${dias}`);
+  const results = await searchEmails(cuenta, busqueda, dias);
+
+  if (!results.length) {
+    return JSON.stringify({
+      mensaje: `No se encontraron emails en ${cuenta} con "${busqueda}" en los últimos ${dias} días.`,
+      resultados: [],
+    });
+  }
+
+  const formatted = results.map((m: any) => ({
+    de: m.from?.emailAddress?.name
+      ? `${m.from.emailAddress.name} <${m.from.emailAddress.address}>`
+      : m.from?.emailAddress?.address ?? 'desconocido',
+    asunto: m.subject ?? '(Sin asunto)',
+    fecha: m.receivedDateTime?.substring(0, 16) ?? '',
+    preview: (m.bodyPreview ?? '').substring(0, 200),
+    conversationId: m.conversationId ?? null,
+    tieneAdjuntos: m.hasAttachments ?? false,
+  }));
+
+  return JSON.stringify({
+    mensaje: `${results.length} email(s) encontrados en ${cuenta}.`,
+    resultados: formatted,
+  });
+}
+
+// ── Leer hilo de email completo ───────────────────────────────────────────
+
+async function handleLeerHiloEmail(
+  cuenta: MailboxAlias,
+  conversationId: string,
+): Promise<string> {
+  console.log(`[AI] leer_hilo_email: cuenta=${cuenta}, convId=${conversationId.substring(0, 30)}...`);
+  const messages = await getConversationThread(cuenta, conversationId);
+
+  if (!messages.length) {
+    return JSON.stringify({
+      mensaje: 'No se encontraron mensajes en este hilo.',
+      mensajes: [],
+    });
+  }
+
+  const formatted = messages.map((m: any) => {
+    const bodyText = m.body?.content
+      ? stripHtmlToText(m.body.content).substring(0, 2000)
+      : m.bodyPreview ?? '';
+
+    return {
+      de: m.from?.emailAddress?.name
+        ? `${m.from.emailAddress.name} <${m.from.emailAddress.address}>`
+        : m.from?.emailAddress?.address ?? 'desconocido',
+      para: (m.toRecipients ?? []).map((r: any) => r.emailAddress?.address).join(', '),
+      cc: (m.ccRecipients ?? []).map((r: any) => r.emailAddress?.address).filter(Boolean).join(', ') || undefined,
+      asunto: m.subject ?? '(Sin asunto)',
+      fecha: m.receivedDateTime?.substring(0, 16) ?? '',
+      texto: bodyText,
+      tieneAdjuntos: m.hasAttachments ?? false,
+    };
+  });
+
+  return JSON.stringify({
+    mensaje: `Hilo con ${messages.length} mensaje(s). Asunto: "${messages[0].subject ?? '(Sin asunto)'}"`,
+    mensajes: formatted,
+  });
+}
+
 // ── Consultas legales (expedientes, mercantil, laboral, tribunales, etc.) ──
 
 async function handleConsultarLegal(
@@ -2719,6 +2825,48 @@ export async function POST(req: Request) {
         },
       },
       {
+        name: 'buscar_emails',
+        description: 'Busca emails en el buzón del despacho. Busca por texto libre, remitente, asunto, etc. Retorna lista de emails con preview (sin cuerpo completo). Usa leer_hilo_email para ver el hilo completo.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cuenta: {
+              type: 'string',
+              enum: ['asistente@papeleo.legal', 'contador@papeleo.legal', 'amanda@papeleo.legal'],
+              description: 'Cuenta de email donde buscar.',
+            },
+            busqueda: {
+              type: 'string',
+              description: 'Texto de búsqueda. Puede ser texto libre, nombre de remitente, asunto, etc.',
+            },
+            dias: {
+              type: 'number',
+              description: 'Buscar en los últimos N días (default: 7).',
+            },
+          },
+          required: ['cuenta', 'busqueda'],
+        },
+      },
+      {
+        name: 'leer_hilo_email',
+        description: 'Lee el hilo completo de un email usando su conversationId. Retorna todos los mensajes del hilo con cuerpo completo en texto plano. Usar después de buscar_emails para ver el detalle.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cuenta: {
+              type: 'string',
+              enum: ['asistente@papeleo.legal', 'contador@papeleo.legal', 'amanda@papeleo.legal'],
+              description: 'Cuenta de email donde está el hilo.',
+            },
+            conversation_id: {
+              type: 'string',
+              description: 'El conversationId del email (obtenido de buscar_emails).',
+            },
+          },
+          required: ['cuenta', 'conversation_id'],
+        },
+      },
+      {
         name: 'consultar_legal',
         description: 'Consulta los módulos legales del sistema: expedientes judiciales/fiscales/administrativos, cumplimiento mercantil, cumplimiento laboral, directorios de tribunales y fiscalías, representantes legales, grupo empresarial, y biblioteca legal.',
         input_schema: {
@@ -2883,6 +3031,12 @@ export async function POST(req: Request) {
             } else if (block.name === 'buscar_jurisprudencia') {
               const input = block.input as any;
               result = await handleBuscarJurisprudencia(input.consulta, input.limite ?? 10);
+            } else if (block.name === 'buscar_emails') {
+              const input = block.input as any;
+              result = await handleBuscarEmails(input.cuenta, input.busqueda, input.dias ?? 7);
+            } else if (block.name === 'leer_hilo_email') {
+              const input = block.input as any;
+              result = await handleLeerHiloEmail(input.cuenta, input.conversation_id);
             } else if (block.name === 'consultar_legal') {
               const input = block.input as any;
               result = await handleConsultarLegal(input.consulta, input.params ?? {});
