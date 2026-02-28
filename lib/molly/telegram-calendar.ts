@@ -12,6 +12,7 @@ import {
   getDayBounds,
   getNextBusinessDays,
   formatDateSpanish,
+  gtDateStr,
 } from './calendar';
 import type { CalendarEvent } from './calendar';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/services/outlook.service';
@@ -410,6 +411,79 @@ export async function handleCancelCallback(data: string): Promise<void> {
     conversation = null;
     return;
   }
+}
+
+// ── University class reminders ────────────────────────────────────────────
+
+const UNIVERSITY_TEAMS_LINK =
+  'https://teams.microsoft.com/dl/launcher/launcher.html?url=%2F_%23%2Fl%2Fmeetup-join%2F19%3Ameeting_NWE3MDA2Y2ItNmRiNC00ZGI2LWI0OTItZTg2NzQwZjU2MzJi%40thread.v2%2F0%3Fcontext%3D%257b%2522Tid%2522%253a%252266f22055-85d8-4984-a4d8-2dd3ac2060b1%2522%252c%2522Oid%2522%253a%2522158e7702-4050-4943-8b04-c5a070024c29%2522%257d%26anon%3Dtrue&type=meetup-join&deeplinkId=973e7d8a-0c9d-4ca2-98c4-b09fb636e19e&directDl=true&msLaunch=true&enableMobilePage=true&suppressPrompt=true';
+const UNIVERSITY_AULA_URL = 'https://cursos.amandasantizo.com';
+
+/** Format Date as Guatemala ISO string for Graph API queries */
+function toGtISO(date: Date): string {
+  const ds = gtDateStr(date);
+  const ts = date.toLocaleTimeString('en-GB', { timeZone: 'America/Guatemala', hour12: false });
+  return `${ds}T${ts}`;
+}
+
+/**
+ * Check for upcoming [CLASE] events and send Telegram reminder 15 min before.
+ * Window: events starting in 10-20 min from now (10-min wide, no overlap with 15-min cron).
+ */
+export async function checkClassReminders(): Promise<number> {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() + 10 * 60_000);
+  const windowEnd = new Date(now.getTime() + 20 * 60_000);
+
+  const events = await getCalendarEvents(toGtISO(windowStart), toGtISO(windowEnd));
+  const clases = events.filter(
+    (e: CalendarEvent) => !e.isAllDay && e.subject.toUpperCase().includes('[CLASE]'),
+  );
+
+  if (clases.length === 0) return 0;
+
+  let sent = 0;
+  for (const clase of clases) {
+    const isVirtual = clase.subject.toUpperCase().includes('[VIRTUAL]');
+
+    const displayName = clase.subject
+      .replace(/\[CLASE\]/gi, '')
+      .replace(/\[VIRTUAL\]/gi, '')
+      .replace(/\[PRESENCIAL\]/gi, '')
+      .trim();
+
+    const time = clase.start.substring(11, 16);
+
+    let msg = `\uD83C\uDF93 <b>Clase en 15 min</b>\n\n`;
+    msg += `\uD83D\uDCDA ${esc(displayName)}\n`;
+    msg += `\u23F0 ${formatHora12(time)}\n`;
+
+    const buttons: Array<{ text: string; url: string }> = [];
+
+    if (isVirtual) {
+      msg += `\uD83D\uDCBB Virtual — Teams\n`;
+      buttons.push({ text: '\uD83D\uDD17 Unirse a Teams', url: UNIVERSITY_TEAMS_LINK });
+      buttons.push({ text: '\uD83D\uDCDA Aula Virtual', url: UNIVERSITY_AULA_URL });
+    } else {
+      msg += `\uD83D\uDCCD Presencial\n`;
+      buttons.push({ text: '\uD83D\uDCDA Aula Virtual', url: UNIVERSITY_AULA_URL });
+    }
+
+    if (clase.location) {
+      msg += `\uD83D\uDCCD ${esc(clase.location)}\n`;
+    }
+
+    await sendTelegramMessage(msg, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [buttons],
+      },
+    });
+    sent++;
+  }
+
+  console.log(`[telegram-calendar] ${sent} recordatorio(s) de clase enviado(s)`);
+  return sent;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

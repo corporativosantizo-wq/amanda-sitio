@@ -13,7 +13,7 @@
   "crons": [
     {
       "path": "/api/cron/recordatorios",
-      "schedule": "*/30 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/tareas-programadas",
