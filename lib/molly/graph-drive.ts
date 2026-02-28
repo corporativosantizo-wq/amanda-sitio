@@ -51,6 +51,7 @@ export async function searchDriveFiles(
     `&$top=15`;
 
   console.log(`[graph-drive] SEARCH ${account} q="${query}" fileType=${fileType ?? 'all'}`);
+  console.log(`[graph-drive] URL: ${url}`);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -58,7 +59,13 @@ export async function searchDriveFiles(
 
   if (!res.ok) {
     const errText = await res.text();
-    console.error(`[graph-drive] SEARCH ERROR ${res.status}:`, errText.substring(0, 500));
+    console.error(`[graph-drive] SEARCH ERROR ${res.status} for ${account}:`, errText);
+    // If 403, force token cache invalidation for next retry
+    if (res.status === 403) {
+      const { invalidateAppToken } = await import('@/lib/services/outlook.service');
+      invalidateAppToken();
+      console.warn(`[graph-drive] Token cache invalidado por 403 — reintento usará token nuevo`);
+    }
     throw new Error(`Graph Drive search error ${res.status}: ${errText.substring(0, 200)}`);
   }
 
@@ -106,7 +113,7 @@ export async function getFileContent(
 
   if (!metaRes.ok) {
     const errText = await metaRes.text();
-    console.error(`[graph-drive] META ERROR ${metaRes.status}:`, errText.substring(0, 500));
+    console.error(`[graph-drive] META ERROR ${metaRes.status} for ${account}:`, errText);
     throw new Error(`Graph Drive metadata error ${metaRes.status}: ${errText.substring(0, 200)}`);
   }
 
@@ -189,7 +196,11 @@ export async function listFolderContents(
 
   if (!res.ok) {
     const errText = await res.text();
-    console.error(`[graph-drive] LIST ERROR ${res.status}:`, errText.substring(0, 500));
+    console.error(`[graph-drive] LIST ERROR ${res.status} for ${account}:`, errText);
+    if (res.status === 403) {
+      const { invalidateAppToken } = await import('@/lib/services/outlook.service');
+      invalidateAppToken();
+    }
     throw new Error(`Graph Drive list error ${res.status}: ${errText.substring(0, 200)}`);
   }
 

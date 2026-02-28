@@ -570,6 +570,12 @@ export async function getAppToken(): Promise<string> {
   return data.access_token;
 }
 
+/** Force invalidation of cached app token (e.g., after permission changes or 403) */
+export function invalidateAppToken(): void {
+  appTokenCache = null;
+  console.log('[getAppToken] Cache invalidado manualmente');
+}
+
 // ── Send Email (app permissions — client_credentials) ───────────────────────
 
 export type MailboxAlias = 'asistente@papeleo.legal' | 'contador@papeleo.legal' | 'amanda@papeleo.legal';
