@@ -5,6 +5,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 import type { TareaConCliente } from '@/lib/types';
@@ -149,6 +150,7 @@ const BULLET: Record<string, { symbol: string; className: string }> = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function AIAssistantPage() {
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -323,6 +325,10 @@ export default function AIAssistantPage() {
     setIsUploading(true);
     setError(null);
 
+    // Keep Clerk session alive while uploading
+    await getToken().catch(() => {});
+    const uploadKeepAlive = setInterval(() => { getToken().catch(() => {}); }, 30_000);
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -347,6 +353,7 @@ export default function AIAssistantPage() {
     } catch (err: any) {
       setError(err.message ?? 'Error al subir archivo');
     } finally {
+      clearInterval(uploadKeepAlive);
       setIsUploading(false);
     }
   };
@@ -368,6 +375,10 @@ export default function AIAssistantPage() {
     setAttachedFile(null);
     setIsLoading(true);
     setError(null);
+
+    // Refresh Clerk token before fetch + keep-alive every 30s while waiting
+    await getToken().catch(() => {});
+    const sessionKeepAlive = setInterval(() => { getToken().catch(() => {}); }, 30_000);
 
     try {
       // Limit conversation history: keep last 20 messages to avoid huge payloads
@@ -424,6 +435,7 @@ export default function AIAssistantPage() {
     } catch (err: any) {
       setError(err.message ?? 'Error al comunicarse con el asistente');
     } finally {
+      clearInterval(sessionKeepAlive);
       setIsLoading(false);
     }
   };
