@@ -35,7 +35,6 @@ export interface FreeSlot {
 
 const CALENDAR_ACCOUNT: MailboxAlias = 'amanda@papeleo.legal';
 const TZ = 'America/Guatemala';
-const UTC_OFFSET = -6; // Guatemala is UTC-6 year-round (no DST)
 
 // Bullet Journal working hours
 const WORK_START_HOUR = 8;
@@ -46,6 +45,41 @@ const AFTERNOON_START = 14; // Consultations preferred from 2 PM
 const DEFAULT_DURATION_MIN = 30;
 const BUFFER_MIN = 15;
 const MIN_USABLE_GAP_MIN = 45; // 30 min meeting + 15 min buffer
+
+// ── Guatemala timezone helpers (Vercel runs UTC; all date logic must be TZ-aware)
+
+/** YYYY-MM-DD in Guatemala timezone from a Date object */
+export function gtDateStr(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: TZ });
+}
+
+/** Day of week (0=Sun..6=Sat) in Guatemala timezone */
+export function gtWeekday(date: Date): number {
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(date);
+  return ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[wd] ?? 0;
+}
+
+/** Day of month in Guatemala timezone */
+function gtDayNum(date: Date): number {
+  return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: TZ, day: 'numeric' }).format(date), 10);
+}
+
+/** Month index (0-11) in Guatemala timezone */
+function gtMonthIdx(date: Date): number {
+  return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: TZ, month: 'numeric' }).format(date), 10) - 1;
+}
+
+/** Year in Guatemala timezone */
+function gtYear(date: Date): number {
+  return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric' }).format(date), 10);
+}
+
+/** Parse hours + minutes from a datetime string already in Guatemala time.
+ *  Works for Graph API strings and internal ISO strings from findFreeSlots. */
+function parseGtHM(dtStr: string): { h: number; m: number } {
+  const [h, m] = dtStr.substring(11, 16).split(':').map(Number);
+  return { h: h || 0, m: m || 0 };
+}
 
 // ── Get calendar events (calendarView) ─────────────────────────────────────
 
@@ -145,7 +179,7 @@ export async function findFreeSlots(
   durationMinutes: number = DEFAULT_DURATION_MIN,
   account: MailboxAlias = CALENDAR_ACCOUNT,
 ): Promise<FreeSlot[]> {
-  const dayOfWeek = date.getDay();
+  const dayOfWeek = gtWeekday(date);
   // Skip weekends
   if (dayOfWeek === 0 || dayOfWeek === 6) return [];
 
@@ -218,7 +252,8 @@ function addSlot(
 ): void {
   const slotStart = new Date(gapStartMs);
   const slotEnd = new Date(Math.min(gapStartMs + durationMin * 60_000, gapEndMs));
-  const hour = slotStart.getHours();
+  // Timestamps are "Guatemala-as-UTC" (Graph strings parsed without TZ suffix)
+  const hour = slotStart.getUTCHours();
   const isAfternoon = hour >= AFTERNOON_START;
 
   slots.push({
@@ -233,7 +268,7 @@ function addSlot(
   if (remainingMs >= durationMin * 60_000) {
     const nextStart = new Date(slotEnd.getTime() + BUFFER_MIN * 60_000);
     const nextEnd = new Date(nextStart.getTime() + durationMin * 60_000);
-    const nextHour = nextStart.getHours();
+    const nextHour = nextStart.getUTCHours();
 
     slots.push({
       start: nextStart.toISOString(),
@@ -265,7 +300,7 @@ export function formatAgendaForTelegram(
       if (e.location) msg += ` (${esc(e.location)})`;
       continue;
     }
-    const hour = new Date(e.start).getHours();
+    const { h: hour } = parseGtHM(e.start);
     if (hour < AFTERNOON_START) {
       morning.push(e);
     } else {
@@ -315,19 +350,14 @@ export function formatAvailabilityForTelegram(
 
 /** Format Date as YYYY-MM-DD in Guatemala timezone */
 function formatDateLocal(date: Date): string {
-  // Shift to Guatemala time (UTC-6)
-  const gt = new Date(date.getTime() + UTC_OFFSET * 3600_000);
-  return gt.toISOString().substring(0, 10);
+  return gtDateStr(date);
 }
 
-/** Format ISO datetime as HH:MM AM/PM */
+/** Format datetime string (already Guatemala time) as HH:MM AM/PM */
 function formatTime(isoStr: string): string {
-  const d = new Date(isoStr);
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  if (h > 12) h -= 12;
-  if (h === 0) h = 12;
+  const { h: rawH, m } = parseGtHM(isoStr);
+  const ampm = rawH >= 12 ? 'PM' : 'AM';
+  const h = rawH > 12 ? rawH - 12 : rawH === 0 ? 12 : rawH;
   return `${h}:${pad(m)} ${ampm}`;
 }
 
@@ -347,7 +377,7 @@ export function getNextBusinessDays(from: Date, count: number): Date[] {
   const d = new Date(from);
   while (days.length < count) {
     d.setDate(d.getDate() + 1);
-    const dow = d.getDay();
+    const dow = gtWeekday(d);
     if (dow !== 0 && dow !== 6) {
       days.push(new Date(d));
     }
@@ -368,7 +398,7 @@ export function getDayBounds(date: Date): { start: string; end: string } {
 export function formatDateSpanish(date: Date): string {
   const days = ['domingo', 'lunes', 'martes', 'mi\u00E9rcoles', 'jueves', 'viernes', 's\u00E1bado'];
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  return `${days[date.getDay()]} ${date.getDate()} de ${months[date.getMonth()]}`;
+  return `${days[gtWeekday(date)]} ${gtDayNum(date)} de ${months[gtMonthIdx(date)]}`;
 }
 
 const DAY_NAMES_UPPER = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
@@ -388,10 +418,10 @@ function eventEmoji(subject: string): string {
   return '📌';
 }
 
-/** Format HH:MM (24h compact) from ISO */
+/** Format HH:MM (24h compact) from datetime string (already Guatemala time) */
 function fmtHHMM(isoStr: string): string {
-  const d = new Date(isoStr);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const { h, m } = parseGtHM(isoStr);
+  return `${pad(h)}:${pad(m)}`;
 }
 
 // ── Enhanced day view for /hoy and /mañana ──────────────────────────────
@@ -401,16 +431,16 @@ export function formatDayViewForTelegram(
   date: Date,
   freeSlotCount: number,
 ): string {
-  const dayName = DAY_NAMES_UPPER[date.getDay()];
-  const dayNum = date.getDate();
-  const monthName = MONTH_NAMES_UPPER[date.getMonth()];
-  const year = date.getFullYear();
+  const dayName = DAY_NAMES_UPPER[gtWeekday(date)];
+  const dayNum = gtDayNum(date);
+  const monthName = MONTH_NAMES_UPPER[gtMonthIdx(date)];
+  const year = gtYear(date);
 
   let msg = `📅 <b>${dayName} ${dayNum} ${monthName} ${year}</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
 
   // Deep work block indicator (8:00-14:00 on weekdays)
-  const dow = date.getDay();
+  const dow = gtWeekday(date);
   if (dow >= 1 && dow <= 5) {
     msg += `☀ 8:00–14:00 Trabajo profundo\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -452,11 +482,11 @@ export function formatWeekViewForTelegram(
   weekStart: Date,
   weekEnd: Date,
 ): string {
-  const startDay = weekStart.getDate();
-  const endDay = weekEnd.getDate();
-  const startMonth = MONTH_NAMES_UPPER[weekStart.getMonth()].substring(0, 3);
-  const endMonth = MONTH_NAMES_UPPER[weekEnd.getMonth()].substring(0, 3);
-  const dateRange = weekStart.getMonth() === weekEnd.getMonth()
+  const startDay = gtDayNum(weekStart);
+  const endDay = gtDayNum(weekEnd);
+  const startMonth = MONTH_NAMES_UPPER[gtMonthIdx(weekStart)].substring(0, 3);
+  const endMonth = MONTH_NAMES_UPPER[gtMonthIdx(weekEnd)].substring(0, 3);
+  const dateRange = gtMonthIdx(weekStart) === gtMonthIdx(weekEnd)
     ? `${startDay} — ${endDay} ${startMonth}`
     : `${startDay} ${startMonth} — ${endDay} ${endMonth}`;
 
@@ -470,8 +500,8 @@ export function formatWeekViewForTelegram(
   for (let i = 0; i < 7; i++) {
     const dateStr = formatDateLocal(d);
     const dayEvents = eventsByDay.get(dateStr) ?? [];
-    const abbr = DAY_ABBR[d.getDay()];
-    const num = d.getDate();
+    const abbr = DAY_ABBR[gtWeekday(d)];
+    const num = gtDayNum(d);
 
     const timed = dayEvents.filter((e: CalendarEvent) => !e.isAllDay);
 
@@ -513,9 +543,9 @@ export function formatMultiDayAvailability(
   let msg = `🟢 <b>DISPONIBILIDAD</b>\n`;
 
   for (const { date, slots } of daySlots) {
-    const abbr = DAY_ABBR[date.getDay()];
-    const dayNum = date.getDate();
-    const monthAbbr = MONTH_NAMES_UPPER[date.getMonth()].substring(0, 3);
+    const abbr = DAY_ABBR[gtWeekday(date)];
+    const dayNum = gtDayNum(date);
+    const monthAbbr = MONTH_NAMES_UPPER[gtMonthIdx(date)].substring(0, 3);
 
     msg += `\n<b>${abbr} ${dayNum} ${monthAbbr}:</b>\n`;
     if (slots.length === 0) {

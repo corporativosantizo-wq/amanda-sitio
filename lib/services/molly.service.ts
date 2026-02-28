@@ -23,6 +23,7 @@ import {
   formatWeekViewForTelegram,
   formatMultiDayAvailability,
   getNextBusinessDays,
+  gtDateStr,
 } from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
@@ -345,7 +346,7 @@ async function handleSchedulingIntent(
 }
 
 function getNextBusinessDay(): Date {
-  const d = new Date();
+  const d = new Date(gtDateStr(new Date()) + 'T12:00:00');
   d.setDate(d.getDate() + 1);
   while (d.getDay() === 0 || d.getDay() === 6) {
     d.setDate(d.getDate() + 1);
@@ -354,10 +355,7 @@ function getNextBusinessDay(): Date {
 }
 
 function formatDateYMD(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return gtDateStr(date);
 }
 
 // ── Thread management ──────────────────────────────────────────────────────
@@ -670,7 +668,8 @@ export async function getStats(): Promise<{
 export async function getAgenda(
   range: 'hoy' | 'mañana' | 'semana',
 ): Promise<string> {
-  const now = new Date();
+  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
+  const now = new Date(gtDateStr(new Date()) + 'T12:00:00');
 
   let startDate: Date;
   let endDate: Date;
@@ -718,8 +717,8 @@ export async function getAvailability(
       return 'Fecha no válida. Usa formato YYYY-MM-DD';
     }
   } else {
-    // Default: tomorrow
-    targetDate = new Date();
+    // Default: tomorrow (Guatemala time)
+    targetDate = new Date(gtDateStr(new Date()) + 'T12:00:00');
     targetDate.setDate(targetDate.getDate() + 1);
     // Skip to Monday if tomorrow is weekend
     while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
@@ -738,7 +737,8 @@ export async function getAvailability(
 export async function getDayView(
   offset: 0 | 1,
 ): Promise<string> {
-  const date = new Date();
+  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
+  const date = new Date(gtDateStr(new Date()) + 'T12:00:00');
   if (offset === 1) date.setDate(date.getDate() + 1);
 
   const { start, end } = getDayBounds(date);
@@ -756,12 +756,12 @@ export async function getDayView(
 
 /** /semana — compact week overview grouped by day */
 export async function getWeekView(): Promise<string> {
-  const now = new Date();
+  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
+  const now = new Date(gtDateStr(new Date()) + 'T12:00:00');
   // Start from Monday of current week
-  const dow = now.getDay();
+  const dow = now.getDay(); // safe: noon can't cross day boundary
   const monday = new Date(now);
   monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
-  monday.setHours(0, 0, 0, 0);
 
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
@@ -783,9 +783,8 @@ export async function getWeekView(): Promise<string> {
 
 /** /libre — availability for next 3 business days */
 export async function getMultiDayAvailability(): Promise<string> {
-  const now = new Date();
-  // Start from today if weekday, otherwise next business day
-  const startDate = new Date(now);
+  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
+  const startDate = new Date(gtDateStr(new Date()) + 'T12:00:00');
   while (startDate.getDay() === 0 || startDate.getDay() === 6) {
     startDate.setDate(startDate.getDate() + 1);
   }
