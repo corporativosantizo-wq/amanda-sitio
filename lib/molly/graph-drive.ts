@@ -51,16 +51,21 @@ export async function searchDriveFiles(
     `&$top=15`;
 
   console.log(`[graph-drive] SEARCH ${account} q="${query}" fileType=${fileType ?? 'all'}`);
-  console.log(`[graph-drive] URL: ${url}`);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
+  // Fallback: if search returns 403 (needs Sites.Read.All), scan children instead
+  if (res.status === 403) {
+    console.warn(`[graph-drive] Search 403, usando fallback children scan`);
+    invalidateAppToken();
+    return searchViaChildrenScan(account, query, fileType);
+  }
+
   if (!res.ok) {
     const errText = await res.text();
     console.error(`[graph-drive] SEARCH ERROR ${res.status} for ${account}:`, errText);
-    if (res.status === 403) { invalidateAppToken(); console.warn('[graph-drive] Token cache invalidado por 403'); }
     throw new Error(`Graph Drive search error ${res.status}: ${errText.substring(0, 200)}`);
   }
 
@@ -87,6 +92,76 @@ export async function searchDriveFiles(
 
   console.log(`[graph-drive] SEARCH: ${items.length} resultados para "${query}" en ${account}`);
   return items;
+}
+
+// ── Fallback: recursive children scan (max 2 levels deep) ───────────────
+
+async function searchViaChildrenScan(
+  account: MailboxAlias,
+  query: string,
+  fileType?: string,
+): Promise<DriveItem[]> {
+  const token = await getAppToken();
+  const GRAPH = `https://graph.microsoft.com/v1.0/users/${account}`;
+  const select = 'id,name,webUrl,lastModifiedDateTime,size,file,folder';
+  const headers = { Authorization: `Bearer ${token}` };
+  const queryLower = query.toLowerCase();
+  const results: DriveItem[] = [];
+
+  async function scanFolder(folderId: string | null, parentPath: string, depth: number): Promise<void> {
+    if (depth > 2 || results.length >= 10) return;
+
+    const url = folderId
+      ? `${GRAPH}/drive/items/${folderId}/children?$select=${select}&$top=50`
+      : `${GRAPH}/drive/root/children?$select=${select}&$top=50`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      console.warn(`[graph-drive] FALLBACK list error ${res.status} at depth=${depth} path=${parentPath}`);
+      return;
+    }
+
+    const data = await res.json();
+    const items: any[] = data.value ?? [];
+
+    for (const item of items) {
+      if (results.length >= 10) break;
+      const name: string = item.name ?? '';
+      const nameLower = name.toLowerCase();
+      const isFolder = !!item.folder;
+      const itemPath = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+
+      // Match by name containing query
+      if (nameLower.includes(queryLower)) {
+        // Apply file type filter
+        if (fileType) {
+          const ext = fileType.startsWith('.') ? fileType.toLowerCase() : `.${fileType.toLowerCase()}`;
+          if (!isFolder && !nameLower.endsWith(ext)) continue;
+          if (isFolder) continue; // skip folders when filtering by type
+        }
+
+        results.push({
+          id: item.id,
+          name,
+          webUrl: item.webUrl ?? '',
+          lastModified: item.lastModifiedDateTime ?? '',
+          size: item.size ?? 0,
+          mimeType: item.file?.mimeType ?? null,
+          path: parentPath,
+          type: isFolder ? 'folder' : 'file',
+        });
+      }
+
+      // Recurse into folders
+      if (isFolder && depth < 2) {
+        await scanFolder(item.id, itemPath, depth + 1);
+      }
+    }
+  }
+
+  await scanFolder(null, '/', 0);
+  console.log(`[graph-drive] FALLBACK: ${results.length} resultados para "${query}" en ${account}`);
+  return results;
 }
 
 // ── Get file content ──────────────────────────────────────────────────────
