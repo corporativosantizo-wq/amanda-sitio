@@ -91,8 +91,6 @@ export async function searchEmails(
 ): Promise<GraphMailMessage[]> {
   const token = await getAppToken();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const filter = `receivedDateTime ge ${since}`;
   const select = [
     'id',
     'conversationId',
@@ -104,15 +102,34 @@ export async function searchEmails(
     'hasAttachments',
   ].join(',');
 
-  const url =
-    `https://graph.microsoft.com/v1.0/users/${account}/messages` +
-    `?$search="${encodeURIComponent(query)}"` +
-    `&$filter=${encodeURIComponent(filter)}` +
-    `&$select=${select}` +
-    `&$orderby=receivedDateTime desc` +
-    `&$top=15`;
+  // Graph API does NOT support $search + $filter together.
+  // Strategy: if query is provided, use $search with KQL date range;
+  // if no meaningful query (just "*" or empty), use $filter only.
+  const isWildcard = !query.trim() || query.trim() === '*';
+  let url: string;
 
-  console.log(`[graph-mail] SEARCH ${account} q="${query}" days=${days}`);
+  if (isWildcard) {
+    // No search term — just filter by date
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    url =
+      `https://graph.microsoft.com/v1.0/users/${account}/messages` +
+      `?$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}` +
+      `&$select=${select}` +
+      `&$orderby=receivedDateTime desc` +
+      `&$top=15`;
+  } else {
+    // Build KQL search with date range embedded
+    const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      .toISOString().split('T')[0]; // YYYY-MM-DD
+    const kql = `${query} received>=${sinceDate}`;
+    url =
+      `https://graph.microsoft.com/v1.0/users/${account}/messages` +
+      `?$search="${encodeURIComponent(kql)}"` +
+      `&$select=${select}` +
+      `&$top=15`;
+  }
+
+  console.log(`[graph-mail] SEARCH ${account} q="${query}" days=${days} wildcard=${isWildcard}`);
 
   const res = await fetch(url, {
     headers: {
