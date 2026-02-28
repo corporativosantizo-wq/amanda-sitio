@@ -170,11 +170,15 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
     { label: 'Penal', color: 'bg-red-200 text-red-900' },
     { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
+    { label: 'Familia', color: 'bg-pink-100 text-pink-700' },
+    { label: 'Mercantil', color: 'bg-amber-100 text-amber-800' },
   ],
   audiencia_expediente: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
     { label: 'Penal', color: 'bg-red-200 text-red-900' },
     { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
+    { label: 'Familia', color: 'bg-pink-100 text-pink-700' },
+    { label: 'Mercantil', color: 'bg-amber-100 text-amber-800' },
   ],
   reunion: [
     { label: 'Interna', color: 'bg-yellow-100 text-yellow-700' },
@@ -184,29 +188,53 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
   bloqueo_personal: [
     { label: 'Personal', color: 'bg-gray-100 text-gray-600' },
     { label: 'Preparación', color: 'bg-slate-100 text-slate-600' },
+    { label: 'Estudio', color: 'bg-indigo-100 text-indigo-600' },
+  ],
+  evento_libre: [
+    { label: 'Capacitación', color: 'bg-purple-100 text-purple-700' },
+    { label: 'Diligencia', color: 'bg-violet-100 text-violet-700' },
+    { label: 'Otro', color: 'bg-purple-50 text-purple-600' },
   ],
 };
 
 function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
+  const tipoKey = cita.tipo === 'audiencia_expediente' ? 'audiencia' : cita.tipo;
+  const subs = SUBCATEGORIAS[tipoKey];
+  if (!subs) return null;
+
+  // Check for explicit [Tag] prefix in description
+  const tagMatch = (cita.descripcion ?? '').match(/^\[(.+?)\]/);
+  if (tagMatch) {
+    const found = subs.find((s: SubcatInfo) => s.label === tagMatch[1]);
+    if (found) return found;
+  }
+
   const t = (cita.titulo + ' ' + (cita.descripcion ?? '')).toLowerCase();
 
   switch (cita.tipo) {
     case 'consulta_nueva':
-      return SUBCATEGORIAS.consulta_nueva[0];
+      return subs[0];
     case 'seguimiento':
-      return SUBCATEGORIAS.seguimiento[0];
+      return subs[0];
     case 'audiencia':
     case 'audiencia_expediente':
-      if (t.includes('penal')) return SUBCATEGORIAS.audiencia[1];
-      if (t.includes('laboral')) return SUBCATEGORIAS.audiencia[2];
-      return SUBCATEGORIAS.audiencia[0]; // Civil default
+      if (t.includes('penal')) return subs[1];
+      if (t.includes('laboral')) return subs[2];
+      if (t.includes('familia')) return subs[3];
+      if (t.includes('mercantil')) return subs[4];
+      return subs[0]; // Civil default
     case 'reunion':
-      if (cita.teams_link) return SUBCATEGORIAS.reunion[2]; // Teams
-      if (t.includes('intern')) return SUBCATEGORIAS.reunion[0];
-      return SUBCATEGORIAS.reunion[1]; // Externa default
+      if (cita.teams_link) return subs[2]; // Teams
+      if (t.includes('intern')) return subs[0];
+      return subs[1]; // Externa default
     case 'bloqueo_personal':
-      if (t.includes('prepar')) return SUBCATEGORIAS.bloqueo_personal[1];
-      return SUBCATEGORIAS.bloqueo_personal[0];
+      if (t.includes('prepar')) return subs[1];
+      if (t.includes('estudio')) return subs[2];
+      return subs[0];
+    case 'evento_libre':
+      if (t.includes('capacita')) return subs[0];
+      if (t.includes('diligencia')) return subs[1];
+      return subs[2];
     default:
       return null;
   }
@@ -1604,6 +1632,9 @@ function CreateModal({
     audiencia: false, bloqueo_personal: false, evento_libre: false,
   };
   const [withTeams, setWithTeams] = useState(TEAMS_DEFAULT[tipo] ?? false);
+  const [subcategoria, setSubcategoria] = useState('');
+  const tipoSubs = SUBCATEGORIAS[tipo] ?? [];
+  const showSubcatSelector = tipoSubs.length > 1;
 
   const isFree = FREE_TIPOS.has(tipo);
   const isSmart = SMART_SLOT_TIPOS.has(tipo);
@@ -1622,6 +1653,7 @@ function CreateModal({
     setSelectedSlot(null);
     setUseCustomTime(false);
     setWithTeams(TEAMS_DEFAULT[tipo] ?? false);
+    setSubcategoria('');
     if (isFree) {
       setUseCustomTime(true);
       setDuracion(60);
@@ -1700,7 +1732,9 @@ function CreateModal({
         body: JSON.stringify({
           tipo,
           titulo: titulo.trim(),
-          descripcion: descripcion.trim() || null,
+          descripcion: subcategoria
+            ? `[${subcategoria}] ${descripcion.trim()}`.trim()
+            : descripcion.trim() || null,
           fecha,
           hora_inicio: horaInicio,
           hora_fin: horaFin,
@@ -1766,6 +1800,28 @@ function CreateModal({
               })}
             </div>
           </div>
+
+          {/* Subcategoría */}
+          {showSubcatSelector && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Subcategoría</label>
+              <div className="flex flex-wrap gap-1.5">
+                {tipoSubs.map((sub: SubcatInfo) => (
+                  <button
+                    key={sub.label}
+                    onClick={() => setSubcategoria(subcategoria === sub.label ? '' : sub.label)}
+                    className={`px-2.5 py-1 text-xs rounded-full border transition-all font-medium ${
+                      subcategoria === sub.label
+                        ? `${sub.color} border-current shadow-sm`
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Fecha */}
           <div>
