@@ -111,7 +111,7 @@ async function handleCallbackQuery(query: any): Promise<void> {
     }
 
     // Calendar flow callbacks
-    if (data.startsWith('cal_type:') || data.startsWith('cal_day:') || data.startsWith('cal_slot:')) {
+    if (data.startsWith('cal_type:') || data.startsWith('cal_day:') || data.startsWith('cal_slot:') || data.startsWith('cal_dur:') || data === 'cal_client_skip' || data.startsWith('cal_confirm:')) {
       await answerCallbackQuery(query.id);
       await handleCreateCallback(data);
       return;

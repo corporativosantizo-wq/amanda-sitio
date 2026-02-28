@@ -1,7 +1,7 @@
 // ============================================================================
 // lib/molly/telegram-calendar.ts
 // Flujos conversacionales de calendario para Telegram bot
-// /crear — crear evento con botones inline
+// /crear — crear evento con botones inline (7 pasos)
 // /cancelar — cancelar evento del día
 // ============================================================================
 
@@ -23,14 +23,20 @@ import type { TipoCita } from '@/lib/types';
 
 interface CreateState {
   flow: 'crear';
-  step: 'type' | 'day' | 'slot' | 'custom_time' | 'title';
+  step: 'type' | 'day' | 'slot' | 'custom_time' | 'duration' | 'title' | 'client' | 'confirm';
   tipo?: TipoCita;
   tipoLabel?: string;
+  tipoEmoji?: string;
   date?: Date;
   dateLabel?: string;
   horaInicio?: string;
   horaFin?: string;
   duracion?: number;
+  titulo?: string;
+  cliente?: string;
+  isOnlineMeeting?: boolean;
+  costo?: number;
+  _nextDays?: Date[];
 }
 
 interface CancelState {
@@ -54,11 +60,29 @@ export function clearConversation(): void {
 
 // ── /crear flow ─────────────────────────────────────────────────────────────
 
-const CREAR_TIPOS: Array<{ id: TipoCita; label: string; emoji: string }> = [
-  { id: 'audiencia', label: 'Audiencia', emoji: '\u2696\uFE0F' },
-  { id: 'reunion', label: 'Reunión', emoji: '\uD83E\uDD1D' },
-  { id: 'bloqueo_personal', label: 'Bloqueo', emoji: '\uD83D\uDEAB' },
-  { id: 'evento_libre', label: 'Evento', emoji: '\uD83D\uDCC6' },
+const CREAR_TIPOS: Array<{
+  id: TipoCita;
+  label: string;
+  emoji: string;
+  duracion: number;
+  teams: boolean;
+  costo: number;
+}> = [
+  { id: 'consulta_nueva', label: 'Consulta', emoji: '\u2696\uFE0F', duracion: 60, teams: true, costo: 500 },
+  { id: 'seguimiento', label: 'Seguimiento', emoji: '\uD83D\uDD04', duracion: 15, teams: true, costo: 0 },
+  { id: 'audiencia', label: 'Audiencia', emoji: '\uD83C\uDFDB\uFE0F', duracion: 120, teams: false, costo: 0 },
+  { id: 'reunion', label: 'Reuni\u00F3n', emoji: '\uD83D\uDC65', duracion: 60, teams: true, costo: 0 },
+  { id: 'bloqueo_personal', label: 'Bloqueo', emoji: '\u25FC', duracion: 60, teams: false, costo: 0 },
+  { id: 'evento_libre', label: 'Evento', emoji: '\u2726', duracion: 60, teams: false, costo: 0 },
+];
+
+const DEEP_WORK_END = 14;
+
+const DURATION_OPTIONS = [
+  { min: 15, label: '15 min' },
+  { min: 30, label: '30 min' },
+  { min: 60, label: '1 hora' },
+  { min: 120, label: '2 horas' },
 ];
 
 export async function startCreateFlow(): Promise<void> {
@@ -70,11 +94,11 @@ export async function startCreateFlow(): Promise<void> {
   }));
 
   await sendTelegramMessage(
-    '\uD83D\uDCC5 <b>Crear evento</b>\n\n¿Qué tipo de evento?',
+    '\uD83D\uDCC5 <b>Crear evento</b>\n\n\u00BFQu\u00E9 tipo de evento?',
     {
       parse_mode: 'HTML',
       reply_markup: {
-        inline_keyboard: [buttons.slice(0, 2), buttons.slice(2, 4)],
+        inline_keyboard: [buttons.slice(0, 2), buttons.slice(2, 4), buttons.slice(4, 6)],
       },
     },
   );
@@ -84,7 +108,7 @@ export async function handleCreateCallback(data: string): Promise<void> {
   if (!conversation || conversation.flow !== 'crear') return;
   const state = conversation;
 
-  // ── Step 1: Type selected
+  // ── Step 1: Type selected → Day
   if (data.startsWith('cal_type:')) {
     const tipoId = data.split(':')[1] as TipoCita;
     const tipoInfo = CREAR_TIPOS.find((t) => t.id === tipoId);
@@ -92,44 +116,41 @@ export async function handleCreateCallback(data: string): Promise<void> {
 
     state.tipo = tipoId;
     state.tipoLabel = tipoInfo.label;
+    state.tipoEmoji = tipoInfo.emoji;
+    state.duracion = tipoInfo.duracion;
+    state.isOnlineMeeting = tipoInfo.teams;
+    state.costo = tipoInfo.costo;
     state.step = 'day';
 
-    // Build day buttons: Hoy, Mañana, next 5 business days
     const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
     const nextDays = getNextBusinessDays(now, 5);
+    state._nextDays = nextDays;
 
-    const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mi\u00E9', 'Jue', 'Vie', 'S\u00E1b'];
     const row1 = [
       { text: 'Hoy', callback_data: 'cal_day:0' },
-      { text: 'Mañana', callback_data: 'cal_day:1' },
+      { text: 'Ma\u00F1ana', callback_data: 'cal_day:1' },
     ];
-
-    const row2 = nextDays.slice(0, 3).map((d, i) => ({
+    const row2 = nextDays.slice(0, 3).map((d: Date, i: number) => ({
       text: `${dayNames[d.getDay()]} ${d.getDate()}`,
       callback_data: `cal_day:bd_${i}`,
     }));
-
-    const row3 = nextDays.slice(3, 5).map((d, i) => ({
+    const row3 = nextDays.slice(3, 5).map((d: Date, i: number) => ({
       text: `${dayNames[d.getDay()]} ${d.getDate()}`,
       callback_data: `cal_day:bd_${i + 3}`,
     }));
-
-    // Store nextDays in a way we can retrieve them
-    (state as any)._nextDays = nextDays;
 
     const keyboard = [row1, row2];
     if (row3.length > 0) keyboard.push(row3);
 
     await sendTelegramMessage(
-      `${tipoInfo.emoji} <b>${tipoInfo.label}</b>\n\n¿Qué día?`,
+      `${tipoInfo.emoji} <b>${tipoInfo.label}</b>\n\n\u00BFQu\u00E9 d\u00EDa?`,
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } },
     );
     return;
   }
 
-  // ── Step 2: Day selected
+  // ── Step 2: Day selected → Slot
   if (data.startsWith('cal_day:')) {
     const dayArg = data.split(':')[1];
     const now = new Date();
@@ -142,7 +163,7 @@ export async function handleCreateCallback(data: string): Promise<void> {
       selectedDate.setDate(selectedDate.getDate() + 1);
     } else if (dayArg.startsWith('bd_')) {
       const idx = parseInt(dayArg.slice(3), 10);
-      const nextDays = (state as any)._nextDays as Date[];
+      const nextDays = state._nextDays as Date[];
       selectedDate = nextDays[idx];
     } else {
       return;
@@ -152,48 +173,36 @@ export async function handleCreateCallback(data: string): Promise<void> {
     state.dateLabel = formatDateSpanish(selectedDate);
     state.step = 'slot';
 
-    // Get free slots
-    const duracion = state.tipo === 'audiencia' ? 60 : 30;
-    state.duracion = duracion;
-
     const isFreeType = state.tipo === 'audiencia' || state.tipo === 'bloqueo_personal';
 
     if (isFreeType) {
-      // Free types: go straight to custom time
       state.step = 'custom_time';
       await sendTelegramMessage(
-        `\uD83D\uDCC5 <b>${state.tipoLabel}</b> — ${state.dateLabel}\n\n` +
+        `\uD83D\uDCC5 <b>${state.tipoLabel}</b> \u2014 ${state.dateLabel}\n\n` +
         'Escribe la hora de inicio (ej: <code>10:30</code> o <code>14:00</code>)',
         { parse_mode: 'HTML' },
       );
       return;
     }
 
-    // Smart types: show findFreeSlots suggestions
-    const freeSlots = await findFreeSlots(selectedDate, duracion);
+    const freeSlots = await findFreeSlots(selectedDate, state.duracion ?? 30);
 
     if (freeSlots.length === 0) {
       state.step = 'custom_time';
       await sendTelegramMessage(
-        `\uD83D\uDCC5 <b>${state.tipoLabel}</b> — ${state.dateLabel}\n\n` +
+        `\uD83D\uDCC5 <b>${state.tipoLabel}</b> \u2014 ${state.dateLabel}\n\n` +
         'No hay slots sugeridos. Escribe la hora (ej: <code>14:00</code>)',
         { parse_mode: 'HTML' },
       );
       return;
     }
 
-    // Build slot buttons
-    const slotButtons = freeSlots.slice(0, 6).map((s) => {
-      const time = s.start.substring(11, 16); // HH:mm from ISO
-      const h = parseInt(time.split(':')[0], 10);
-      const m = time.split(':')[1];
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-      const label = `${h12}:${m} ${ampm}${s.preferred ? ' \u2B50' : ''}`;
+    const slotButtons = freeSlots.slice(0, 6).map((s: any) => {
+      const time = s.start.substring(11, 16);
+      const label = `${formatHora12(time)}${s.preferred ? ' \u2B50' : ''}`;
       return { text: label, callback_data: `cal_slot:${time}` };
     });
 
-    // Arrange in rows of 3
     const rows: Array<Array<{ text: string; callback_data: string }>> = [];
     for (let i = 0; i < slotButtons.length; i += 3) {
       rows.push(slotButtons.slice(i, i + 3));
@@ -201,16 +210,16 @@ export async function handleCreateCallback(data: string): Promise<void> {
     rows.push([{ text: '\u270F\uFE0F Personalizado', callback_data: 'cal_slot:custom' }]);
 
     await sendTelegramMessage(
-      `\uD83D\uDCC5 <b>${state.tipoLabel}</b> — ${state.dateLabel}\n\n` +
-      `Selecciona horario (${duracion} min):\n\u2B50 = horario preferido (tarde)`,
+      `\uD83D\uDCC5 <b>${state.tipoLabel}</b> \u2014 ${state.dateLabel}\n\n` +
+      `Selecciona horario:\n\u2B50 = horario preferido (tarde)`,
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } },
     );
     return;
   }
 
-  // ── Step 3: Slot selected
+  // ── Step 3: Slot selected → Duration
   if (data.startsWith('cal_slot:')) {
-    const slotArg = data.split(':').slice(1).join(':'); // handle HH:MM with colon
+    const slotArg = data.split(':').slice(1).join(':');
 
     if (slotArg === 'custom') {
       state.step = 'custom_time';
@@ -221,21 +230,48 @@ export async function handleCreateCallback(data: string): Promise<void> {
       return;
     }
 
-    // Parse HH:MM
-    const dur = state.duracion ?? 30;
-    const [h, m] = slotArg.split(':').map(Number);
-    const endTotal = h * 60 + m + dur;
-    const endH = String(Math.floor(endTotal / 60)).padStart(2, '0');
-    const endM = String(endTotal % 60).padStart(2, '0');
-
     state.horaInicio = slotArg;
-    state.horaFin = `${endH}:${endM}`;
-    state.step = 'title';
+    await showDurationStep(state);
+    return;
+  }
 
+  // ── Step 4: Duration selected → Title
+  if (data.startsWith('cal_dur:')) {
+    const min = parseInt(data.split(':')[1], 10);
+    state.duracion = min;
+
+    const [h, m] = (state.horaInicio ?? '09:00').split(':').map(Number);
+    const endTotal = h * 60 + m + min;
+    state.horaFin = `${String(Math.floor(endTotal / 60)).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+
+    state.step = 'title';
     await sendTelegramMessage(
-      `\u23F0 ${formatHora12(slotArg)} — ${formatHora12(state.horaFin)}\n\nEscribe el título del evento:`,
+      `\u23F0 ${formatHora12(state.horaInicio!)} \u2014 ${formatHora12(state.horaFin)} (${min} min)\n\nEscribe el t\u00EDtulo del evento:`,
     );
     return;
+  }
+
+  // ── Step 6b: Client skip → Confirm
+  if (data === 'cal_client_skip') {
+    state.cliente = undefined;
+    await showConfirmation(state);
+    return;
+  }
+
+  // ── Step 7: Confirm
+  if (data.startsWith('cal_confirm:')) {
+    const answer = data.split(':')[1];
+
+    if (answer === 'no') {
+      await sendTelegramMessage('\u274C Evento descartado.');
+      conversation = null;
+      return;
+    }
+
+    if (answer === 'yes') {
+      await createEventFromState(state);
+      return;
+    }
   }
 }
 
@@ -243,80 +279,170 @@ export async function handleCreateText(text: string): Promise<void> {
   if (!conversation || conversation.flow !== 'crear') return;
   const state = conversation;
 
-  // ── Custom time input
+  // ── Custom time input → Duration
   if (state.step === 'custom_time') {
     const match = text.trim().match(/^(\d{1,2}):?(\d{2})$/);
     if (!match) {
-      await sendTelegramMessage('Formato no válido. Escribe la hora como <code>14:00</code> o <code>1030</code>', { parse_mode: 'HTML' });
+      await sendTelegramMessage('Formato no v\u00E1lido. Escribe la hora como <code>14:00</code> o <code>1030</code>', { parse_mode: 'HTML' });
       return;
     }
 
     const h = parseInt(match[1], 10);
     const m = parseInt(match[2], 10);
     if (h < 0 || h > 23 || m < 0 || m > 59) {
-      await sendTelegramMessage('Hora no válida. Intenta de nuevo (ej: <code>14:00</code>)', { parse_mode: 'HTML' });
+      await sendTelegramMessage('Hora no v\u00E1lida. Intenta de nuevo (ej: <code>14:00</code>)', { parse_mode: 'HTML' });
       return;
     }
 
-    const horaInicio = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    const dur = state.duracion ?? 30;
-    const endTotal = h * 60 + m + dur;
-    const endH = String(Math.floor(endTotal / 60)).padStart(2, '0');
-    const endM = String(endTotal % 60).padStart(2, '0');
+    state.horaInicio = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    await showDurationStep(state);
+    return;
+  }
 
-    state.horaInicio = horaInicio;
-    state.horaFin = `${endH}:${endM}`;
-    state.step = 'title';
+  // ── Title input → Client
+  if (state.step === 'title') {
+    const titulo = text.trim();
+    if (!titulo) {
+      await sendTelegramMessage('El t\u00EDtulo no puede estar vac\u00EDo. Escribe el t\u00EDtulo:');
+      return;
+    }
+
+    state.titulo = titulo;
+    state.step = 'client';
 
     await sendTelegramMessage(
-      `\u23F0 ${formatHora12(horaInicio)} — ${formatHora12(state.horaFin)}\n\nEscribe el título del evento:`,
+      `\u270D\uFE0F <b>${esc(titulo)}</b>\n\n\u00BFNombre del cliente? (o presiona Omitir)`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '\u23ED Omitir', callback_data: 'cal_client_skip' }]],
+        },
+      },
     );
     return;
   }
 
-  // ── Title input
-  if (state.step === 'title') {
-    const titulo = text.trim();
-    if (!titulo) {
-      await sendTelegramMessage('El título no puede estar vacío. Escribe el título:');
+  // ── Client input → Confirm
+  if (state.step === 'client') {
+    const cliente = text.trim();
+    if (!cliente) {
+      await sendTelegramMessage('\u00BFNombre del cliente?', {
+        reply_markup: {
+          inline_keyboard: [[{ text: '\u23ED Omitir', callback_data: 'cal_client_skip' }]],
+        },
+      });
       return;
     }
 
-    // Build date string YYYY-MM-DD
-    const d = state.date!;
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const fechaStr = `${yyyy}-${mm}-${dd}`;
-
-    const config = HORARIOS[state.tipo!];
-
-    try {
-      const { eventId } = await createCalendarEvent({
-        subject: titulo,
-        startDateTime: `${fechaStr}T${state.horaInicio}:00`,
-        endDateTime: `${fechaStr}T${state.horaFin}:00`,
-        attendees: [],
-        isOnlineMeeting: false,
-        categories: [config?.categoria_outlook ?? 'Púrpura'],
-        body: `<p>Tipo: ${state.tipoLabel}</p>`,
-      });
-
-      await sendTelegramMessage(
-        `\u2705 <b>Evento creado</b>\n\n` +
-        `<b>${esc(titulo)}</b>\n` +
-        `\uD83D\uDCC5 ${state.dateLabel}\n` +
-        `\u23F0 ${formatHora12(state.horaInicio!)} — ${formatHora12(state.horaFin!)}\n` +
-        `\uD83C\uDFF7 ${state.tipoLabel}`,
-        { parse_mode: 'HTML' },
-      );
-    } catch (err: any) {
-      await sendTelegramMessage(`\u274C Error al crear evento: ${err.message}`);
-    }
-
-    conversation = null;
+    state.cliente = cliente;
+    await showConfirmation(state);
     return;
   }
+}
+
+// ── /crear helpers ──────────────────────────────────────────────────────────
+
+async function showDurationStep(state: CreateState): Promise<void> {
+  const hora = state.horaInicio ?? '09:00';
+  const h = parseInt(hora.split(':')[0], 10);
+
+  let warning = '';
+  if (h < DEEP_WORK_END) {
+    warning = '\n\u26A0\uFE0F <i>Este horario cae en Deep Work (8\u201414h)</i>\n';
+  }
+
+  state.step = 'duration';
+
+  const defaultDur = state.duracion ?? 60;
+  const buttons = DURATION_OPTIONS.map((opt) => ({
+    text: `${opt.label}${opt.min === defaultDur ? ' \u2B50' : ''}`,
+    callback_data: `cal_dur:${opt.min}`,
+  }));
+
+  await sendTelegramMessage(
+    `\u23F0 Inicio: <b>${formatHora12(hora)}</b>${warning}\n\n\u00BFDuraci\u00F3n? (\u2B50 = sugerido)`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [buttons.slice(0, 2), buttons.slice(2, 4)] },
+    },
+  );
+}
+
+async function showConfirmation(state: CreateState): Promise<void> {
+  state.step = 'confirm';
+
+  const lines = [
+    `\uD83D\uDCCB <b>Confirmar evento</b>\n`,
+    `${state.tipoEmoji} <b>${state.tipoLabel}</b>`,
+    `\uD83D\uDCC5 ${state.dateLabel}`,
+    `\u23F0 ${formatHora12(state.horaInicio!)} \u2014 ${formatHora12(state.horaFin!)} (${state.duracion} min)`,
+    `\u270D\uFE0F ${esc(state.titulo ?? '')}`,
+  ];
+
+  if (state.cliente) {
+    lines.push(`\uD83D\uDC64 ${esc(state.cliente)}`);
+  }
+  if (state.isOnlineMeeting) {
+    lines.push(`\uD83D\uDCBB Teams: S\u00ED`);
+  }
+  if (state.costo && state.costo > 0) {
+    lines.push(`\uD83D\uDCB0 Q${state.costo.toLocaleString('es-GT')}`);
+  }
+
+  await sendTelegramMessage(lines.join('\n'), {
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '\u2705 Crear', callback_data: 'cal_confirm:yes' },
+        { text: '\u274C Cancelar', callback_data: 'cal_confirm:no' },
+      ]],
+    },
+  });
+}
+
+async function createEventFromState(state: CreateState): Promise<void> {
+  const fechaStr = gtDateStr(state.date!);
+  const config = HORARIOS[state.tipo!];
+
+  let subject = state.titulo ?? state.tipoLabel ?? 'Evento';
+  if (state.cliente) {
+    subject = state.titulo
+      ? `${state.titulo} \u2014 ${state.cliente}`
+      : `${state.tipoLabel} \u2014 ${state.cliente}`;
+  }
+
+  const bodyParts = [
+    `<p>Tipo: ${state.tipoLabel}</p>`,
+    state.cliente ? `<p>Cliente: ${state.cliente}</p>` : '',
+    state.costo && state.costo > 0 ? `<p>Honorario: Q${state.costo.toLocaleString('es-GT')}</p>` : '',
+  ];
+  const body = bodyParts.filter(Boolean).join('');
+
+  try {
+    await createCalendarEvent({
+      subject,
+      startDateTime: `${fechaStr}T${state.horaInicio}:00`,
+      endDateTime: `${fechaStr}T${state.horaFin}:00`,
+      attendees: [],
+      isOnlineMeeting: state.isOnlineMeeting ?? false,
+      categories: [config?.categoria_outlook ?? 'P\u00FArpura'],
+      body,
+    });
+
+    let msg = `\u2705 <b>Evento creado</b>\n\n`;
+    msg += `<b>${esc(subject)}</b>\n`;
+    msg += `\uD83D\uDCC5 ${state.dateLabel}\n`;
+    msg += `\u23F0 ${formatHora12(state.horaInicio!)} \u2014 ${formatHora12(state.horaFin!)}\n`;
+    msg += `\uD83C\uDFF7 ${state.tipoEmoji} ${state.tipoLabel}`;
+    if (state.isOnlineMeeting) msg += `\n\uD83D\uDCBB Link de Teams incluido`;
+    if (state.costo && state.costo > 0) msg += `\n\uD83D\uDCB0 Q${state.costo.toLocaleString('es-GT')}`;
+
+    await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+  } catch (err: any) {
+    await sendTelegramMessage(`\u274C Error al crear evento: ${err.message}`);
+  }
+
+  conversation = null;
 }
 
 // ── /cancelar flow ──────────────────────────────────────────────────────────
@@ -339,16 +465,12 @@ export async function startCancelFlow(): Promise<void> {
 
   const buttons = timed.map((e, i) => {
     const time = e.start.substring(11, 16);
-    const h = parseInt(time.split(':')[0], 10);
-    const m = time.split(':')[1];
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-    const label = `${h12}:${m} ${ampm} ${e.subject.substring(0, 20)}`;
+    const label = `${formatHora12(time)} ${e.subject.substring(0, 20)}`;
     return [{ text: label, callback_data: `cal_cancel:${i}` }];
   });
 
   await sendTelegramMessage(
-    '\u274C <b>Cancelar evento</b>\n\n¿Cuál evento deseas cancelar?',
+    '\u274C <b>Cancelar evento</b>\n\n\u00BFCu\u00E1l evento deseas cancelar?',
     { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons.slice(0, 8) } },
   );
 }
@@ -369,13 +491,13 @@ export async function handleCancelCallback(data: string): Promise<void> {
     const time = event.start.substring(11, 16);
 
     await sendTelegramMessage(
-      `¿Cancelar <b>${esc(event.subject)}</b> a las ${formatHora12(time)}?`,
+      `\u00BFCancelar <b>${esc(event.subject)}</b> a las ${formatHora12(time)}?`,
       {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '\u2705 Sí, cancelar', callback_data: 'cal_confirm_cancel:yes' },
+              { text: '\u2705 S\u00ED, cancelar', callback_data: 'cal_confirm_cancel:yes' },
               { text: '\u274C No', callback_data: 'cal_confirm_cancel:no' },
             ],
           ],
@@ -390,7 +512,7 @@ export async function handleCancelCallback(data: string): Promise<void> {
     const answer = data.split(':')[1];
 
     if (answer === 'no') {
-      await sendTelegramMessage('Cancelación descartada.');
+      await sendTelegramMessage('Cancelaci\u00F3n descartada.');
       conversation = null;
       return;
     }
@@ -461,7 +583,7 @@ export async function checkClassReminders(): Promise<number> {
     const buttons: Array<{ text: string; url: string }> = [];
 
     if (isVirtual) {
-      msg += `\uD83D\uDCBB Virtual — Teams\n`;
+      msg += `\uD83D\uDCBB Virtual \u2014 Teams\n`;
       buttons.push({ text: '\uD83D\uDD17 Unirse a Teams', url: UNIVERSITY_TEAMS_LINK });
       buttons.push({ text: '\uD83D\uDCDA Aula Virtual', url: UNIVERSITY_AULA_URL });
     } else {
