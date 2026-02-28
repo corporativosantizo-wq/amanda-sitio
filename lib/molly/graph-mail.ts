@@ -172,11 +172,12 @@ export async function getConversationThread(
     'hasAttachments',
   ].join(',');
 
+  // Graph API throws InefficientFilter when combining $filter on conversationId
+  // with $orderby — so we omit $orderby and sort in JS after fetching.
   const url =
     `https://graph.microsoft.com/v1.0/users/${account}/messages` +
     `?$filter=${encodeURIComponent(filter)}` +
     `&$select=${select}` +
-    `&$orderby=receivedDateTime asc` +
     `&$top=25`;
 
   console.log(`[graph-mail] THREAD ${account} convId=${conversationId.substring(0, 30)}...`);
@@ -193,6 +194,12 @@ export async function getConversationThread(
 
   const data = await res.json();
   const messages: GraphMailMessage[] = data.value ?? [];
+
+  // Sort chronologically (ascending) since we can't use $orderby with conversationId filter
+  messages.sort((a: any, b: any) =>
+    (a.receivedDateTime ?? '').localeCompare(b.receivedDateTime ?? '')
+  );
+
   console.log(`[graph-mail] THREAD: ${messages.length} mensajes en hilo`);
   return messages;
 }
