@@ -365,22 +365,23 @@ function CalendarioPage() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(lunes, i));
 
   // Filter citas for a specific date
-  const citasForDate = (dateStr: string) => citas.filter((c: CitaItem) => c.fecha === dateStr);
+  const citasForDate = (dateStr: string) => citas.filter((c: CitaItem) => c.fecha === dateStr && c.estado !== 'cancelada');
 
   // Header date range text
   const headerText =
     `${lunes.toLocaleDateString('es-GT', { month: 'long', day: 'numeric' })} — ${addDays(lunes, 6).toLocaleDateString('es-GT', { month: 'long', day: 'numeric', year: 'numeric' })}`;
 
   // ── Computed values for sidebar ──
+  const activeCitas = citas.filter((c: CitaItem) => c.estado !== 'cancelada');
   const todayStr = formatDate(now);
-  const todayCitas = citas.filter((c: CitaItem) => c.fecha === todayStr);
+  const todayCitas = activeCitas.filter((c: CitaItem) => c.fecha === todayStr);
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const nextEvent = todayCitas.find((c: CitaItem) => !c.isAllDay && c.hora_inicio > currentTime)
-    ?? citas.find((c: CitaItem) => c.fecha > todayStr && !c.isAllDay);
-  const weekConsultas = citas.filter((c: CitaItem) => c.tipo === 'consulta_nueva' || c.tipo === 'seguimiento').length;
-  const weekAudiencias = citas.filter((c: CitaItem) => c.tipo === 'audiencia' || c.tipo === 'audiencia_expediente').length;
-  const weekBilling = citas.reduce((sum: number, c: CitaItem) => sum + (c.costo ?? 0), 0);
-  const weekFreeSlots = citas.filter((c: CitaItem) => c.tipo === 'evento_libre').length;
+    ?? activeCitas.find((c: CitaItem) => c.fecha > todayStr && !c.isAllDay);
+  const weekConsultas = activeCitas.filter((c: CitaItem) => c.tipo === 'consulta_nueva' || c.tipo === 'seguimiento').length;
+  const weekAudiencias = activeCitas.filter((c: CitaItem) => c.tipo === 'audiencia' || c.tipo === 'audiencia_expediente').length;
+  const weekBilling = activeCitas.reduce((sum: number, c: CitaItem) => sum + (c.costo ?? 0), 0);
+  const weekFreeSlots = activeCitas.filter((c: CitaItem) => c.tipo === 'evento_libre').length;
   const dayProgressHours = Math.max(0, Math.min(12, now.getHours() - 8 + now.getMinutes() / 60));
   const dayProgress = Math.round((dayProgressHours / 12) * 100);
 
@@ -1597,6 +1598,13 @@ function CreateModal({
   const [error, setError] = useState('');
   const [slotMode, setSlotMode] = useState<'fixed' | 'suggested' | 'free'>('fixed');
 
+  // Teams meeting defaults: checked for consulta/seguimiento/reunion, unchecked for rest
+  const TEAMS_DEFAULT: Record<string, boolean> = {
+    consulta_nueva: true, seguimiento: true, reunion: true,
+    audiencia: false, bloqueo_personal: false, evento_libre: false,
+  };
+  const [withTeams, setWithTeams] = useState(TEAMS_DEFAULT[tipo] ?? false);
+
   const isFree = FREE_TIPOS.has(tipo);
   const isSmart = SMART_SLOT_TIPOS.has(tipo);
   const isSlot = SLOT_TIPOS.has(tipo);
@@ -1613,6 +1621,7 @@ function CreateModal({
   useEffect(() => {
     setSelectedSlot(null);
     setUseCustomTime(false);
+    setWithTeams(TEAMS_DEFAULT[tipo] ?? false);
     if (isFree) {
       setUseCustomTime(true);
       setDuracion(60);
@@ -1697,6 +1706,7 @@ function CreateModal({
           hora_fin: horaFin,
           duracion_minutos: duracionFinal,
           cliente_id: clienteId || null,
+          isOnlineMeeting: withTeams,
         }),
       });
 
@@ -1956,6 +1966,17 @@ function CreateModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
             />
           </div>
+
+          {/* Teams meeting toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={withTeams}
+              onChange={(e) => setWithTeams(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-sm text-gray-700">Crear reunión de Teams</span>
+          </label>
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>

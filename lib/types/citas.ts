@@ -62,6 +62,7 @@ export interface CitaInsert {
   duracion_minutos: number;
   costo?: number;
   notas?: string;
+  isOnlineMeeting?: boolean;
 }
 
 export interface BloqueoCalendario {

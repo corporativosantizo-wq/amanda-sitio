@@ -322,7 +322,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
         endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
         attendees: clienteEmail ? [clienteEmail] : [],
-        isOnlineMeeting: true,
+        isOnlineMeeting: input.isOnlineMeeting ?? true,
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       };
