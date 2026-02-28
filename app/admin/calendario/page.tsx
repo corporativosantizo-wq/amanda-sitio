@@ -718,11 +718,13 @@ function AgendaView({
         const monthName = day.toLocaleDateString('es-GT', { month: 'short' });
 
         // Separate deep work blocks from regular events
-        const deepWorkCitas = dayCitas.filter((c: CitaItem) =>
-          c.tipo === 'bloqueo_personal' && parseInt(c.hora_inicio, 10) < DEEP_WORK_END_HOUR
-        );
+        // Only generic/untitled bloqueo_personal before 14h counts as deep work
+        const DEEP_WORK_TITLES = new Set(['', 'Trabajo profundo', 'Deep Work']);
+        const isDeepWorkBlock = (c: CitaItem) =>
+          c.tipo === 'bloqueo_personal' && parseInt(c.hora_inicio, 10) < DEEP_WORK_END_HOUR && DEEP_WORK_TITLES.has((c.titulo || '').trim());
+        const deepWorkCitas = dayCitas.filter(isDeepWorkBlock);
         const regularCitas = dayCitas
-          .filter((c: CitaItem) => !(c.tipo === 'bloqueo_personal' && parseInt(c.hora_inicio, 10) < DEEP_WORK_END_HOUR))
+          .filter((c: CitaItem) => !isDeepWorkBlock(c))
           .sort((a: CitaItem, b: CitaItem) => a.hora_inicio.localeCompare(b.hora_inicio));
 
         return (
