@@ -19,6 +19,7 @@ import { buildDocument, convertirTextoAParagraphs } from '@/lib/templates/docx-u
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { searchEmails, getConversationThread, stripHtmlToText } from '@/lib/molly/graph-mail';
+import { searchDriveFiles, getFileContent, listFolderContents } from '@/lib/molly/graph-drive';
 import { registrarYConfirmar } from '@/lib/services/pagos.service';
 import { listarTareas, crearTarea, completarTarea, migrarTarea } from '@/lib/services/tareas.service';
 import {
@@ -599,6 +600,33 @@ Puedes buscar y leer emails del buzón del despacho usando las herramientas busc
 - "¿Qué facturas llegaron esta semana?" → buscar_emails(cuenta="contador@papeleo.legal", busqueda="factura", dias=7)
 - "Lee el hilo de ese email" → leer_hilo_email con el conversationId del resultado anterior
 - "Respóndele que ya tenemos la resolución" → leer hilo → redactar borrador → MOSTRAR A AMANDA → esperar aprobación → enviar
+
+## ARCHIVOS DE ONEDRIVE
+Puedes buscar y leer archivos del OneDrive del despacho usando las herramientas buscar_archivos, leer_archivo y listar_carpeta.
+
+### Herramientas:
+- **buscar_archivos**: Busca documentos por nombre o contenido. Retorna lista con nombre, tamaño, fecha y link.
+- **leer_archivo**: Lee el contenido de un archivo. Solo archivos de texto (.txt, .csv, .json, .md) son legibles como texto. Para Word (.docx), Excel (.xlsx), PDF — retorna metadata + link para abrir.
+- **listar_carpeta**: Lista archivos y carpetas en una ruta. Sin ruta muestra la raíz.
+
+### Cuentas:
+- **amanda@papeleo.legal** (default) — documentos de trabajo: contratos, minutas, cotizaciones
+- **asistente@papeleo.legal** — documentos operativos
+- **contador@papeleo.legal** — documentos contables, facturas
+
+### Reglas:
+- Los archivos de OneDrive son documentos de TRABAJO ACTIVOS (contratos Word, cotizaciones Excel, minutas)
+- Los documentos escaneados del archivo físico están en Supabase (usar consultar_base_datos)
+- NUNCA modifiques ni elimines archivos — solo lectura
+- Contenido máximo: 10,000 caracteres por archivo, archivos < 5 MB
+- Si Amanda dice "busca el contrato de..." → buscar_archivos en amanda@papeleo.legal
+- Si Amanda dice "¿qué hay en la carpeta...?" → listar_carpeta
+
+### Ejemplos:
+- "Busca el contrato de Procapeli" → buscar_archivos(cuenta="amanda@papeleo.legal", busqueda="contrato Procapeli")
+- "¿Qué archivos Excel tengo?" → buscar_archivos(cuenta="amanda@papeleo.legal", busqueda="*", tipo_archivo="xlsx")
+- "Lee el archivo notas.txt" → buscar_archivos para obtener ID, luego leer_archivo
+- "¿Qué hay en la carpeta Clientes?" → listar_carpeta(cuenta="amanda@papeleo.legal", ruta="Clientes")
 
 ## INSTRUCCIONES GENERALES
 - Sé concisa y profesional, como una abogada guatemalteca experimentada
@@ -1831,6 +1859,102 @@ async function handleLeerHiloEmail(
   });
 }
 
+// ── Buscar archivos en OneDrive ────────────────────────────────────────────
+
+async function handleBuscarArchivos(
+  cuenta: MailboxAlias,
+  busqueda: string,
+  tipoArchivo?: string,
+): Promise<string> {
+  console.log(`[AI] buscar_archivos: cuenta=${cuenta}, q="${busqueda}", tipo=${tipoArchivo ?? 'all'}`);
+  const results = await searchDriveFiles(cuenta, busqueda, tipoArchivo);
+
+  if (!results.length) {
+    return JSON.stringify({
+      mensaje: `No se encontraron archivos en OneDrive de ${cuenta} con "${busqueda}".`,
+      resultados: [],
+    });
+  }
+
+  const formatted = results.map((f: any) => ({
+    id: f.id,
+    nombre: f.name,
+    tipo: f.type,
+    tamaño: f.size > 1024 * 1024
+      ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.round(f.size / 1024)} KB`,
+    modificado: f.lastModified?.substring(0, 10) ?? '',
+    ruta: f.path,
+    link: f.webUrl,
+  }));
+
+  return JSON.stringify({
+    mensaje: `${results.length} archivo(s) encontrados en OneDrive de ${cuenta}.`,
+    resultados: formatted,
+  });
+}
+
+// ── Leer contenido de archivo de OneDrive ─────────────────────────────────
+
+async function handleLeerArchivo(
+  cuenta: MailboxAlias,
+  archivoId: string,
+): Promise<string> {
+  console.log(`[AI] leer_archivo: cuenta=${cuenta}, id=${archivoId}`);
+  const file = await getFileContent(cuenta, archivoId);
+
+  if (!file.content) {
+    return JSON.stringify({
+      mensaje: `No se puede leer el contenido de "${file.name}" como texto. Abre el archivo directamente:`,
+      nombre: file.name,
+      tamaño: file.size > 1024 * 1024
+        ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`,
+      link: file.webUrl,
+    });
+  }
+
+  return JSON.stringify({
+    mensaje: `Contenido de "${file.name}" (${file.content.length} caracteres):`,
+    nombre: file.name,
+    contenido: file.content,
+    link: file.webUrl,
+  });
+}
+
+// ── Listar carpeta de OneDrive ────────────────────────────────────────────
+
+async function handleListarCarpeta(
+  cuenta: MailboxAlias,
+  ruta?: string,
+): Promise<string> {
+  console.log(`[AI] listar_carpeta: cuenta=${cuenta}, ruta=${ruta ?? '/'}`);
+  const items = await listFolderContents(cuenta, ruta);
+
+  if (!items.length) {
+    return JSON.stringify({
+      mensaje: `Carpeta vacía o no encontrada: ${ruta ?? '/'}`,
+      items: [],
+    });
+  }
+
+  const formatted = items.map((i: any) => ({
+    id: i.id,
+    nombre: i.name,
+    tipo: i.type === 'folder' ? '📁 carpeta' : '📄 archivo',
+    tamaño: i.type === 'folder' ? '-' : (i.size > 1024 * 1024
+      ? `${(i.size / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.round(i.size / 1024)} KB`),
+    modificado: i.lastModified?.substring(0, 10) ?? '',
+    link: i.webUrl,
+  }));
+
+  return JSON.stringify({
+    mensaje: `${items.length} item(s) en ${ruta ?? '/'}`,
+    items: formatted,
+  });
+}
+
 // ── Consultas legales (expedientes, mercantil, laboral, tribunales, etc.) ──
 
 async function handleConsultarLegal(
@@ -2891,6 +3015,67 @@ export async function POST(req: Request) {
         },
       },
       {
+        name: 'buscar_archivos',
+        description: 'Busca archivos en el OneDrive del despacho por nombre o contenido. Retorna lista con nombre, tamaño, fecha y link. Usar leer_archivo para ver el contenido de archivos de texto.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cuenta: {
+              type: 'string',
+              enum: ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'],
+              description: 'Cuenta de OneDrive donde buscar. Default: amanda@papeleo.legal.',
+            },
+            busqueda: {
+              type: 'string',
+              description: 'Texto de búsqueda: nombre de archivo, contenido, etc.',
+            },
+            tipo_archivo: {
+              type: 'string',
+              description: 'Filtrar por extensión: docx, xlsx, pdf, txt, csv, etc. Opcional.',
+            },
+          },
+          required: ['cuenta', 'busqueda'],
+        },
+      },
+      {
+        name: 'leer_archivo',
+        description: 'Lee el contenido de un archivo de OneDrive. Solo archivos de texto (.txt, .csv, .json, .md) son legibles. Para Word, Excel, PDF retorna metadata + link. Máx 5MB, contenido truncado a 10,000 caracteres.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cuenta: {
+              type: 'string',
+              enum: ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'],
+              description: 'Cuenta de OneDrive.',
+            },
+            archivo_id: {
+              type: 'string',
+              description: 'ID del archivo (obtenido de buscar_archivos o listar_carpeta).',
+            },
+          },
+          required: ['cuenta', 'archivo_id'],
+        },
+      },
+      {
+        name: 'listar_carpeta',
+        description: 'Lista archivos y carpetas en una ruta de OneDrive. Sin ruta muestra la raíz del drive.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cuenta: {
+              type: 'string',
+              enum: ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'],
+              description: 'Cuenta de OneDrive.',
+            },
+            ruta: {
+              type: 'string',
+              description: 'Ruta de la carpeta (ej: "Contratos", "Clientes/Procapeli"). Opcional, sin ruta muestra raíz.',
+            },
+          },
+          required: ['cuenta'],
+        },
+      },
+      {
         name: 'consultar_legal',
         description: 'Consulta los módulos legales del sistema: expedientes judiciales/fiscales/administrativos, cumplimiento mercantil, cumplimiento laboral, directorios de tribunales y fiscalías, representantes legales, grupo empresarial, y biblioteca legal.',
         input_schema: {
@@ -3061,6 +3246,15 @@ export async function POST(req: Request) {
             } else if (block.name === 'leer_hilo_email') {
               const input = block.input as any;
               result = await handleLeerHiloEmail(input.cuenta, input.conversation_id);
+            } else if (block.name === 'buscar_archivos') {
+              const input = block.input as any;
+              result = await handleBuscarArchivos(input.cuenta, input.busqueda, input.tipo_archivo);
+            } else if (block.name === 'leer_archivo') {
+              const input = block.input as any;
+              result = await handleLeerArchivo(input.cuenta, input.archivo_id);
+            } else if (block.name === 'listar_carpeta') {
+              const input = block.input as any;
+              result = await handleListarCarpeta(input.cuenta, input.ruta);
             } else if (block.name === 'consultar_legal') {
               const input = block.input as any;
               result = await handleConsultarLegal(input.consulta, input.params ?? {});
