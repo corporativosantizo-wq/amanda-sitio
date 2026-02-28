@@ -25,9 +25,24 @@ import {
   startCancelFlow,
   handleCancelCallback,
 } from '@/lib/molly/telegram-calendar';
+import { searchDriveFiles } from '@/lib/molly/graph-drive';
+import type { DriveItem } from '@/lib/molly/graph-drive';
+import { searchEmails, getConversationThread } from '@/lib/molly/graph-mail';
+import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const db = () => createAdminClient();
+
+const SEARCH_ACCOUNTS: MailboxAlias[] = ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'];
+
+// In-memory store for /buscar "Ver hilo" callbacks
+let lastSearchEmails: Array<{
+  account: MailboxAlias;
+  conversationId: string | null;
+  subject: string;
+  preview: string;
+  from: string;
+}> = [];
 
 export async function POST(req: NextRequest) {
   // Always return 200 to prevent Telegram retries
@@ -133,6 +148,13 @@ async function handleCallbackQuery(query: any): Promise<void> {
     if (data.startsWith('habit_toggle:')) {
       await answerCallbackQuery(query.id);
       await handleHabitCallback(data);
+      return;
+    }
+
+    // Search email thread callback
+    if (data.startsWith('search_email:')) {
+      await answerCallbackQuery(query.id);
+      await handleSearchEmailCallback(parseInt(data.split(':')[1], 10));
       return;
     }
 
@@ -365,6 +387,26 @@ async function handleTextMessage(message: any): Promise<void> {
     return;
   }
 
+  // ── Search command ──────────────────────────────────────────────────
+
+  if (text.startsWith('/buscar ')) {
+    const query = text.slice(8).trim();
+    if (!query) {
+      await sendTelegramMessage('Uso: <code>/buscar texto</code>', { parse_mode: 'HTML' });
+      return;
+    }
+    await handleBuscarCommand(query);
+    return;
+  }
+
+  if (text === '/buscar') {
+    await sendTelegramMessage(
+      'Uso: <code>/buscar texto</code>\n\nEjemplos:\n<code>/buscar Derick</code>\n<code>/buscar contrato Procapeli</code>\n<code>/buscar cotización Sololá</code>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
   // Unknown command
   if (text.startsWith('/')) {
     await sendTelegramMessage(
@@ -386,6 +428,8 @@ async function handleTextMessage(message: any): Promise<void> {
       `<b>Email:</b>\n` +
       `/pendientes — borradores pendientes\n` +
       `/stats — estadísticas Molly Mail\n\n` +
+      `<b>Buscar:</b>\n` +
+      `/buscar [texto] — archivos y emails\n\n` +
       `<b>Otros:</b>\n` +
       `/x — cancelar flujo activo`,
       { parse_mode: 'HTML' },
@@ -905,6 +949,195 @@ async function handleHabitCallback(data: string): Promise<void> {
     await handleHabitosCommand();
   } catch (err: any) {
     await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+// ── Search command (/buscar) ──────────────────────────────────────────────
+
+async function handleBuscarCommand(query: string): Promise<void> {
+  await sendTelegramMessage(
+    `\uD83D\uDD0D Buscando "<b>${escapeHtml(query)}</b>"...`,
+    { parse_mode: 'HTML' },
+  );
+
+  try {
+    // Search drives and emails in parallel across all 3 accounts
+    const drivePromises = SEARCH_ACCOUNTS.map((acc: MailboxAlias) =>
+      searchDriveFiles(acc, query).catch((err: any) => {
+        console.error(`[buscar] Drive error ${acc}:`, err.message);
+        return [] as DriveItem[];
+      }),
+    );
+    const emailPromises = SEARCH_ACCOUNTS.map((acc: MailboxAlias) =>
+      searchEmails(acc, query, 90)
+        .then((msgs: any[]) => msgs.map((m: any) => ({ msg: m, account: acc })))
+        .catch((err: any) => {
+          console.error(`[buscar] Email error ${acc}:`, err.message);
+          return [] as Array<{ msg: any; account: MailboxAlias }>;
+        }),
+    );
+
+    const [driveResults, emailResults] = await Promise.all([
+      Promise.all(drivePromises).then((r: DriveItem[][]) => r.flat()),
+      Promise.all(emailPromises).then((r: Array<Array<{ msg: any; account: MailboxAlias }>>) => r.flat()),
+    ]);
+
+    // Dedup drive results by lowercase name, skip folders
+    const seenFiles = new Set<string>();
+    const files = driveResults.filter((f: DriveItem) => {
+      if (f.type === 'folder') return false;
+      const key = f.name.toLowerCase();
+      if (seenFiles.has(key)) return false;
+      seenFiles.add(key);
+      return true;
+    }).slice(0, 5);
+
+    // Dedup emails by conversationId, keep most recent
+    const emailMap = new Map<string, { msg: any; account: MailboxAlias }>();
+    for (const e of emailResults) {
+      const key = e.msg.conversationId || e.msg.id;
+      const existing = emailMap.get(key);
+      if (!existing || e.msg.receivedDateTime > existing.msg.receivedDateTime) {
+        emailMap.set(key, e);
+      }
+    }
+    const emails = [...emailMap.values()]
+      .sort((a: any, b: any) => b.msg.receivedDateTime.localeCompare(a.msg.receivedDateTime))
+      .slice(0, 5);
+
+    // Store for "Ver hilo" callbacks
+    lastSearchEmails = emails.map((e: any) => ({
+      account: e.account,
+      conversationId: e.msg.conversationId || null,
+      subject: e.msg.subject || '(Sin asunto)',
+      preview: e.msg.bodyPreview || '',
+      from: e.msg.from?.emailAddress?.name || e.msg.from?.emailAddress?.address || '',
+    }));
+
+    if (files.length === 0 && emails.length === 0) {
+      await sendTelegramMessage(
+        `No encontr\u00E9 documentos ni emails con "<b>${escapeHtml(query)}</b>"`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // Build message text + inline keyboard
+    let msg = '';
+    const keyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [];
+
+    if (files.length > 0) {
+      msg += `\uD83D\uDCC2 <b>ARCHIVOS ENCONTRADOS:</b>\n`;
+      files.forEach((f: DriveItem, i: number) => {
+        const sizeKB = Math.round(f.size / 1024);
+        const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
+        msg += `\n${i + 1}. <b>${escapeHtml(f.name)}</b>\n`;
+        msg += `   \uD83D\uDCC1 ${escapeHtml(f.path)} \u00B7 ${sizeLabel}\n`;
+        keyboard.push([{
+          text: `\uD83D\uDCC4 ${f.name.length > 35 ? f.name.substring(0, 33) + '\u2026' : f.name}`,
+          url: f.webUrl,
+        }]);
+      });
+    }
+
+    if (emails.length > 0) {
+      if (files.length > 0) msg += `\n`;
+      msg += `\uD83D\uDCE7 <b>EMAILS RELACIONADOS:</b>\n`;
+      emails.forEach((e: any, i: number) => {
+        const accountShort = (e.account as string).split('@')[0];
+        const dateObj = new Date(e.msg.receivedDateTime);
+        const dateStr = new Intl.DateTimeFormat('es', {
+          timeZone: 'America/Guatemala',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        }).format(dateObj);
+        const subject = e.msg.subject || '(Sin asunto)';
+        msg += `\n${i + 1}. <b>${escapeHtml(subject)}</b>\n`;
+        msg += `   \uD83D\uDCEC ${accountShort}@ \u00B7 ${dateStr}\n`;
+        keyboard.push([{
+          text: `\uD83D\uDCE8 ${subject.length > 35 ? subject.substring(0, 33) + '\u2026' : subject}`,
+          callback_data: `search_email:${i}`,
+        }]);
+      });
+    }
+
+    await sendTelegramMessage(msg, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined,
+    });
+  } catch (err: any) {
+    console.error('[buscar] Error:', err);
+    await sendTelegramMessage(`\u274C Error buscando: ${err.message}`);
+  }
+}
+
+async function handleSearchEmailCallback(index: number): Promise<void> {
+  const ref = lastSearchEmails[index];
+  if (!ref) {
+    await sendTelegramMessage('Resultado expirado. Busca de nuevo con /buscar');
+    return;
+  }
+
+  try {
+    if (!ref.conversationId) {
+      // No thread, show single message info
+      await sendTelegramMessage(
+        `\uD83D\uDCE7 <b>${escapeHtml(ref.subject)}</b>\n` +
+        `De: ${escapeHtml(ref.from)}\n\n${escapeHtml(ref.preview)}`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    const messages = await getConversationThread(ref.account, ref.conversationId);
+
+    if (messages.length === 0) {
+      await sendTelegramMessage(
+        `\uD83D\uDCE7 <b>${escapeHtml(ref.subject)}</b>\n` +
+        `De: ${escapeHtml(ref.from)}\n\n${escapeHtml(ref.preview)}`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // Format thread: show last 5 messages
+    let msg = `\uD83D\uDCE7 <b>Hilo: ${escapeHtml(ref.subject)}</b>\n`;
+    msg += `\uD83D\uDCEC ${ref.account}\n`;
+    msg += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n`;
+
+    const recent = messages.slice(-5);
+    for (const m of recent) {
+      const fromAddr = m.from.emailAddress.address.toLowerCase();
+      const fromName = m.from.emailAddress.name || fromAddr;
+      const isOutbound = fromAddr.endsWith('@papeleo.legal');
+      const dirEmoji = isOutbound ? '\uD83D\uDCE4' : '\uD83D\uDCE9';
+
+      const dateStr = new Intl.DateTimeFormat('es', {
+        timeZone: 'America/Guatemala',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(m.receivedDateTime));
+
+      msg += `\n${dirEmoji} <b>${escapeHtml(fromName)}</b> \u2014 ${dateStr}\n`;
+
+      const preview = (m.bodyPreview || '').trim();
+      if (preview) {
+        const truncated = preview.length > 200 ? preview.substring(0, 197) + '...' : preview;
+        msg += `${escapeHtml(truncated)}\n`;
+      }
+    }
+
+    if (messages.length > 5) {
+      msg += `\n<i>... ${messages.length - 5} mensajes anteriores</i>`;
+    }
+
+    await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+  } catch (err: any) {
+    console.error('[buscar] Thread error:', err);
+    await sendTelegramMessage(`\u274C Error leyendo hilo: ${err.message}`);
   }
 }
 
