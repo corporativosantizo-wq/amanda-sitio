@@ -71,8 +71,12 @@ export async function checkAndProcessEmails(): Promise<{
 
   for (const account of ACCOUNTS) {
     try {
-      const since = lastCheck[account] || new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const messages = await fetchNewEmails(account, since);
+      // Buffer de 5 minutos: Graph API puede demorar en indexar emails nuevos.
+      // Sin buffer, emails con receivedDateTime < lastCheck se pierden si Graph
+      // los indexa después. La dedup por microsoft_id en processOneEmail evita reprocesar.
+      const rawSince = lastCheck[account] || new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const sinceWithBuffer = new Date(new Date(rawSince).getTime() - 5 * 60 * 1000).toISOString();
+      const messages = await fetchNewEmails(account, sinceWithBuffer);
 
       // Process max 10 per cycle per account
       for (const msg of messages.slice(0, 10)) {

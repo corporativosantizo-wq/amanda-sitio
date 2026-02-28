@@ -29,15 +29,16 @@ export async function fetchNewEmails(
     'hasAttachments',
   ].join(',');
 
+  // Avoid combining $filter + $orderby + $expand — can cause InefficientFilter
+  // or silent empty results on some mailboxes. Sort in JS instead.
   const url =
     `https://graph.microsoft.com/v1.0/users/${account}/messages` +
     `?$filter=${encodeURIComponent(filter)}` +
     `&$select=${select}` +
-    `&$orderby=receivedDateTime asc` +
     `&$top=25` +
     `&$expand=attachments($select=name,contentType,size)`;
 
-  console.log(`[graph-mail] GET ${account} since=${since}`);
+  console.log(`[graph-mail] GET ${account} since=${since} url_length=${url.length}`);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -45,13 +46,19 @@ export async function fetchNewEmails(
 
   if (!res.ok) {
     const errText = await res.text();
-    console.error(`[graph-mail] ERROR ${res.status}:`, errText.substring(0, 500));
+    console.error(`[graph-mail] ERROR ${res.status} for ${account}:`, errText.substring(0, 500));
     throw new Error(`Graph API error ${res.status}: ${errText.substring(0, 200)}`);
   }
 
   const data = await res.json();
   const messages: GraphMailMessage[] = data.value ?? [];
-  console.log(`[graph-mail] ${messages.length} mensajes obtenidos para ${account}`);
+
+  // Sort chronologically (ascending) since we omit $orderby
+  messages.sort((a: any, b: any) =>
+    (a.receivedDateTime ?? '').localeCompare(b.receivedDateTime ?? '')
+  );
+
+  console.log(`[graph-mail] ${account}: ${messages.length} mensajes desde ${since}`);
   return messages;
 }
 
