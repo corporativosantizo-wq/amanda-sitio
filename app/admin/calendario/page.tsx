@@ -6,8 +6,16 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import { safeRedirect } from '@/lib/utils/validate-url';
+
+/** Detect Clerk auth redirect (session expired) */
+function isAuthRedirect(res: Response): boolean {
+  return res.type === 'opaqueredirect' || res.status === 401 || res.status === 403
+    || (res.status >= 300 && res.status < 400);
+}
+const SESSION_EXPIRED_MSG = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -300,6 +308,7 @@ export default function CalendarioPageWrapper() {
 }
 
 function CalendarioPage() {
+  const { getToken } = useAuth();
   const searchParams = useSearchParams();
   const [vista, setVista] = useState<'agenda' | 'grilla'>('agenda');
   const [fechaBase, setFechaBase] = useState(() => new Date());
@@ -332,14 +341,16 @@ function CalendarioPage() {
     const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    fetch(`/api/admin/calendario/eventos?fecha_inicio=${start}&fecha_fin=${end}&limit=200`)
-      .then((r) => r.json())
+    getToken().catch(() => {});
+    fetch(`/api/admin/calendario/eventos?fecha_inicio=${start}&fecha_fin=${end}&limit=200`, { redirect: 'manual' })
+      .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
       .then((json) => {
+        if (!json) return;
         const dates = new Set<string>((json.data ?? []).map((c: CitaItem) => c.fecha));
         setMonthEventDates(dates);
       })
       .catch(() => setMonthEventDates(new Set()));
-  }, [miniCalMonth]);
+  }, [miniCalMonth, getToken]);
 
   // Show OAuth result from URL params
   useEffect(() => {
@@ -356,9 +367,12 @@ function CalendarioPage() {
     const endStr = formatDate(fin);
 
     try {
+      await getToken().catch(() => {});
       const res = await fetch(
-        `/api/admin/calendario/eventos?fecha_inicio=${startStr}&fecha_fin=${endStr}&limit=200`
+        `/api/admin/calendario/eventos?fecha_inicio=${startStr}&fecha_fin=${endStr}&limit=200`,
+        { redirect: 'manual' }
       );
+      if (isAuthRedirect(res)) { window.location.reload(); return; }
       const json = await res.json();
       const data: CitaItem[] = json.data ?? [];
       setCitas(data);
@@ -368,7 +382,7 @@ function CalendarioPage() {
     } finally {
       setLoading(false);
     }
-  }, [fechaBase]);
+  }, [fechaBase, getToken]);
 
   useEffect(() => { fetchCitas(); }, [fetchCitas]);
 
@@ -379,27 +393,35 @@ function CalendarioPage() {
 
   // Outlook auth
   const connectOutlook = async () => {
-    const res = await fetch('/api/admin/calendario/auth');
+    await getToken().catch(() => {});
+    const res = await fetch('/api/admin/calendario/auth', { redirect: 'manual' });
+    if (isAuthRedirect(res)) { window.location.reload(); return; }
     const json = await res.json();
     if (json.url) safeRedirect(json.url);
   };
 
   // Actions
   const handleAction = async (citaId: string, accion: 'completar' | 'cancelar') => {
-    await fetch(`/api/admin/calendario/eventos/${citaId}`, {
+    await getToken().catch(() => {});
+    const res = await fetch(`/api/admin/calendario/eventos/${citaId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accion }),
+      redirect: 'manual',
     });
+    if (isAuthRedirect(res)) { window.location.reload(); return; }
     setShowDetail(null);
     fetchCitas();
   };
 
   // Delete
   const handleDelete = async (citaId: string) => {
-    await fetch(`/api/admin/calendario/eventos/${citaId}`, {
+    await getToken().catch(() => {});
+    const res = await fetch(`/api/admin/calendario/eventos/${citaId}`, {
       method: 'DELETE',
+      redirect: 'manual',
     });
+    if (isAuthRedirect(res)) { window.location.reload(); return; }
     setShowDetail(null);
     fetchCitas();
   };
@@ -1456,6 +1478,7 @@ function EditModal({
   const [duracion, setDuracion] = useState(cita.duracion_minutos);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const { getToken } = useAuth();
 
   const horaFin = calcHoraFin(horaInicio, duracion);
   const horaNum = parseInt(horaInicio.split(':')[0], 10);
@@ -1468,6 +1491,7 @@ function EditModal({
     setError('');
 
     try {
+      await getToken().catch(() => {});
       const res = await fetch(`/api/admin/calendario/eventos/${cita.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1479,7 +1503,10 @@ function EditModal({
           hora_fin: horaFin,
           duracion_minutos: duracion,
         }),
+        redirect: 'manual',
       });
+
+      if (isAuthRedirect(res)) throw new Error(SESSION_EXPIRED_MSG);
 
       if (!res.ok) {
         let msg = `Error al actualizar (${res.status})`;
@@ -1490,6 +1517,7 @@ function EditModal({
       onSaved();
     } catch (err: any) {
       setError(err.message);
+      if (err.message === SESSION_EXPIRED_MSG) window.location.reload();
     } finally {
       setSaving(false);
     }
@@ -1641,6 +1669,7 @@ function CreateModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [slotMode, setSlotMode] = useState<'fixed' | 'suggested' | 'free'>('fixed');
+  const { getToken } = useAuth();
 
   // Teams meeting defaults: checked for consulta/seguimiento/reunion, unchecked for rest
   const TEAMS_DEFAULT: Record<string, boolean> = {
@@ -1693,27 +1722,30 @@ function CreateModal({
     setLoadingSlots(true);
     setSelectedSlot(null);
     const durParam = isSmart ? `&duracion=${duracion}` : '';
-    fetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}`)
-      .then((r) => r.json())
+    getToken().catch(() => {});
+    fetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}`, { redirect: 'manual' })
+      .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
       .then((json) => {
+        if (!json) return;
         setSlots(json.slots ?? []);
         setSlotMode(json.mode ?? 'fixed');
       })
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
-  }, [fecha, tipo, duracion, isFree, isSmart]);
+  }, [fecha, tipo, duracion, isFree, isSmart, getToken]);
 
   // Search clientes
   useEffect(() => {
     if (clienteSearch.length < 2) { setClientes([]); return; }
     const timer = setTimeout(() => {
-      fetch(`/api/admin/clientes?busqueda=${encodeURIComponent(clienteSearch)}&limit=5`)
-        .then((r) => r.json())
-        .then((json) => setClientes(json.data ?? []))
+      getToken().catch(() => {});
+      fetch(`/api/admin/clientes?busqueda=${encodeURIComponent(clienteSearch)}&limit=5`, { redirect: 'manual' })
+        .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
+        .then((json) => { if (json) setClientes(json.data ?? []); })
         .catch(() => setClientes([]));
     }, 300);
     return () => clearTimeout(timer);
-  }, [clienteSearch]);
+  }, [clienteSearch, getToken]);
 
   const handleSubmit = async () => {
     if (!titulo.trim()) {
@@ -1742,6 +1774,7 @@ function CreateModal({
     setError('');
 
     try {
+      await getToken().catch(() => {});
       const res = await fetch('/api/admin/calendario/eventos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1758,7 +1791,10 @@ function CreateModal({
           cliente_id: clienteId || null,
           isOnlineMeeting: withTeams,
         }),
+        redirect: 'manual',
       });
+
+      if (isAuthRedirect(res)) throw new Error(SESSION_EXPIRED_MSG);
 
       if (!res.ok) {
         let msg = `Error al crear evento (${res.status})`;
@@ -1769,6 +1805,7 @@ function CreateModal({
       onCreated();
     } catch (err: any) {
       setError(err.message);
+      if (err.message === SESSION_EXPIRED_MSG) window.location.reload();
     } finally {
       setSaving(false);
     }
