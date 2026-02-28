@@ -1435,8 +1435,9 @@ function EditModal({
       });
 
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error || 'Error al actualizar');
+        let msg = `Error al actualizar (${res.status})`;
+        try { const json = await res.json(); msg = json.error || msg; } catch {}
+        throw new Error(msg);
       }
 
       onSaved();
@@ -1698,8 +1699,9 @@ function CreateModal({
       });
 
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error || 'Error al crear evento');
+        let msg = `Error al crear evento (${res.status})`;
+        try { const json = await res.json(); msg = json.error || msg; } catch {}
+        throw new Error(msg);
       }
 
       onCreated();
