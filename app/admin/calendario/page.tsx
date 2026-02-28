@@ -154,6 +154,86 @@ function calcHoraFin(horaInicio: string, duracionMin: number): string {
 }
 
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const MINI_CAL_DAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+// ── Subcategories (inferred from existing data, no DB change) ───────────────
+
+interface SubcatInfo {
+  label: string;
+  color: string; // tailwind classes for badge
+}
+
+const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
+  consulta_nueva: [{ label: 'Nueva', color: 'bg-blue-100 text-blue-700' }],
+  seguimiento:    [{ label: 'Seguimiento', color: 'bg-cyan-100 text-cyan-700' }],
+  audiencia:      [
+    { label: 'Civil', color: 'bg-red-100 text-red-700' },
+    { label: 'Penal', color: 'bg-red-200 text-red-900' },
+    { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
+  ],
+  audiencia_expediente: [
+    { label: 'Civil', color: 'bg-red-100 text-red-700' },
+    { label: 'Penal', color: 'bg-red-200 text-red-900' },
+    { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
+  ],
+  reunion: [
+    { label: 'Interna', color: 'bg-yellow-100 text-yellow-700' },
+    { label: 'Externa', color: 'bg-yellow-200 text-yellow-900' },
+    { label: 'Teams', color: 'bg-yellow-100 text-yellow-700' },
+  ],
+  bloqueo_personal: [
+    { label: 'Personal', color: 'bg-gray-100 text-gray-600' },
+    { label: 'Preparación', color: 'bg-slate-100 text-slate-600' },
+  ],
+};
+
+function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
+  const t = (cita.titulo + ' ' + (cita.descripcion ?? '')).toLowerCase();
+
+  switch (cita.tipo) {
+    case 'consulta_nueva':
+      return SUBCATEGORIAS.consulta_nueva[0];
+    case 'seguimiento':
+      return SUBCATEGORIAS.seguimiento[0];
+    case 'audiencia':
+    case 'audiencia_expediente':
+      if (t.includes('penal')) return SUBCATEGORIAS.audiencia[1];
+      if (t.includes('laboral')) return SUBCATEGORIAS.audiencia[2];
+      return SUBCATEGORIAS.audiencia[0]; // Civil default
+    case 'reunion':
+      if (cita.teams_link) return SUBCATEGORIAS.reunion[2]; // Teams
+      if (t.includes('intern')) return SUBCATEGORIAS.reunion[0];
+      return SUBCATEGORIAS.reunion[1]; // Externa default
+    case 'bloqueo_personal':
+      if (t.includes('prepar')) return SUBCATEGORIAS.bloqueo_personal[1];
+      return SUBCATEGORIAS.bloqueo_personal[0];
+    default:
+      return null;
+  }
+}
+
+// ── Mini-calendar helpers ───────────────────────────────────────────────────
+
+function getMonthGrid(year: number, month: number): (number | null)[][] {
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Convert Sunday=0 to Monday=0
+  const startOffset = firstDay === 0 ? 6 : firstDay - 1;
+  const weeks: (number | null)[][] = [];
+  let week: (number | null)[] = Array(startOffset).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    week.push(d);
+    if (week.length === 7) {
+      weeks.push(week);
+      week = [];
+    }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
+  }
+  return weeks;
+}
 
 // CreateModal type card definitions
 const TIPO_CARDS = [
@@ -197,6 +277,25 @@ function CalendarioPage() {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Mini-calendar state
+  const [miniCalMonth, setMiniCalMonth] = useState(() => ({ year: new Date().getFullYear(), month: new Date().getMonth() }));
+  const [monthEventDates, setMonthEventDates] = useState<Set<string>>(new Set());
+
+  // Fetch month-level event dates for mini-calendar dots
+  useEffect(() => {
+    const { year, month } = miniCalMonth;
+    const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    fetch(`/api/admin/calendario/eventos?fecha_inicio=${start}&fecha_fin=${end}&limit=200`)
+      .then((r) => r.json())
+      .then((json) => {
+        const dates = new Set<string>((json.data ?? []).map((c: CitaItem) => c.fecha));
+        setMonthEventDates(dates);
+      })
+      .catch(() => setMonthEventDates(new Set()));
+  }, [miniCalMonth]);
 
   // Show OAuth result from URL params
   useEffect(() => {
@@ -397,6 +496,69 @@ function CalendarioPage() {
                   <div className="h-full bg-gradient-progress rounded-full transition-all duration-1000" style={{ width: `${dayProgress}%` }} />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Mini Calendar */}
+          <div className="px-4 pb-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-[#94A3B8]">◆ CALENDARIO</p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setMiniCalMonth((p) => {
+                    const d = new Date(p.year, p.month - 1, 1);
+                    return { year: d.getFullYear(), month: d.getMonth() };
+                  })}
+                  className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <span className="text-[10px] font-medium text-gray-500 w-[80px] text-center capitalize">
+                  {new Date(miniCalMonth.year, miniCalMonth.month).toLocaleDateString('es-GT', { month: 'short', year: 'numeric' })}
+                </span>
+                <button
+                  onClick={() => setMiniCalMonth((p) => {
+                    const d = new Date(p.year, p.month + 1, 1);
+                    return { year: d.getFullYear(), month: d.getMonth() };
+                  })}
+                  className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-0">
+              {MINI_CAL_DAYS.map((d) => (
+                <div key={d} className="text-center text-[9px] font-medium text-gray-400 py-0.5">{d}</div>
+              ))}
+              {getMonthGrid(miniCalMonth.year, miniCalMonth.month).flat().map((day, i) => {
+                if (day === null) return <div key={`empty-${i}`} className="h-7" />;
+                const dateStr = `${miniCalMonth.year}-${String(miniCalMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isToday = dateStr === formatDate(now);
+                const hasEvents = monthEventDates.has(dateStr);
+                return (
+                  <button
+                    key={dateStr}
+                    onClick={() => {
+                      const clickedDate = new Date(miniCalMonth.year, miniCalMonth.month, day);
+                      setFechaBase(clickedDate);
+                    }}
+                    className={`h-7 flex flex-col items-center justify-center rounded-full text-[11px] transition ${
+                      isToday
+                        ? 'bg-azure text-white font-bold'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>{day}</span>
+                    {hasEvents && !isToday && (
+                      <span className="w-1 h-1 rounded-full bg-azure -mt-0.5" />
+                    )}
+                    {hasEvents && isToday && (
+                      <span className="w-1 h-1 rounded-full bg-white -mt-0.5" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -619,7 +781,17 @@ function AgendaView({
 
                         {/* Event info */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
+                            {(() => {
+                              const sub = inferSubcategoria(cita);
+                              return sub ? (
+                                <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium shrink-0 ${sub.color}`}>
+                                  {sub.label}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
                           <div className="flex items-center gap-2 text-[11px] text-gray-500">
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
                             {cita.teams_link && <span className="text-purple-500">Teams</span>}
@@ -936,7 +1108,10 @@ function WeekView({
             <div className="font-semibold mb-1">{hoveredCita.titulo}</div>
             <div className="space-y-0.5 text-gray-300">
               <div className="font-mono">{formatHora12(hoveredCita.hora_inicio)} — {formatHora12(hoveredCita.hora_fin)}</div>
-              <div>{TIPO_LABELS[hoveredCita.tipo] ?? hoveredCita.tipo}</div>
+              <div className="flex items-center gap-1.5">
+                {TIPO_LABELS[hoveredCita.tipo] ?? hoveredCita.tipo}
+                {(() => { const s = inferSubcategoria(hoveredCita); return s ? <span className="text-[9px] bg-white/20 px-1 rounded">{s.label}</span> : null; })()}
+              </div>
               {hoveredCita.cliente && <div>{hoveredCita.cliente.nombre}</div>}
               {hoveredCita.descripcion && <div className="text-gray-400 truncate">{hoveredCita.descripcion}</div>}
             </div>
@@ -1085,7 +1260,10 @@ function DetailModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <span className="text-xs text-gray-500 uppercase">Tipo</span>
-              <p className="font-medium">{TIPO_LABELS[cita.tipo] ?? cita.tipo}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium">{TIPO_LABELS[cita.tipo] ?? cita.tipo}</p>
+                {(() => { const s = inferSubcategoria(cita); return s ? <span className={`text-[10px] px-1.5 py-0 rounded-full font-medium ${s.color}`}>{s.label}</span> : null; })()}
+              </div>
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Estado</span>
@@ -1342,10 +1520,10 @@ function EditModal({
             Fin: {formatHora12(horaFin)}
           </p>
 
-          {/* Deep work warning */}
+          {/* Deep work warning (advisory only) */}
           {isDeepWork && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
-              Este horario está reservado para trabajo profundo. ¿Deseas continuar?
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 flex items-center gap-2">
+              <span>⚠</span> Horario de trabajo profundo — puedes crear el evento de todas formas
             </div>
           )}
 
@@ -1717,10 +1895,10 @@ function CreateModal({
             </div>
           )}
 
-          {/* Deep work warning */}
+          {/* Deep work warning (advisory only) */}
           {showDeepWorkWarning && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
-              Este horario está reservado para trabajo profundo. ¿Deseas continuar?
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 flex items-center gap-2">
+              <span>⚠</span> Horario de trabajo profundo — puedes crear el evento de todas formas
             </div>
           )}
 
