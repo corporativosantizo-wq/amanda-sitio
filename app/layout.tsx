@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Outfit } from 'next/font/google'
+import { Inter, Outfit, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import { Providers } from './providers'
@@ -11,11 +11,18 @@ const inter = Inter({
   display: 'swap',
 })
 
-const outfit = Outfit({ 
+const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-outfit',
   display: 'swap',
   weight: ['400', '600', '700'],
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+  weight: ['400', '500', '700'],
 })
 
 export const metadata: Metadata = {
@@ -29,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="es" className={`${inter.variable} ${outfit.variable}`}>
+    <html lang="es" className={`${inter.variable} ${outfit.variable} ${jetbrainsMono.variable}`}>
       <body className="font-sans antialiased">
         <Providers>
           <LayoutWrapper>

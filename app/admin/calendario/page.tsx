@@ -1,6 +1,6 @@
 // ============================================================================
 // app/admin/calendario/page.tsx
-// Calendario de citas con vista semana/día
+// Calendario de citas — rediseño con header navy, sidebar, vista agenda/grilla
 // ============================================================================
 'use client';
 
@@ -56,15 +56,15 @@ interface ClienteOption {
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const TIPO_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  consulta_nueva: { bg: 'bg-blue-100', border: 'border-blue-500', text: 'text-blue-900' },
-  seguimiento: { bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-900' },
-  outlook: { bg: 'bg-purple-100', border: 'border-purple-500', text: 'text-purple-900' },
-  audiencia_expediente: { bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-900' },
-  audiencia: { bg: 'bg-red-100', border: 'border-red-500', text: 'text-red-900' },
-  reunion: { bg: 'bg-yellow-100', border: 'border-yellow-500', text: 'text-yellow-900' },
-  bloqueo_personal: { bg: 'bg-gray-200', border: 'border-gray-500', text: 'text-gray-800' },
-  evento_libre: { bg: 'bg-violet-100', border: 'border-violet-500', text: 'text-violet-900' },
+const TIPO_COLORS: Record<string, { bg: string; border: string; text: string; hex: string }> = {
+  consulta_nueva:       { bg: 'bg-blue-100',    border: 'border-blue-500',    text: 'text-blue-900',    hex: '#3B82F6' },
+  seguimiento:          { bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-900', hex: '#10B981' },
+  outlook:              { bg: 'bg-purple-100',  border: 'border-purple-500',  text: 'text-purple-900',  hex: '#8B5CF6' },
+  audiencia_expediente: { bg: 'bg-amber-100',   border: 'border-amber-500',   text: 'text-amber-900',   hex: '#F59E0B' },
+  audiencia:            { bg: 'bg-red-100',     border: 'border-red-500',     text: 'text-red-900',     hex: '#EF4444' },
+  reunion:              { bg: 'bg-yellow-100',  border: 'border-yellow-500',  text: 'text-yellow-900',  hex: '#EAB308' },
+  bloqueo_personal:     { bg: 'bg-gray-200',    border: 'border-gray-500',    text: 'text-gray-800',    hex: '#6B7280' },
+  evento_libre:         { bg: 'bg-violet-100',  border: 'border-violet-500',  text: 'text-violet-900',  hex: '#7C3AED' },
 };
 
 const TIPO_LABELS: Record<string, string> = {
@@ -155,11 +155,21 @@ function calcHoraFin(horaInicio: string, duracionMin: number): string {
 
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
+// CreateModal type card definitions
+const TIPO_CARDS = [
+  { value: 'consulta_nueva' as TipoCitaUI, label: 'Consulta Nueva', sub: 'Q500, 30-60 min' },
+  { value: 'seguimiento' as TipoCitaUI, label: 'Seguimiento', sub: 'Gratis, 15 min' },
+  { value: 'audiencia' as TipoCitaUI, label: 'Audiencia', sub: 'Horario libre' },
+  { value: 'reunion' as TipoCitaUI, label: 'Reunión', sub: 'Horario laboral' },
+  { value: 'bloqueo_personal' as TipoCitaUI, label: 'Bloqueo Personal', sub: '' },
+  { value: 'evento_libre' as TipoCitaUI, label: 'Evento Libre', sub: '' },
+];
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function CalendarioPageWrapper() {
   return (
-    <Suspense fallback={<div className="p-6 flex justify-center"><div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<div className="p-6 flex justify-center"><div className="w-8 h-8 border-4 border-cyan border-t-transparent rounded-full animate-spin" /></div>}>
       <CalendarioPage />
     </Suspense>
   );
@@ -167,7 +177,7 @@ export default function CalendarioPageWrapper() {
 
 function CalendarioPage() {
   const searchParams = useSearchParams();
-  const [vista, setVista] = useState<'semana' | 'dia'>('semana');
+  const [vista, setVista] = useState<'agenda' | 'grilla'>('agenda');
   const [fechaBase, setFechaBase] = useState(() => new Date());
   const [citas, setCitas] = useState<CitaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -181,18 +191,24 @@ function CalendarioPage() {
   const [createDate, setCreateDate] = useState('');
   const [createTime, setCreateTime] = useState('');
 
+  // Current time (used by sidebar + WeekView)
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Show OAuth result from URL params
   useEffect(() => {
     const error = searchParams.get('error');
     if (error) console.warn('Outlook OAuth error:', error);
   }, [searchParams]);
 
-  // Fetch citas for current range — also gets outlook_connected status
+  // Fetch citas for current week range
   const fetchCitas = useCallback(async () => {
     setLoading(true);
-    const lunes = vista === 'semana' ? getMonday(fechaBase) : fechaBase;
-    const fin = vista === 'semana' ? addDays(lunes, 6) : fechaBase;
-
+    const lunes = getMonday(fechaBase);
+    const fin = addDays(lunes, 6);
     const startStr = formatDate(lunes);
     const endStr = formatDate(fin);
 
@@ -209,13 +225,13 @@ function CalendarioPage() {
     } finally {
       setLoading(false);
     }
-  }, [fechaBase, vista]);
+  }, [fechaBase]);
 
   useEffect(() => { fetchCitas(); }, [fetchCitas]);
 
-  // Navigation
-  const navPrev = () => setFechaBase((d) => addDays(d, vista === 'semana' ? -7 : -1));
-  const navNext = () => setFechaBase((d) => addDays(d, vista === 'semana' ? 7 : 1));
+  // Navigation — always by week
+  const navPrev = () => setFechaBase((d) => addDays(d, -7));
+  const navNext = () => setFechaBase((d) => addDays(d, 7));
   const navHoy = () => setFechaBase(new Date());
 
   // Outlook auth
@@ -253,124 +269,232 @@ function CalendarioPage() {
   const citasForDate = (dateStr: string) => citas.filter((c: CitaItem) => c.fecha === dateStr);
 
   // Header date range text
-  const headerText = vista === 'semana'
-    ? `${lunes.toLocaleDateString('es-GT', { month: 'long', day: 'numeric' })} — ${addDays(lunes, 6).toLocaleDateString('es-GT', { month: 'long', day: 'numeric', year: 'numeric' })}`
-    : fechaBase.toLocaleDateString('es-GT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const headerText =
+    `${lunes.toLocaleDateString('es-GT', { month: 'long', day: 'numeric' })} — ${addDays(lunes, 6).toLocaleDateString('es-GT', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+
+  // ── Computed values for sidebar ──
+  const todayStr = formatDate(now);
+  const todayCitas = citas.filter((c: CitaItem) => c.fecha === todayStr);
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const nextEvent = todayCitas.find((c: CitaItem) => !c.isAllDay && c.hora_inicio > currentTime)
+    ?? citas.find((c: CitaItem) => c.fecha > todayStr && !c.isAllDay);
+  const weekConsultas = citas.filter((c: CitaItem) => c.tipo === 'consulta_nueva' || c.tipo === 'seguimiento').length;
+  const weekAudiencias = citas.filter((c: CitaItem) => c.tipo === 'audiencia' || c.tipo === 'audiencia_expediente').length;
+  const weekBilling = citas.reduce((sum: number, c: CitaItem) => sum + (c.costo ?? 0), 0);
+  const weekFreeSlots = citas.filter((c: CitaItem) => c.tipo === 'evento_libre').length;
+  const dayProgressHours = Math.max(0, Math.min(12, now.getHours() - 8 + now.getMinutes() / 60));
+  const dayProgress = Math.round((dayProgressHours / 12) * 100);
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Calendario</h1>
-          <p className="text-gray-500 text-sm mt-1">{headerText}</p>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-56px)] md:h-screen overflow-hidden">
+      {/* ── HEADER ── */}
+      <header className="bg-navy-dark border-b-2 border-cyan px-4 md:px-6 py-3 flex items-center justify-between shrink-0">
+        {/* Left: logo + title */}
         <div className="flex items-center gap-3">
-          {/* Outlook Status */}
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${outlookConnected ? 'bg-emerald-500' : 'bg-red-400'}`} />
-            <span className="text-xs text-gray-500">{outlookConnected ? 'Outlook conectado' : 'Outlook desconectado'}</span>
+          <div className="w-8 h-8 bg-gradient-to-br from-azure to-cyan rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">AS</span>
           </div>
-          {!outlookConnected && (
-            <button
-              onClick={connectOutlook}
-              className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
+          <h1 className="text-white font-display text-lg font-semibold hidden sm:block">Calendario</h1>
+          {outlookConnected && (
+            <span className="text-[10px] font-medium text-cyan bg-cyan/10 border border-cyan/30 px-2 py-0.5 rounded-full hidden md:inline-block">
+              Outlook sincronizado
+            </span>
+          )}
+        </div>
+
+        {/* Center: nav */}
+        <div className="flex items-center gap-2">
+          <button onClick={navPrev} className="p-1.5 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <button onClick={navHoy} className="px-3 py-1 text-xs font-medium text-white border border-white/20 rounded-md hover:bg-navy-light transition">
+            Hoy
+          </button>
+          <button onClick={navNext} className="p-1.5 rounded-lg text-slate-light hover:bg-navy-light hover:text-white transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <span className="text-sm text-slate-light ml-2 hidden md:inline">{headerText}</span>
+        </div>
+
+        {/* Right: toggles + create */}
+        <div className="flex items-center gap-2 md:gap-3">
+          <Link href="/admin/calendario/bloqueos" className="px-3 py-1.5 text-xs font-medium text-slate-light hover:text-white transition hidden md:inline-block">
+            Bloqueos
+          </Link>
+
+          {!outlookConnected && outlookConnected !== null && (
+            <button onClick={connectOutlook} className="px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition hidden md:inline-block">
               Conectar Outlook
             </button>
           )}
-          <Link
-            href="/admin/calendario/bloqueos"
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-          >
-            Bloqueos
-          </Link>
+
+          {/* Compact/Full toggle — only in grilla mode */}
+          {vista === 'grilla' && (
+            <div className="flex items-center bg-slate rounded-lg p-0.5 hidden sm:flex">
+              <button
+                onClick={() => setCompact(true)}
+                className={`px-2.5 py-1 text-[11px] rounded-md transition font-medium ${compact ? 'bg-azure text-white' : 'text-slate-light hover:text-white'}`}
+              >
+                Compacta
+              </button>
+              <button
+                onClick={() => setCompact(false)}
+                className={`px-2.5 py-1 text-[11px] rounded-md transition font-medium ${!compact ? 'bg-azure text-white' : 'text-slate-light hover:text-white'}`}
+              >
+                Completa
+              </button>
+            </div>
+          )}
+
+          {/* Vista toggle */}
+          <div className="flex items-center bg-slate rounded-lg p-0.5">
+            <button
+              onClick={() => setVista('agenda')}
+              className={`px-3 py-1.5 text-xs rounded-md transition font-medium ${vista === 'agenda' ? 'bg-azure text-white' : 'text-slate-light hover:text-white'}`}
+            >
+              Agenda
+            </button>
+            <button
+              onClick={() => setVista('grilla')}
+              className={`px-3 py-1.5 text-xs rounded-md transition font-medium ${vista === 'grilla' ? 'bg-azure text-white' : 'text-slate-light hover:text-white'}`}
+            >
+              Grilla
+            </button>
+          </div>
+
           <button
             onClick={() => { setCreateDate(formatDate(new Date())); setCreateTime(''); setShowCreate(true); }}
-            className="px-4 py-2 text-sm font-semibold bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition"
+            className="px-4 py-2 text-sm font-semibold bg-gradient-to-r from-azure to-azure-dark text-white rounded-lg shadow-glow-azure hover:shadow-glow-cyan transition-all"
           >
             + Nuevo evento
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Navigation */}
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={navPrev} className="p-2 rounded-lg hover:bg-gray-100 transition">
-          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <button onClick={navHoy} className="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
-          Hoy
-        </button>
-        <button onClick={navNext} className="p-2 rounded-lg hover:bg-gray-100 transition">
-          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-        {vista === 'semana' && (
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-            <button
-              onClick={() => setCompact(true)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${compact ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
-            >
-              Compacta
-            </button>
-            <button
-              onClick={() => setCompact(false)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${!compact ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
-            >
-              Completa
-            </button>
+      {/* ── BODY: sidebar + main ── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar (hidden on mobile, visible on lg+) */}
+        <aside className="hidden lg:flex flex-col w-[300px] bg-white border-r border-slate-light shrink-0 overflow-y-auto">
+          {/* Hoy Card */}
+          <div className="p-4">
+            <div className="bg-gradient-to-br from-navy-dark to-navy rounded-xl p-4 text-white">
+              <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-blue-200">◆ HOY</p>
+              <p className="text-3xl font-extrabold mt-1">{now.getDate()}</p>
+              <p className="text-sm text-blue-100 capitalize">
+                {now.toLocaleDateString('es-GT', { weekday: 'long', month: 'long' })}
+              </p>
+              <p className="text-xs text-blue-200 mt-1">{todayCitas.length} evento{todayCitas.length !== 1 ? 's' : ''} hoy</p>
+              <div className="mt-3">
+                <div className="flex justify-between text-[10px] text-blue-200 mb-1">
+                  <span>Progreso del día</span>
+                  <span className="font-mono">{dayProgress}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-progress rounded-full transition-all duration-1000" style={{ width: `${dayProgress}%` }} />
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-        <div className="ml-auto flex items-center bg-gray-100 rounded-lg p-0.5">
-          <button
-            onClick={() => setVista('semana')}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${vista === 'semana' ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
-          >
-            Semana
-          </button>
-          <button
-            onClick={() => setVista('dia')}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${vista === 'dia' ? 'bg-white shadow font-medium' : 'text-gray-600'}`}
-          >
-            Día
-          </button>
-        </div>
-      </div>
 
-      {/* Color Legend */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        {Object.entries(TIPO_COLORS).map(([key, colors]) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <span className={`w-3 h-3 rounded-sm ${colors.bg} border ${colors.border}`} style={{ borderWidth: '2px' }} />
-            <span className="text-xs text-gray-500">{TIPO_LABELS[key]}</span>
+          {/* Bullet Journal */}
+          <div className="px-4 pb-3">
+            <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-[#94A3B8] mb-2">◆ BULLET JOURNAL</p>
+            <div className="space-y-2">
+              <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-[11px] font-semibold text-blue-900">Deep Work</p>
+                <p className="text-[10px] text-blue-700">8:00 – 14:00 sin interrupciones</p>
+              </div>
+              <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                <p className="text-[11px] font-semibold text-emerald-900">Follow-ups</p>
+                <p className="text-[10px] text-emerald-700">14:00 – 16:00 seguimientos</p>
+              </div>
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+                <p className="text-[11px] font-semibold text-amber-900">Buffer</p>
+                <p className="text-[10px] text-amber-700">16:00+ admin y preparación</p>
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
 
-      {/* Calendar View */}
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : vista === 'semana' ? (
-        <WeekView
-          weekDays={weekDays}
-          citasForDate={citasForDate}
-          onClickCita={(c: CitaItem) => setShowDetail(c)}
-          onClickSlot={(dateStr: string, hora?: string) => { setCreateDate(dateStr); setCreateTime(hora ?? ''); setShowCreate(true); }}
-          compact={compact}
-        />
-      ) : (
-        <DayView
-          date={fechaBase}
-          citas={citasForDate(formatDate(fechaBase))}
-          onClickCita={(c: CitaItem) => setShowDetail(c)}
-        />
-      )}
+          {/* Week Stats */}
+          <div className="px-4 pb-3">
+            <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-[#94A3B8] mb-2">◆ ESTA SEMANA</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2.5 bg-gray-50 rounded-lg">
+                <p className="text-lg font-bold text-gray-900 font-mono">{weekConsultas}</p>
+                <p className="text-[10px] text-gray-500">Consultas</p>
+              </div>
+              <div className="p-2.5 bg-gray-50 rounded-lg">
+                <p className="text-lg font-bold text-gray-900 font-mono">{weekAudiencias}</p>
+                <p className="text-[10px] text-gray-500">Audiencias</p>
+              </div>
+              <div className="p-2.5 bg-gray-50 rounded-lg">
+                <p className="text-lg font-bold text-emerald-700 font-mono">Q{weekBilling.toLocaleString('es-GT')}</p>
+                <p className="text-[10px] text-gray-500">Facturación est.</p>
+              </div>
+              <div className="p-2.5 bg-gray-50 rounded-lg">
+                <p className="text-lg font-bold text-gray-900 font-mono">{weekFreeSlots}</p>
+                <p className="text-[10px] text-gray-500">Slots libres</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Event Type Legend */}
+          <div className="px-4 pb-3">
+            <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-[#94A3B8] mb-2">◆ TIPOS</p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(TIPO_COLORS).map(([key, colors]) => (
+                <span key={key} className={`text-[10px] px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} font-medium`}>
+                  {TIPO_LABELS[key]}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Next Event */}
+          {nextEvent && (
+            <div className="px-4 pb-4">
+              <p className="text-[10px] font-bold tracking-[2.5px] uppercase text-[#94A3B8] mb-2">◆ SIGUIENTE</p>
+              <div
+                className="p-3 bg-white rounded-lg border border-slate-light border-l-4 border-l-azure cursor-pointer hover:shadow-md transition"
+                onClick={() => setShowDetail(nextEvent)}
+              >
+                <p className="text-sm font-semibold text-gray-900 truncate">{nextEvent.titulo}</p>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">{formatHora12(nextEvent.hora_inicio)}</p>
+                {nextEvent.cliente && <p className="text-xs text-gray-400 mt-0.5">{nextEvent.cliente.nombre}</p>}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* Main content area */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-lighter">
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <div className="w-8 h-8 border-4 border-cyan border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : vista === 'agenda' ? (
+            <AgendaView
+              weekDays={weekDays}
+              citasForDate={citasForDate}
+              onClickCita={(c: CitaItem) => setShowDetail(c)}
+              onClickSlot={(dateStr: string, hora?: string) => { setCreateDate(dateStr); setCreateTime(hora ?? ''); setShowCreate(true); }}
+            />
+          ) : (
+            <WeekView
+              weekDays={weekDays}
+              citasForDate={citasForDate}
+              onClickCita={(c: CitaItem) => setShowDetail(c)}
+              onClickSlot={(dateStr: string, hora?: string) => { setCreateDate(dateStr); setCreateTime(hora ?? ''); setShowCreate(true); }}
+              compact={compact}
+              now={now}
+            />
+          )}
+        </main>
+      </div>
 
       {/* Detail Modal */}
       {showDetail && (
@@ -405,7 +529,130 @@ function CalendarioPage() {
   );
 }
 
-// ── Week View ───────────────────────────────────────────────────────────────
+// ── Agenda View ─────────────────────────────────────────────────────────────
+
+function AgendaView({
+  weekDays,
+  citasForDate,
+  onClickCita,
+  onClickSlot,
+}: {
+  weekDays: Date[];
+  citasForDate: (d: string) => CitaItem[];
+  onClickCita: (c: CitaItem) => void;
+  onClickSlot: (d: string, hora?: string) => void;
+}) {
+  const todayStr = formatDate(new Date());
+
+  return (
+    <div className="space-y-1 bg-white rounded-xl border border-slate-light overflow-hidden">
+      {weekDays.map((day: Date) => {
+        const dateStr = formatDate(day);
+        const dayCitas = citasForDate(dateStr);
+        const isToday = dateStr === todayStr;
+        const isPast = dateStr < todayStr;
+        const dayName = DAY_NAMES[day.getDay() === 0 ? 6 : day.getDay() - 1];
+        const monthDay = day.getDate();
+        const monthName = day.toLocaleDateString('es-GT', { month: 'short' });
+
+        // Separate deep work blocks from regular events
+        const deepWorkCitas = dayCitas.filter((c: CitaItem) =>
+          c.tipo === 'bloqueo_personal' && parseInt(c.hora_inicio, 10) < DEEP_WORK_END_HOUR
+        );
+        const regularCitas = dayCitas
+          .filter((c: CitaItem) => !(c.tipo === 'bloqueo_personal' && parseInt(c.hora_inicio, 10) < DEEP_WORK_END_HOUR))
+          .sort((a: CitaItem, b: CitaItem) => a.hora_inicio.localeCompare(b.hora_inicio));
+
+        return (
+          <div
+            key={dateStr}
+            className={`flex border-b border-gray-100 last:border-b-0 transition-opacity duration-200 ${isPast ? 'opacity-50 hover:opacity-80' : ''}`}
+          >
+            {/* Date column */}
+            <div className={`w-[90px] shrink-0 py-3 pr-3 text-right ${isToday ? 'border-r-2 border-azure' : 'border-r border-gray-100'}`}>
+              <p className="text-[10px] font-bold tracking-wider text-[#94A3B8] uppercase">{dayName}</p>
+              {isToday ? (
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-azure to-azure-dark flex items-center justify-center ml-auto mt-0.5">
+                  <span className="text-white font-extrabold text-lg">{monthDay}</span>
+                </div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-800 mt-0.5">{monthDay}</p>
+              )}
+              <p className="text-[10px] text-gray-400 mt-0.5 capitalize">{monthName}</p>
+            </div>
+
+            {/* Events column */}
+            <div className="flex-1 py-2 pl-4 min-h-[60px]">
+              {/* Deep work notation */}
+              {deepWorkCitas.length > 0 && (
+                <p className="text-[10px] text-gray-400 font-mono mb-1">
+                  deep work {deepWorkCitas.map((c: CitaItem) => `${c.hora_inicio.substring(0, 5)}–${c.hora_fin.substring(0, 5)}`).join(', ')}
+                </p>
+              )}
+
+              {regularCitas.length === 0 && deepWorkCitas.length === 0 ? (
+                <div
+                  className="py-3 text-xs text-gray-300 cursor-pointer hover:text-gray-400 transition"
+                  onClick={() => onClickSlot(dateStr)}
+                >
+                  Sin eventos — click para crear
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {regularCitas.map((cita: CitaItem) => {
+                    const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
+                    return (
+                      <div
+                        key={cita.id}
+                        onClick={() => onClickCita(cita)}
+                        className="group flex items-center gap-3 py-2 px-3 rounded-lg cursor-pointer transition-all duration-200 hover:translate-x-1.5 hover:shadow-md"
+                        onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.backgroundColor = colors.hex + '10'; }}
+                        onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        {/* Time */}
+                        <span className="text-xs font-mono text-gray-500 w-[70px] shrink-0">
+                          {cita.isAllDay ? 'Todo día' : formatHora12(cita.hora_inicio)}
+                        </span>
+
+                        {/* Color bar */}
+                        <div className="w-0.5 h-8 rounded-full shrink-0" style={{ backgroundColor: colors.hex }} />
+
+                        {/* Event info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
+                          <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                            {cita.cliente && <span>{cita.cliente.nombre}</span>}
+                            {cita.teams_link && <span className="text-purple-500">Teams</span>}
+                          </div>
+                        </div>
+
+                        {/* Honorario badge */}
+                        {cita.costo > 0 && (
+                          <span className="text-[11px] font-mono font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                            Q{Number(cita.costo).toLocaleString('es-GT')}
+                          </span>
+                        )}
+
+                        {/* Hover actions indicator */}
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center transition-opacity shrink-0">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Week View (Grilla) ──────────────────────────────────────────────────────
 
 // Helper: snap a cita's hora_inicio to the nearest HORAS slot
 function snapToSlot(horaInicio: string): string {
@@ -492,23 +739,18 @@ function WeekView({
   onClickCita,
   onClickSlot,
   compact,
+  now,
 }: {
   weekDays: Date[];
   citasForDate: (d: string) => CitaItem[];
   onClickCita: (c: CitaItem) => void;
   onClickSlot: (d: string, hora?: string) => void;
   compact: boolean;
+  now: Date;
 }) {
   const todayStr = formatDate(new Date());
   const [hoveredCita, setHoveredCita] = useState<CitaItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // Current time indicator — updates every minute
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
 
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
@@ -537,10 +779,13 @@ function WeekView({
   // Render a single time row
   const renderTimeRow = (hora: string) => {
     const isCurrentSlot = hora === currentSlotStr && formatDate(now) >= formatDate(weekDays[0]) && formatDate(now) <= formatDate(weekDays[6]);
+    const hourNum = parseInt(hora.split(':')[0], 10);
+    const isDeepWorkHour = hourNum >= 8 && hourNum < DEEP_WORK_END_HOUR;
+    const is2pmBoundary = hora === '14:00';
 
     return (
       <div key={hora} className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-100 relative">
-        <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1">{hora}</div>
+        <div className="p-1 pr-2 text-right text-xs text-gray-400 pt-1 font-mono">{hora}</div>
         {weekDays.map((d: Date, di: number) => {
           const dateStr = formatDate(d);
           const isToday = dateStr === todayStr;
@@ -553,10 +798,15 @@ function WeekView({
             <div
               key={di}
               className={`border-l border-gray-100 min-h-[32px] min-w-0 overflow-visible relative cursor-pointer transition-colors ${
-                isToday ? 'hover:bg-cyan-50/50' : 'hover:bg-gray-50'
-              }`}
+                isToday ? 'hover:bg-cyan/5' : 'hover:bg-gray-50'
+              } ${isDeepWorkHour ? 'bg-blue-50/30' : ''}`}
               onClick={() => onClickSlot(dateStr, hora)}
             >
+              {/* 2pm Bullet Journal divider */}
+              {is2pmBoundary && (
+                <div className="absolute top-0 left-0 right-0 h-0 border-t-2 border-dashed border-cyan/40 z-10 pointer-events-none" />
+              )}
+
               {/* Current time indicator */}
               {isCurrentSlot && isToday && (
                 <div
@@ -578,7 +828,7 @@ function WeekView({
                     onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
                     onMouseEnter={(e) => handleMouseEnter(cita, e)}
                     onMouseLeave={handleMouseLeave}
-                    className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer z-10 transition-all duration-150 hover:shadow-lg hover:scale-[1.02] hover:z-30`}
+                    className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer z-10 transition-all duration-150 hover:shadow-lg hover:shadow-azure/20 hover:scale-[1.03] hover:z-30`}
                     style={{ borderLeftWidth: '3px', borderLeftStyle: 'solid' }}
                   >
                     <div className="font-semibold truncate">{cita.titulo}</div>
@@ -602,7 +852,7 @@ function WeekView({
       className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-dashed border-gray-200 bg-gray-50/50"
     >
       <div className="py-1 pr-2 text-right">
-        <span className="text-[10px] text-gray-300">{seg.from} – {seg.to}</span>
+        <span className="text-[10px] text-gray-300 font-mono">{seg.from} – {seg.to}</span>
       </div>
       {weekDays.map((_: Date, di: number) => (
         <div key={di} className="border-l border-dashed border-gray-200 h-3" />
@@ -611,7 +861,7 @@ function WeekView({
   );
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden transition-all duration-300">
+    <div className="bg-white rounded-xl border border-slate-light overflow-hidden transition-all duration-300">
       {/* Header */}
       <div className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] border-b border-gray-200">
         <div className="p-2" />
@@ -622,10 +872,10 @@ function WeekView({
           return (
             <div
               key={i}
-              className={`p-2 text-center border-l border-gray-200 transition-colors ${isToday ? 'bg-cyan-50' : ''}`}
+              className={`p-2 text-center border-l border-gray-200 transition-colors ${isToday ? 'bg-azure/5' : ''}`}
             >
               <div className="text-xs text-gray-500">{DAY_NAMES[i]}</div>
-              <div className={`text-lg font-semibold ${isToday ? 'text-cyan-700' : 'text-gray-800'}`}>
+              <div className={`text-lg font-semibold ${isToday ? 'text-azure' : 'text-gray-800'}`}>
                 {d.getDate()}
               </div>
               {dayEventCount > 0 && (
@@ -677,20 +927,20 @@ function WeekView({
         <div
           className="fixed z-50 pointer-events-none animate-in fade-in duration-150"
           style={{
-            left: Math.min(tooltipPos.x, window.innerWidth - 260),
+            left: Math.min(tooltipPos.x, typeof window !== 'undefined' ? window.innerWidth - 260 : 800),
             top: Math.max(tooltipPos.y - 8, 8),
             transform: 'translate(-50%, -100%)',
           }}
         >
-          <div className="bg-gray-900 text-white rounded-lg shadow-xl px-3 py-2 text-xs max-w-[240px]">
+          <div className="bg-navy-dark text-white rounded-lg shadow-xl px-3 py-2 text-xs max-w-[240px]">
             <div className="font-semibold mb-1">{hoveredCita.titulo}</div>
             <div className="space-y-0.5 text-gray-300">
-              <div>{formatHora12(hoveredCita.hora_inicio)} — {formatHora12(hoveredCita.hora_fin)}</div>
+              <div className="font-mono">{formatHora12(hoveredCita.hora_inicio)} — {formatHora12(hoveredCita.hora_fin)}</div>
               <div>{TIPO_LABELS[hoveredCita.tipo] ?? hoveredCita.tipo}</div>
               {hoveredCita.cliente && <div>{hoveredCita.cliente.nombre}</div>}
               {hoveredCita.descripcion && <div className="text-gray-400 truncate">{hoveredCita.descripcion}</div>}
             </div>
-            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900" />
+            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-navy-dark" />
           </div>
         </div>
       )}
@@ -698,7 +948,7 @@ function WeekView({
   );
 }
 
-// ── Day View ────────────────────────────────────────────────────────────────
+// ── Day View (Legacy — not rendered in current UI) ──────────────────────────
 
 function DayView({
   date,
@@ -812,13 +1062,17 @@ function DetailModal({
   const isLocal = !isOutlook && !isExpediente;
   const canEdit = !isExpediente && cita.estado !== 'cancelada'; // local + outlook
   const activo = isLocal && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
+  const tipoColors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-[rgba(15,23,42,0.5)] backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl animate-slideUp overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Type color bar */}
+        <div className="h-1.5 w-full" style={{ background: `linear-gradient(90deg, ${tipoColors.hex}, ${tipoColors.hex}80)` }} />
+
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">{cita.titulo}</h2>
+            <h2 className="text-lg font-bold text-gray-900 font-display">{cita.titulo}</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -845,7 +1099,7 @@ function DetailModal({
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Horario</span>
-              <p className="font-medium">{cita.isAllDay ? 'Todo el día' : `${formatHora12(cita.hora_inicio)} — ${formatHora12(cita.hora_fin)}`}</p>
+              <p className="font-medium font-mono">{cita.isAllDay ? 'Todo el día' : `${formatHora12(cita.hora_inicio)} — ${formatHora12(cita.hora_fin)}`}</p>
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase">Cliente</span>
@@ -854,7 +1108,7 @@ function DetailModal({
             {cita.costo > 0 && (
               <div>
                 <span className="text-xs text-gray-500 uppercase">Costo</span>
-                <p className="font-medium">Q{Number(cita.costo).toLocaleString('es-GT')}</p>
+                <p className="font-medium font-mono">Q{Number(cita.costo).toLocaleString('es-GT')}</p>
               </div>
             )}
           </div>
@@ -912,7 +1166,7 @@ function DetailModal({
                 {!showDeleteConfirm ? (
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+                    className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition text-sm font-medium"
                   >
                     Eliminar
                   </button>
@@ -981,6 +1235,7 @@ function EditModal({
   const horaFin = calcHoraFin(horaInicio, duracion);
   const horaNum = parseInt(horaInicio.split(':')[0], 10);
   const isDeepWork = horaNum < DEEP_WORK_END_HOUR && !FREE_TIPOS.has(cita.tipo);
+  const tipoColors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
 
   const handleSave = async () => {
     if (!titulo.trim()) { setError('El título es requerido'); return; }
@@ -1015,11 +1270,11 @@ function EditModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-[rgba(15,23,42,0.5)] backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto animate-slideUp" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">Editar Evento</h2>
+            <h2 className="text-lg font-bold text-gray-900 font-display">Editar Evento</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1042,7 +1297,7 @@ function EditModal({
               type="text"
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
           </div>
 
@@ -1053,7 +1308,7 @@ function EditModal({
               type="date"
               value={fecha}
               onChange={(e) => setFecha(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
           </div>
 
@@ -1065,7 +1320,7 @@ function EditModal({
                 type="time"
                 value={horaInicio}
                 onChange={(e) => setHoraInicio(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
               />
             </div>
             <div>
@@ -1073,7 +1328,7 @@ function EditModal({
               <select
                 value={duracion}
                 onChange={(e) => setDuracion(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
               >
                 {DURATION_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1083,7 +1338,7 @@ function EditModal({
           </div>
 
           {/* Hora fin (computed) */}
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 font-mono">
             Fin: {formatHora12(horaFin)}
           </p>
 
@@ -1101,7 +1356,7 @@ function EditModal({
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
               rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
             />
           </div>
 
@@ -1120,7 +1375,8 @@ function EditModal({
           <button
             onClick={handleSave}
             disabled={saving || !titulo.trim()}
-            className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
+            className="flex-1 px-4 py-2 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
+            style={{ background: `linear-gradient(to right, ${tipoColors.hex}, ${tipoColors.hex}CC)` }}
           >
             {saving ? 'Guardando...' : 'Guardar cambios'}
           </button>
@@ -1279,11 +1535,11 @@ function CreateModal({
   const isBloqueo = tipo === 'bloqueo_personal';
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-[rgba(15,23,42,0.5)] backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto animate-slideUp" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">Nuevo Evento</h2>
+            <h2 className="text-lg font-bold text-gray-900 font-display">Nuevo Evento</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1293,25 +1549,30 @@ function CreateModal({
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Tipo */}
+          {/* Tipo — card selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de evento</label>
-            <select
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value as TipoCitaUI)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-            >
-              <optgroup label="Citas con cliente">
-                <option value="consulta_nueva">Consulta Nueva (Q500, 30-60 min)</option>
-                <option value="seguimiento">Seguimiento (gratis, 15 min)</option>
-              </optgroup>
-              <optgroup label="Eventos admin">
-                <option value="audiencia">Audiencia (juzgado, horario libre)</option>
-                <option value="reunion">Reunión (horario laboral)</option>
-                <option value="bloqueo_personal">Bloqueo Personal</option>
-                <option value="evento_libre">Evento Libre</option>
-              </optgroup>
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de evento</label>
+            <div className="grid grid-cols-2 gap-2">
+              {TIPO_CARDS.map((opt) => {
+                const colors = TIPO_COLORS[opt.value] ?? TIPO_COLORS.consulta_nueva;
+                const isSelected = tipo === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setTipo(opt.value)}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${
+                      isSelected
+                        ? `${colors.border} ${colors.bg}`
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                    style={isSelected ? { boxShadow: `0 0 12px ${colors.hex}30` } : undefined}
+                  >
+                    <p className={`text-sm font-semibold ${isSelected ? colors.text : 'text-gray-800'}`}>{opt.label}</p>
+                    {opt.sub && <p className="text-[10px] text-gray-500 mt-0.5">{opt.sub}</p>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Fecha */}
@@ -1321,7 +1582,7 @@ function CreateModal({
               type="date"
               value={fecha}
               onChange={(e) => setFecha(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
           </div>
 
@@ -1336,8 +1597,8 @@ function CreateModal({
                     onClick={() => setDuracion(opt.value)}
                     className={`px-3 py-1.5 text-sm rounded-lg border transition ${
                       duracion === opt.value
-                        ? 'border-cyan-500 bg-cyan-50 text-cyan-800 font-medium'
-                        : 'border-gray-200 hover:border-cyan-300 text-gray-700'
+                        ? 'border-azure bg-azure/10 text-azure font-medium'
+                        : 'border-gray-200 hover:border-azure/30 text-gray-700'
                     }`}
                   >
                     {opt.label}
@@ -1363,10 +1624,10 @@ function CreateModal({
                     <button
                       key={s.hora_inicio}
                       onClick={() => { setSelectedSlot(s); setUseCustomTime(false); }}
-                      className={`px-3 py-2 text-sm rounded-lg border transition ${
+                      className={`px-3 py-2 text-sm rounded-lg border transition font-mono ${
                         selectedSlot?.hora_inicio === s.hora_inicio && !useCustomTime
-                          ? 'border-cyan-500 bg-cyan-50 text-cyan-800 font-medium'
-                          : 'border-gray-200 hover:border-cyan-300 text-gray-700'
+                          ? 'border-azure bg-azure/10 text-azure font-medium'
+                          : 'border-gray-200 hover:border-azure/30 text-gray-700'
                       }`}
                     >
                       {formatHora12(s.hora_inicio)}
@@ -1390,15 +1651,15 @@ function CreateModal({
                     <button
                       key={s.hora_inicio}
                       onClick={() => { setSelectedSlot(s); setUseCustomTime(false); }}
-                      className={`px-3 py-2 text-sm rounded-lg border transition text-left ${
+                      className={`px-3 py-2 text-sm rounded-lg border transition text-left font-mono ${
                         selectedSlot?.hora_inicio === s.hora_inicio && !useCustomTime
-                          ? 'border-cyan-500 bg-cyan-50 text-cyan-800 font-medium'
-                          : 'border-gray-200 hover:border-cyan-300 text-gray-700'
+                          ? 'border-azure bg-azure/10 text-azure font-medium'
+                          : 'border-gray-200 hover:border-azure/30 text-gray-700'
                       }`}
                     >
                       <span>{formatHora12(s.hora_inicio)}</span>
                       {s.preferred && (
-                        <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">
+                        <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-sans">
                           preferido
                         </span>
                       )}
@@ -1413,8 +1674,8 @@ function CreateModal({
                 onClick={() => setUseCustomTime(true)}
                 className={`text-sm px-3 py-1.5 rounded-lg border transition ${
                   useCustomTime
-                    ? 'border-cyan-500 bg-cyan-50 text-cyan-800 font-medium'
-                    : 'border-gray-200 text-gray-500 hover:border-cyan-300'
+                    ? 'border-azure bg-azure/10 text-azure font-medium'
+                    : 'border-gray-200 text-gray-500 hover:border-azure/30'
                 }`}
               >
                 Horario personalizado
@@ -1425,9 +1686,9 @@ function CreateModal({
                     type="time"
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent font-mono"
                   />
-                  <span className="text-xs text-gray-400 ml-2">
+                  <span className="text-xs text-gray-400 ml-2 font-mono">
                     Fin: {formatHora12(calcHoraFin(customTime, duracion))}
                   </span>
                 </div>
@@ -1444,12 +1705,12 @@ function CreateModal({
                   type="time"
                   value={customTime}
                   onChange={(e) => setCustomTime(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent font-mono"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Fin</label>
-                <p className="px-3 py-2 text-sm text-gray-600 bg-gray-50 rounded-lg">
+                <p className="px-3 py-2 text-sm text-gray-600 bg-gray-50 rounded-lg font-mono">
                   {formatHora12(calcHoraFin(customTime, duracion))}
                 </p>
               </div>
@@ -1471,7 +1732,7 @@ function CreateModal({
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
               placeholder={isBloqueo ? 'Ej: Almuerzo, Cita médica' : 'Ej: Consulta sobre contrato'}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
           </div>
 
@@ -1484,7 +1745,7 @@ function CreateModal({
                 value={clienteSearch}
                 onChange={(e) => { setClienteSearch(e.target.value); setClienteId(''); }}
                 placeholder="Buscar cliente por nombre..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
               />
               {clientes.length > 0 && !clienteId && (
                 <div className="mt-1 border border-gray-200 rounded-lg max-h-32 overflow-y-auto">
@@ -1510,7 +1771,7 @@ function CreateModal({
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
               rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
             />
           </div>
 
@@ -1529,7 +1790,7 @@ function CreateModal({
           <button
             onClick={handleSubmit}
             disabled={saving || !titulo.trim()}
-            className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
+            className="flex-1 px-4 py-2 bg-gradient-to-r from-azure to-azure-dark text-white rounded-lg shadow-glow-azure hover:shadow-glow-cyan transition-all text-sm font-semibold disabled:opacity-50"
           >
             {saving ? 'Creando...' : 'Crear Evento'}
           </button>
