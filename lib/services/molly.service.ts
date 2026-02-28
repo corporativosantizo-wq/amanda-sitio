@@ -19,6 +19,10 @@ import {
   formatAgendaForTelegram,
   formatAvailabilityForTelegram,
   formatDateSpanish,
+  formatDayViewForTelegram,
+  formatWeekViewForTelegram,
+  formatMultiDayAvailability,
+  getNextBusinessDays,
 } from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
@@ -726,6 +730,82 @@ export async function getAvailability(
   const slots = await findFreeSlots(targetDate);
   const label = formatDateSpanish(targetDate);
   return formatAvailabilityForTelegram(slots, label);
+}
+
+// ── Enhanced calendar views for Telegram ──────────────────────────────────
+
+/** /hoy or /mañana — rich day view with emojis, stats, free slots */
+export async function getDayView(
+  offset: 0 | 1,
+): Promise<string> {
+  const date = new Date();
+  if (offset === 1) date.setDate(date.getDate() + 1);
+
+  const { start, end } = getDayBounds(date);
+  const events = await getCalendarEvents(start, end);
+
+  // Count free slots for the footer
+  let freeSlotCount = 0;
+  try {
+    const slots = await findFreeSlots(date);
+    freeSlotCount = slots.length;
+  } catch { /* weekend or error */ }
+
+  return formatDayViewForTelegram(events, date, freeSlotCount);
+}
+
+/** /semana — compact week overview grouped by day */
+export async function getWeekView(): Promise<string> {
+  const now = new Date();
+  // Start from Monday of current week
+  const dow = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const { start } = getDayBounds(monday);
+  const { end } = getDayBounds(sunday);
+  const events = await getCalendarEvents(start, end);
+
+  // Group by date string
+  const byDay = new Map<string, typeof events>();
+  for (const e of events) {
+    const dateStr = e.start.substring(0, 10);
+    if (!byDay.has(dateStr)) byDay.set(dateStr, []);
+    byDay.get(dateStr)!.push(e);
+  }
+
+  return formatWeekViewForTelegram(byDay, monday, sunday);
+}
+
+/** /libre — availability for next 3 business days */
+export async function getMultiDayAvailability(): Promise<string> {
+  const now = new Date();
+  // Start from today if weekday, otherwise next business day
+  const startDate = new Date(now);
+  while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+    startDate.setDate(startDate.getDate() + 1);
+  }
+
+  // Get today + next 2 business days
+  const dates = [new Date(startDate)];
+  const nextDays = getNextBusinessDays(startDate, 2);
+  dates.push(...nextDays);
+
+  const daySlots: Array<{ date: Date; slots: Awaited<ReturnType<typeof findFreeSlots>> }> = [];
+  for (const d of dates) {
+    try {
+      const slots = await findFreeSlots(d);
+      daySlots.push({ date: d, slots });
+    } catch {
+      daySlots.push({ date: d, slots: [] });
+    }
+  }
+
+  return formatMultiDayAvailability(daySlots);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ import {
   sendTelegramMessage,
   isAuthorizedChat,
 } from '@/lib/molly/telegram';
-import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability } from '@/lib/services/molly.service';
+import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability, getDayView, getWeekView, getMultiDayAvailability } from '@/lib/services/molly.service';
 import { createCalendarEvent } from '@/lib/services/outlook.service';
 import { crearTarea, listarTareas, completarTarea, migrarTarea, resumenTareas } from '@/lib/services/tareas.service';
 import { HORARIOS, CategoriaTarea, EstadoTarea } from '@/lib/types';
@@ -76,6 +76,25 @@ async function handleCallbackQuery(query: any): Promise<void> {
   await logCommand(String(chatId), `callback:${data}`, {});
 
   try {
+    // Inline button shortcuts (from /hoy, /semana, /libre)
+    if (data.startsWith('cmd_')) {
+      await answerCallbackQuery(query.id);
+      if (data === 'cmd_crear') { clearConversation(); await startCreateFlow(); }
+      else if (data === 'cmd_hoy') {
+        const msg = await getDayView(0);
+        await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+      }
+      else if (data === 'cmd_semana') {
+        const msg = await getWeekView();
+        await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+      }
+      else if (data === 'cmd_libre') {
+        const msg = await getMultiDayAvailability();
+        await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+      }
+      return;
+    }
+
     // Calendar flow callbacks
     if (data.startsWith('cal_type:') || data.startsWith('cal_day:') || data.startsWith('cal_slot:')) {
       await answerCallbackQuery(query.id);
@@ -187,12 +206,62 @@ async function handleTextMessage(message: any): Promise<void> {
 
   // ── Calendar commands ────────────────────────────────────────────────
 
-  if (text === '/semana') {
+  if (text === '/hoy') {
     try {
-      const msg = await getAgenda('semana');
-      await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+      const msg = await getDayView(0);
+      await sendTelegramMessage(msg, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '+ Crear evento', callback_data: 'cmd_crear' }, { text: 'Ver semana', callback_data: 'cmd_semana' }, { text: 'Disponibilidad', callback_data: 'cmd_libre' }],
+        ] },
+      });
     } catch (err: any) {
       await sendTelegramMessage(`Error obteniendo agenda: ${err.message}`);
+    }
+    return;
+  }
+
+  if (text === '/mañana' || text === '/manana') {
+    try {
+      const msg = await getDayView(1);
+      await sendTelegramMessage(msg, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '+ Crear evento', callback_data: 'cmd_crear' }, { text: 'Ver semana', callback_data: 'cmd_semana' }, { text: 'Disponibilidad', callback_data: 'cmd_libre' }],
+        ] },
+      });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo agenda: ${err.message}`);
+    }
+    return;
+  }
+
+  if (text === '/semana') {
+    try {
+      const msg = await getWeekView();
+      await sendTelegramMessage(msg, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '📅 Hoy', callback_data: 'cmd_hoy' }, { text: '+ Crear evento', callback_data: 'cmd_crear' }],
+        ] },
+      });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo agenda: ${err.message}`);
+    }
+    return;
+  }
+
+  if (text === '/libre') {
+    try {
+      const msg = await getMultiDayAvailability();
+      await sendTelegramMessage(msg, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '+ Crear evento', callback_data: 'cmd_crear' }, { text: '📅 Hoy', callback_data: 'cmd_hoy' }],
+        ] },
+      });
+    } catch (err: any) {
+      await sendTelegramMessage(`Error obteniendo disponibilidad: ${err.message}`);
     }
     return;
   }
@@ -301,10 +370,11 @@ async function handleTextMessage(message: any): Promise<void> {
     await sendTelegramMessage(
       `<b>Comandos disponibles:</b>\n\n` +
       `<b>Calendario:</b>\n` +
-      `/agenda — agenda de hoy\n` +
-      `/agenda mañana — agenda de mañana\n` +
-      `/semana — agenda de la semana\n` +
-      `/disponibilidad — slots libres\n` +
+      `/hoy — resumen visual de hoy\n` +
+      `/mañana — resumen de mañana\n` +
+      `/semana — vista compacta de la semana\n` +
+      `/libre — disponibilidad 3 días\n` +
+      `/disponibilidad [fecha] — slots de un día\n` +
       `/crear — crear evento\n` +
       `/cancelar — cancelar evento de hoy\n\n` +
       `<b>Tareas:</b>\n` +

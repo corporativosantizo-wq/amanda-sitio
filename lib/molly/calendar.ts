@@ -370,3 +370,165 @@ export function formatDateSpanish(date: Date): string {
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   return `${days[date.getDay()]} ${date.getDate()} de ${months[date.getMonth()]}`;
 }
+
+const DAY_NAMES_UPPER = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
+const DAY_ABBR = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
+const MONTH_NAMES_UPPER = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+
+/** Emoji for event based on subject keywords */
+function eventEmoji(subject: string): string {
+  const s = subject.toLowerCase();
+  if (s.includes('[clase]')) return '🟡';
+  if (s.includes('audiencia') || s.includes('diligencia')) return '🏛️';
+  if (s.includes('consulta')) return '⚖️';
+  if (s.includes('seguimiento')) return '🔄';
+  if (s.includes('capacita')) return '✦';
+  if (s.includes('reunión') || s.includes('reunion')) return '🤝';
+  if (s.includes('bloqueo') || s.includes('personal') || s.includes('mover') || s.includes('almuerzo')) return '◼';
+  return '📌';
+}
+
+/** Format HH:MM (24h compact) from ISO */
+function fmtHHMM(isoStr: string): string {
+  const d = new Date(isoStr);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ── Enhanced day view for /hoy and /mañana ──────────────────────────────
+
+export function formatDayViewForTelegram(
+  events: CalendarEvent[],
+  date: Date,
+  freeSlotCount: number,
+): string {
+  const dayName = DAY_NAMES_UPPER[date.getDay()];
+  const dayNum = date.getDate();
+  const monthName = MONTH_NAMES_UPPER[date.getMonth()];
+  const year = date.getFullYear();
+
+  let msg = `📅 <b>${dayName} ${dayNum} ${monthName} ${year}</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+  // Deep work block indicator (8:00-14:00 on weekdays)
+  const dow = date.getDay();
+  if (dow >= 1 && dow <= 5) {
+    msg += `☀ 8:00–14:00 Trabajo profundo\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  }
+
+  const timed = events.filter((e: CalendarEvent) => !e.isAllDay);
+  const allDay = events.filter((e: CalendarEvent) => e.isAllDay);
+
+  if (allDay.length > 0) {
+    for (const e of allDay) {
+      msg += `🔵 <b>Todo el día:</b> ${esc(e.subject)}\n`;
+    }
+  }
+
+  if (timed.length === 0 && allDay.length === 0) {
+    msg += `\nSin eventos programados ✨\n`;
+  } else {
+    for (const e of timed) {
+      const emoji = eventEmoji(e.subject);
+      const cost = e.subject.toLowerCase().includes('consulta') ? ' (Q500)' : '';
+      msg += `${emoji} ${fmtHHMM(e.start)} ${esc(e.subject)}${cost}\n`;
+    }
+  }
+
+  // Footer stats
+  const totalBilling = timed.filter((e: CalendarEvent) => e.subject.toLowerCase().includes('consulta')).length * 500;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📊 ${timed.length} evento${timed.length !== 1 ? 's' : ''}`;
+  if (totalBilling > 0) msg += ` | Q${totalBilling.toLocaleString('es-GT')} facturación`;
+  msg += ` | ${freeSlotCount} slot${freeSlotCount !== 1 ? 's' : ''} libre${freeSlotCount !== 1 ? 's' : ''}`;
+
+  return msg;
+}
+
+// ── Compact week view for /semana ───────────────────────────────────────
+
+export function formatWeekViewForTelegram(
+  eventsByDay: Map<string, CalendarEvent[]>,
+  weekStart: Date,
+  weekEnd: Date,
+): string {
+  const startDay = weekStart.getDate();
+  const endDay = weekEnd.getDate();
+  const startMonth = MONTH_NAMES_UPPER[weekStart.getMonth()].substring(0, 3);
+  const endMonth = MONTH_NAMES_UPPER[weekEnd.getMonth()].substring(0, 3);
+  const dateRange = weekStart.getMonth() === weekEnd.getMonth()
+    ? `${startDay} — ${endDay} ${startMonth}`
+    : `${startDay} ${startMonth} — ${endDay} ${endMonth}`;
+
+  let msg = `📅 <b>SEMANA ${dateRange}</b>\n`;
+
+  let totalEvents = 0;
+  let totalAudiencias = 0;
+  let totalBilling = 0;
+
+  const d = new Date(weekStart);
+  for (let i = 0; i < 7; i++) {
+    const dateStr = formatDateLocal(d);
+    const dayEvents = eventsByDay.get(dateStr) ?? [];
+    const abbr = DAY_ABBR[d.getDay()];
+    const num = d.getDate();
+
+    const timed = dayEvents.filter((e: CalendarEvent) => !e.isAllDay);
+
+    if (timed.length === 0) {
+      msg += `${abbr} ${num}: <i>sin eventos</i>\n`;
+    } else {
+      const summaries = timed.slice(0, 3).map((e: CalendarEvent) => {
+        const emoji = eventEmoji(e.subject);
+        const shortSubject = e.subject.length > 20 ? e.subject.substring(0, 18) + '…' : e.subject;
+        return `${emoji} ${esc(shortSubject)} ${fmtHHMM(e.start)}`;
+      });
+      const extra = timed.length > 3 ? ` +${timed.length - 3}` : '';
+      msg += `${abbr} ${num}: ${summaries.join(' | ')}${extra}\n`;
+    }
+
+    for (const e of timed) {
+      totalEvents++;
+      const s = e.subject.toLowerCase();
+      if (s.includes('audiencia') || s.includes('diligencia')) totalAudiencias++;
+      if (s.includes('consulta')) totalBilling += 500;
+    }
+
+    d.setDate(d.getDate() + 1);
+  }
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📊 ${totalEvents} eventos`;
+  if (totalAudiencias > 0) msg += ` | ${totalAudiencias} audiencia${totalAudiencias !== 1 ? 's' : ''}`;
+  if (totalBilling > 0) msg += ` | Q${totalBilling.toLocaleString('es-GT')}`;
+
+  return msg;
+}
+
+// ── Multi-day availability for /libre ───────────────────────────────────
+
+export function formatMultiDayAvailability(
+  daySlots: Array<{ date: Date; slots: FreeSlot[] }>,
+): string {
+  let msg = `🟢 <b>DISPONIBILIDAD</b>\n`;
+
+  for (const { date, slots } of daySlots) {
+    const abbr = DAY_ABBR[date.getDay()];
+    const dayNum = date.getDate();
+    const monthAbbr = MONTH_NAMES_UPPER[date.getMonth()].substring(0, 3);
+
+    msg += `\n<b>${abbr} ${dayNum} ${monthAbbr}:</b>\n`;
+    if (slots.length === 0) {
+      msg += `  Sin slots disponibles\n`;
+    } else {
+      for (const slot of slots) {
+        const dur = slot.durationMin;
+        const durLabel = dur >= 60 ? `${(dur / 60).toFixed(1).replace('.0', '')}h` : `${dur} min`;
+        const star = slot.preferred ? ' ⭐' : '';
+        msg += `  • ${fmtHHMM(slot.start)} – ${fmtHHMM(slot.end)} (${durLabel})${star}\n`;
+      }
+    }
+  }
+
+  return msg;
+}
