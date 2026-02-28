@@ -184,6 +184,8 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
     { label: 'Interna', color: 'bg-yellow-100 text-yellow-700' },
     { label: 'Externa', color: 'bg-yellow-200 text-yellow-900' },
     { label: 'Teams', color: 'bg-yellow-100 text-yellow-700' },
+    { label: 'Cátedra Virtual', color: 'bg-amber-100 text-amber-800' },
+    { label: 'Cátedra Presencial', color: 'bg-amber-200 text-amber-900' },
   ],
   bloqueo_personal: [
     { label: 'Personal', color: 'bg-gray-100 text-gray-600' },
@@ -210,6 +212,15 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
   }
 
   const t = (cita.titulo + ' ' + (cita.descripcion ?? '')).toLowerCase();
+  const titulo = cita.titulo ?? '';
+
+  // Detect [CLASE] prefix from Outlook events
+  if (titulo.includes('[CLASE]')) {
+    const reunionSubs = SUBCATEGORIAS.reunion;
+    if (titulo.includes('[VIRTUAL]')) return reunionSubs[3]; // Cátedra Virtual
+    if (titulo.includes('[PRESENCIAL]')) return reunionSubs[4]; // Cátedra Presencial
+    return reunionSubs[3]; // Default to Virtual
+  }
 
   switch (cita.tipo) {
     case 'consulta_nueva':
@@ -224,6 +235,11 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
       if (t.includes('mercantil')) return subs[4];
       return subs[0]; // Civil default
     case 'reunion':
+      if (titulo.includes('cátedra') || titulo.includes('catedra') || t.includes('universidad')) {
+        if (t.includes('virtual')) return subs[3];
+        if (t.includes('presencial')) return subs[4];
+        return subs[3];
+      }
       if (cita.teams_link) return subs[2]; // Teams
       if (t.includes('intern')) return subs[0];
       return subs[1]; // Externa default
