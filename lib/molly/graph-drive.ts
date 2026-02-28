@@ -3,7 +3,7 @@
 // Lectura de archivos de OneDrive via Microsoft Graph API (client_credentials)
 // ============================================================================
 
-import { getAppToken } from '@/lib/services/outlook.service';
+import { getAppToken, invalidateAppToken } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -60,12 +60,7 @@ export async function searchDriveFiles(
   if (!res.ok) {
     const errText = await res.text();
     console.error(`[graph-drive] SEARCH ERROR ${res.status} for ${account}:`, errText);
-    // If 403, force token cache invalidation for next retry
-    if (res.status === 403) {
-      const { invalidateAppToken } = await import('@/lib/services/outlook.service');
-      invalidateAppToken();
-      console.warn(`[graph-drive] Token cache invalidado por 403 — reintento usará token nuevo`);
-    }
+    if (res.status === 403) { invalidateAppToken(); console.warn('[graph-drive] Token cache invalidado por 403'); }
     throw new Error(`Graph Drive search error ${res.status}: ${errText.substring(0, 200)}`);
   }
 
@@ -197,10 +192,7 @@ export async function listFolderContents(
   if (!res.ok) {
     const errText = await res.text();
     console.error(`[graph-drive] LIST ERROR ${res.status} for ${account}:`, errText);
-    if (res.status === 403) {
-      const { invalidateAppToken } = await import('@/lib/services/outlook.service');
-      invalidateAppToken();
-    }
+    if (res.status === 403) { invalidateAppToken(); console.warn('[graph-drive] Token cache invalidado por 403'); }
     throw new Error(`Graph Drive list error ${res.status}: ${errText.substring(0, 200)}`);
   }
 
@@ -218,4 +210,42 @@ export async function listFolderContents(
 
   console.log(`[graph-drive] LIST: ${items.length} items en ${folderPath ?? '/'}`);
   return items;
+}
+
+// ── Diagnostic: test drive access at each level ─────────────────────────
+
+export async function testDriveAccess(account: MailboxAlias) {
+  invalidateAppToken(); // force fresh token
+  const token = await getAppToken();
+  const GRAPH = 'https://graph.microsoft.com/v1.0';
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const endpoints = [
+    { label: 'GET /users/{account}/drive', url: `${GRAPH}/users/${account}/drive` },
+    { label: 'GET /users/{account}/drive/root', url: `${GRAPH}/users/${account}/drive/root` },
+    { label: 'GET /users/{account}/drive/root/children?$top=3', url: `${GRAPH}/users/${account}/drive/root/children?$top=3` },
+    { label: "GET /users/{account}/drive/root/search(q='test')", url: `${GRAPH}/users/${account}/drive/root/search(q='test')?$top=3` },
+  ];
+
+  const results: { label: string; status: number; ok: boolean; body: any }[] = [];
+
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(ep.url, { headers });
+      const text = await res.text();
+      let body: any;
+      try { body = JSON.parse(text); } catch { body = text.substring(0, 500); }
+      results.push({ label: ep.label, status: res.status, ok: res.ok, body: res.ok ? summarize(body) : body });
+    } catch (err: any) {
+      results.push({ label: ep.label, status: 0, ok: false, body: err.message });
+    }
+  }
+
+  return results;
+}
+
+function summarize(body: any): any {
+  if (body?.value) return { count: body.value.length, items: body.value.slice(0, 3).map((i: any) => i.name ?? i.id) };
+  if (body?.id) return { id: body.id, name: body.name, driveType: body.driveType, quota: body.quota ? 'present' : 'none' };
+  return body;
 }
