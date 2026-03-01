@@ -46,7 +46,7 @@ interface NavItem {
   name: string
   href: string
   modulo?: Modulo
-  icon: string  // SVG path d
+  icon: string
   children?: { name: string; href: string }[]
 }
 
@@ -171,7 +171,7 @@ function Clock() {
   return <span className="font-mono text-xs" style={{ color: '#8494A7' }}>{time}</span>
 }
 
-// ── Arturia button component ────────────────────────────────────────────────
+// ── Arturia button (desktop grid) ───────────────────────────────────────────
 
 function ArturiaButton({
   href,
@@ -207,15 +207,14 @@ function ArturiaButton({
       ? 'inset 0 2px 4px rgba(0,0,0,0.08), inset 0 1px 2px rgba(0,0,0,0.04)'
       : '0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7)',
     borderRadius: 11,
-    transform: pressed
-      ? 'scale(0.97) translateY(1px)'
-      : undefined,
+    transform: pressed ? 'scale(0.97) translateY(1px)' : undefined,
     transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
   }
 
   return (
     <Link
       href={href}
+      title={label}
       onClick={(e) => {
         if (onClick) {
           e.preventDefault()
@@ -226,7 +225,7 @@ function ArturiaButton({
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       onMouseLeave={() => setPressed(false)}
-      className="arturia-btn relative flex items-center gap-2 px-2.5 py-2 text-xs select-none"
+      className="arturia-btn relative flex items-center gap-1.5 px-2 py-2 select-none"
       style={baseStyle}
     >
       {/* LED indicator */}
@@ -243,7 +242,7 @@ function ArturiaButton({
       )}
 
       <svg
-        className="w-4 h-4 flex-shrink-0"
+        className="w-3.5 h-3.5 flex-shrink-0"
         fill="none"
         stroke={active ? color : '#64748B'}
         viewBox="0 0 24 24"
@@ -258,12 +257,101 @@ function ArturiaButton({
         style={{
           color: active ? '#1E293B' : '#475569',
           fontWeight: active ? 700 : 500,
-          fontSize: '11.5px',
+          fontSize: 10.5,
         }}
       >
         {label}
       </span>
 
+      {hasChevron && (
+        <svg
+          className="w-2.5 h-2.5 ml-auto flex-shrink-0 transition-transform duration-150"
+          style={{
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            stroke: active ? color : '#94A3B8',
+          }}
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M9 5l7 7-7 7" />
+        </svg>
+      )}
+    </Link>
+  )
+}
+
+// ── Mobile nav row (single column, full label) ──────────────────────────────
+
+function MobileNavRow({
+  href,
+  active,
+  color,
+  icon,
+  label,
+  hasChevron,
+  expanded,
+  onClick,
+  onNavigate,
+}: {
+  href: string
+  active: boolean
+  color: string
+  icon: string
+  label: string
+  hasChevron?: boolean
+  expanded?: boolean
+  onClick?: () => void
+  onNavigate?: () => void
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={(e) => {
+        if (onClick) {
+          e.preventDefault()
+          onClick()
+        }
+        onNavigate?.()
+      }}
+      className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150"
+      style={{
+        background: active ? `${color}0C` : 'transparent',
+      }}
+    >
+      {active && (
+        <span
+          className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-sm"
+          style={{
+            width: 3,
+            height: 16,
+            background: color,
+            boxShadow: `0 0 6px ${color}80`,
+          }}
+        />
+      )}
+      <svg
+        className="w-[18px] h-[18px] flex-shrink-0"
+        fill="none"
+        stroke={active ? color : '#64748B'}
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={icon} />
+      </svg>
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: active ? 600 : 400,
+          color: active ? '#1A2332' : '#475569',
+        }}
+      >
+        {label}
+      </span>
       {hasChevron && (
         <svg
           className="w-3 h-3 ml-auto flex-shrink-0 transition-transform duration-150"
@@ -284,7 +372,7 @@ function ArturiaButton({
   )
 }
 
-// ── Quick action pad ────────────────────────────────────────────────────────
+// ── Quick action pad (desktop) ──────────────────────────────────────────────
 
 function QuickPad({
   href,
@@ -350,6 +438,121 @@ function QuickPad({
   )
 }
 
+// ── Quick action icon (mobile compact) ──────────────────────────────────────
+
+function QuickIconMobile({
+  href,
+  active,
+  color,
+  icon,
+  label,
+  onNavigate,
+}: {
+  href: string
+  active: boolean
+  color: string
+  icon: string
+  label: string
+  onNavigate?: () => void
+}) {
+  return (
+    <Link
+      href={href}
+      title={label}
+      onClick={() => onNavigate?.()}
+      className="flex items-center justify-center rounded-lg"
+      style={{
+        width: 40,
+        height: 40,
+        background: active ? `${color}15` : 'linear-gradient(180deg, #F8F9FB 0%, #EEF1F5 100%)',
+        border: active ? `1.5px solid ${color}40` : '1.5px solid rgba(0,0,0,0.06)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+      }}
+    >
+      <svg
+        className="w-[18px] h-[18px]"
+        fill="none"
+        stroke={active ? color : '#64748B'}
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={icon} />
+      </svg>
+    </Link>
+  )
+}
+
+// ── Expanded children list ──────────────────────────────────────────────────
+
+function ChildrenList({
+  children,
+  color,
+  pathname,
+  onNavigate,
+  isMobile,
+}: {
+  children: { name: string; href: string }[]
+  color: string
+  pathname: string
+  onNavigate: () => void
+  isMobile: boolean
+}) {
+  return (
+    <div style={{ paddingLeft: isMobile ? 16 : 24 }} className="mt-1.5 space-y-0.5">
+      {children.map((child) => {
+        const childActive = pathname === child.href || pathname.startsWith(child.href + '/')
+        return (
+          <Link
+            key={child.href}
+            href={child.href}
+            onClick={onNavigate}
+            className="relative flex items-center cursor-pointer transition-all duration-150"
+            style={{
+              padding: '7px 12px 7px 24px',
+              borderRadius: 8,
+              background: childActive ? `${color}0F` : 'transparent',
+            }}
+            onMouseEnter={(e) => {
+              if (!childActive) {
+                e.currentTarget.style.background = `${color}0A`
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!childActive) {
+                e.currentTarget.style.background = 'transparent'
+              }
+            }}
+          >
+            {/* Mini LED */}
+            {childActive && (
+              <span
+                className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-sm"
+                style={{
+                  width: 3,
+                  height: 12,
+                  background: color,
+                  boxShadow: `0 0 6px ${color}80`,
+                }}
+              />
+            )}
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: childActive ? 600 : 400,
+                color: childActive ? '#1A2332' : '#6B7C93',
+              }}
+            >
+              {child.name}
+            </span>
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Inner layout ────────────────────────────────────────────────────────────
 
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
@@ -400,8 +603,6 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const rolLabel = user ? (ROL_LABELS[user.rol] ?? user.rol) : 'Panel Admin'
   const closeMobile = () => setSidebarOpen(false)
 
-  // ── Sidebar styles ──
-
   const sidebarBg: React.CSSProperties = {
     background: 'linear-gradient(180deg, #F5F7FA 0%, #ECF0F5 40%, #E4E8EE 100%)',
     borderRight: '1px solid #D1D6DE',
@@ -416,13 +617,14 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
   const sidebarContent = (
     <div className="flex flex-col h-full" style={brushedTexture}>
-      {/* Profile header */}
+      {/* ── Profile header ── */}
       <div
         className="flex items-center gap-3 px-5 py-4"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
       >
+        {/* Desktop: 42px avatar */}
         <div
-          className="flex items-center justify-center flex-shrink-0"
+          className="hidden md:flex items-center justify-center flex-shrink-0"
           style={{
             width: 42,
             height: 42,
@@ -431,6 +633,18 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           }}
         >
           <span className="text-white font-bold text-sm">AS</span>
+        </div>
+        {/* Mobile: 32px avatar */}
+        <div
+          className="flex md:hidden items-center justify-center flex-shrink-0"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            background: 'linear-gradient(135deg, #3B82F6 0%, #22D3EE 100%)',
+          }}
+        >
+          <span className="text-white font-bold text-xs">AS</span>
         </div>
         <div className="min-w-0 flex-1">
           <div style={{ color: '#2563EB', fontWeight: 600, fontSize: 14 }} className="truncate">
@@ -448,13 +662,14 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
             >
               {rolLabel}
             </span>
-            <Clock />
+            {/* Clock: desktop only */}
+            <span className="hidden md:inline"><Clock /></span>
           </div>
         </div>
       </div>
 
-      {/* Quick action pads */}
-      <div className="flex gap-2 px-4 py-3">
+      {/* ── Quick action pads — desktop: full pads, mobile: compact icons ── */}
+      <div className="hidden md:flex gap-2 px-4 py-3">
         {QUICK_ACTIONS.filter((qa) => canSee(qa.modulo)).map((qa) => (
           <QuickPad
             key={qa.href}
@@ -467,8 +682,21 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           />
         ))}
       </div>
+      <div className="flex md:hidden gap-2 px-4 py-2 justify-center">
+        {QUICK_ACTIONS.filter((qa) => canSee(qa.modulo)).map((qa) => (
+          <QuickIconMobile
+            key={qa.href}
+            href={qa.href}
+            active={isActive(qa.href)}
+            color={qa.color}
+            icon={qa.icon}
+            label={qa.name}
+            onNavigate={closeMobile}
+          />
+        ))}
+      </div>
 
-      {/* Engraved divider */}
+      {/* ── Engraved divider ── */}
       <div className="px-4">
         <div
           style={{
@@ -484,7 +712,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
         />
       </div>
 
-      {/* Scrollable sections */}
+      {/* ── Scrollable sections ── */}
       <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-4" style={{ scrollbarWidth: 'thin' }}>
         {SECTIONS.map((section) => {
           const visibleItems = section.items.filter((item) => canSee(item.modulo))
@@ -492,8 +720,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
           return (
             <div key={section.key}>
-              {/* Section label */}
-              <div className="flex items-center gap-2 mb-2 px-1">
+              {/* Section label — desktop only */}
+              <div className="hidden md:flex items-center gap-2 mb-2 px-1">
                 <span
                   className="flex-shrink-0"
                   style={{
@@ -517,8 +745,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 </span>
               </div>
 
-              {/* 2-column grid */}
-              <div className="grid grid-cols-2 gap-1.5">
+              {/* Desktop: 2-column grid */}
+              <div className="hidden md:grid grid-cols-2 gap-1.5">
                 {visibleItems.map((item) => {
                   const hasKids = item.children && item.children.length > 0
                   const isExpanded = expandedGroup === item.href
@@ -543,59 +771,72 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 })}
               </div>
 
-              {/* Expanded children (below the grid, full-width) */}
-              {visibleItems.map((item) => {
-                if (!item.children || expandedGroup !== item.href) return null
-                const kids = filterChildren(item)
-                if (kids.length === 0) return null
+              {/* Desktop: expanded children below grid */}
+              <div className="hidden md:block">
+                {visibleItems.map((item) => {
+                  if (!item.children || expandedGroup !== item.href) return null
+                  const kids = filterChildren(item)
+                  if (kids.length === 0) return null
+                  return (
+                    <ChildrenList
+                      key={item.href + '-children'}
+                      color={section.color}
+                      pathname={pathname}
+                      onNavigate={closeMobile}
+                      isMobile={false}
+                    >
+                      {kids}
+                    </ChildrenList>
+                  )
+                })}
+              </div>
 
-                return (
-                  <div key={item.href + '-children'} className="mt-1.5 ml-3 space-y-0.5">
-                    {kids.map((child) => {
-                      const childActive = pathname === child.href || pathname.startsWith(child.href + '/')
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={closeMobile}
-                          className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-150"
-                          style={{
-                            background: childActive ? `${section.color}0A` : 'transparent',
-                          }}
-                        >
-                          {/* Mini LED */}
-                          {childActive && (
-                            <span
-                              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-sm"
-                              style={{
-                                width: 3,
-                                height: 12,
-                                background: section.color,
-                                boxShadow: `0 0 6px ${section.color}80`,
-                              }}
-                            />
-                          )}
-                          <span
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: childActive ? 600 : 400,
-                              color: childActive ? section.color : '#64748B',
-                            }}
+              {/* Mobile: single-column list */}
+              <div className="md:hidden space-y-0.5">
+                {visibleItems.map((item) => {
+                  const hasKids = item.children && item.children.length > 0
+                  const isExpanded = expandedGroup === item.href
+                  const itemActive = isActive(item.href)
+
+                  return (
+                    <div key={item.href}>
+                      <MobileNavRow
+                        href={item.href}
+                        active={itemActive}
+                        color={section.color}
+                        icon={item.icon}
+                        label={item.name}
+                        hasChevron={hasKids}
+                        expanded={isExpanded}
+                        onNavigate={hasKids ? undefined : closeMobile}
+                        onClick={hasKids ? () => {
+                          setExpandedGroup(isExpanded ? null : item.href)
+                        } : undefined}
+                      />
+                      {hasKids && isExpanded && (() => {
+                        const kids = filterChildren(item)
+                        if (kids.length === 0) return null
+                        return (
+                          <ChildrenList
+                            color={section.color}
+                            pathname={pathname}
+                            onNavigate={closeMobile}
+                            isMobile={true}
                           >
-                            {child.name}
-                          </span>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )
-              })}
+                            {kids}
+                          </ChildrenList>
+                        )
+                      })()}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )
         })}
       </nav>
 
-      {/* Bottom bar */}
+      {/* ── Bottom bar ── */}
       <div
         className="flex-shrink-0 px-4 py-3 flex items-center gap-2"
         style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
@@ -626,8 +867,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </Link>
         )}
 
-        {/* Molly active indicator */}
-        <div className="flex items-center gap-1.5 ml-auto">
+        {/* Molly active indicator — desktop only */}
+        <div className="hidden md:flex items-center gap-1.5 ml-auto">
           <span
             className="animate-pulse"
             style={{
@@ -642,10 +883,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <span style={{ fontSize: 10, color: '#8494A7', fontWeight: 500 }}>Molly activa</span>
         </div>
 
-        {/* Sitio link */}
+        {/* Sitio link — push right on mobile */}
         <Link
           href="/"
-          className="flex items-center gap-1 ml-2 text-xs transition-colors hover:opacity-80"
+          className="flex items-center gap-1 md:ml-2 ml-auto text-xs transition-colors hover:opacity-80"
           style={{ color: '#8494A7' }}
         >
           <span style={{ fontSize: 11 }}>Sitio</span>
