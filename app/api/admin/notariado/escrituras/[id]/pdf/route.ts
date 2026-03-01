@@ -80,13 +80,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw new EscrituraError('Error al subir archivo a storage', uploadError);
     }
 
-    // Obtener URL pública (o signed URL si el bucket es privado)
-    const { data: urlData } = storageClient
-      .storage
-      .from('legal-docs')
-      .getPublicUrl(nombreArchivo);
-
-    const pdfUrl = urlData.publicUrl;
+    // Store the storage path (not a public URL) — signed URLs generated on demand
+    const pdfUrl = nombreArchivo;
 
     // Registrar en la escritura (trigger cambia estado a 'escaneada')
     const escritura = await subirPDFEscritura(id, {
@@ -151,10 +146,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 function sanitizarNombre(nombre: string): string {
   return nombre
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')  // Quitar acentos
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\.\./g, '_')
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .replace(/_+/g, '_')
-    .toLowerCase();
+    .toLowerCase()
+    .substring(0, 255);
 }
 
 function manejarError(error: unknown) {

@@ -426,9 +426,11 @@ export function sanitizarNombre(nombre: string): string {
   return nombre
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\.\./g, '_')              // prevent path traversal
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .replace(/_+/g, '_')
-    .toLowerCase();
+    .toLowerCase()
+    .substring(0, 255);
 }
 
 async function moverArchivo(oldPath: string, newPath: string) {

@@ -47,13 +47,30 @@ let lastSearchEmails: Array<{
 export async function POST(req: NextRequest) {
   // Always return 200 to prevent Telegram retries
   try {
-    // Validate webhook secret
+    // ── Validation 1: Secret token ───────────────────────────────────────
     if (!validateWebhookSecret(req)) {
-      console.error('[telegram-webhook] Invalid secret token');
+      console.warn('[telegram-webhook] REJECTED: invalid secret token');
       return NextResponse.json({ ok: true });
     }
 
     const body = await req.json();
+
+    // ── Validation 2: Chat ID allowlist ──────────────────────────────────
+    const chatId = String(
+      body.message?.chat?.id ||
+      body.callback_query?.message?.chat?.id ||
+      ''
+    );
+    const updateType = body.callback_query
+      ? `callback:${body.callback_query.data}`
+      : body.message?.text || 'unknown';
+
+    if (!isAuthorizedChat(chatId)) {
+      console.warn(`[telegram-webhook] REJECTED: unauthorized chat_id=${chatId} | update=${updateType}`);
+      return NextResponse.json({ ok: true }); // 200 to prevent Telegram retries
+    }
+
+    console.log(`[telegram-webhook] chat_id=${chatId} | ${updateType}`);
 
     // Handle callback queries (button presses)
     if (body.callback_query) {
@@ -148,6 +165,13 @@ async function handleCallbackQuery(query: any): Promise<void> {
     if (data.startsWith('habit_toggle:')) {
       await answerCallbackQuery(query.id);
       await handleHabitCallback(data);
+      return;
+    }
+
+    // Cobros: trigger recordatorios cron
+    if (data === 'cobros_recordar') {
+      await answerCallbackQuery(query.id, 'Enviando recordatorios...');
+      await handleCobrosRecordar();
       return;
     }
 
@@ -1069,6 +1093,32 @@ async function handleBuscarCommand(query: string): Promise<void> {
   } catch (err: any) {
     console.error('[buscar] Error:', err);
     await sendTelegramMessage(`\u274C Error buscando: ${err.message}`);
+  }
+}
+
+async function handleCobrosRecordar(): Promise<void> {
+  try {
+    const cronUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://papeleo.legal'}/api/cron/recordatorios-cobro`;
+    const res = await fetch(cronUrl, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      await sendTelegramMessage(`\u26A0\uFE0F Error al enviar recordatorios: ${res.status}\n<code>${text.substring(0, 200)}</code>`, { parse_mode: 'HTML' });
+      return;
+    }
+    const data = await res.json();
+    const enviados = data.enviados ?? 0;
+    const errores = data.errores ?? 0;
+    const vencidos = data.vencidos_actualizados ?? 0;
+    let msg = `\u2705 Recordatorios enviados: <b>${enviados}</b>`;
+    if (errores > 0) msg += `\n\u26A0\uFE0F Errores: ${errores}`;
+    if (vencidos > 0) msg += `\n\u{1F534} Cobros marcados vencidos: ${vencidos}`;
+    await sendTelegramMessage(msg, { parse_mode: 'HTML' });
+  } catch (err: any) {
+    console.error('[telegram] Error triggering cobros recordar:', err.message);
+    await sendTelegramMessage(`\u274C Error: ${err.message}`);
   }
 }
 

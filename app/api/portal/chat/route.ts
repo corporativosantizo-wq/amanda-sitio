@@ -7,11 +7,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getPortalSession, SECURITY_HEADERS } from '@/lib/portal/auth';
 import { checkRateLimit } from '@/lib/portal/rate-limit';
 import { obtenerDisponibilidad, crearCita } from '@/lib/services/citas.service';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import type { TipoCita } from '@/lib/types';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+const anthropic = getAnthropicClient();
 
 const PORTAL_SYSTEM_PROMPT = `Eres Astrid Bolaños, Licenciada en Ciencias Jurídicas y Sociales, asistente del bufete Amanda Santizo — Despacho Jurídico, un bufete guatemalteco especializado en derecho internacional, litigios y procedimientos comerciales. Llevas 3 años trabajando en el bufete. Eres amable, profesional y eficiente.
 

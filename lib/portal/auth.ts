@@ -3,7 +3,6 @@
 // Funciones de autenticación del portal de clientes
 // Soporta multi-empresa: un auth_user puede tener múltiples clientes
 // ============================================================================
-import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export interface PortalSession {
@@ -32,19 +31,13 @@ export async function getPortalSession(
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
-  );
+  const db = createAdminClient();
 
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+  } = await db.auth.getUser(token);
   if (error || !user) return null;
-
-  const db = createAdminClient();
 
   // Obtener TODOS los portal_usuarios activos para este auth_user
   let { data: portalUsers } = await db

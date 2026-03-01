@@ -8,6 +8,7 @@ export function GET() {
 import fs from 'fs';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
 import { Packer } from 'docx';
@@ -20,6 +21,8 @@ import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { searchEmails, getConversationThread, stripHtmlToText } from '@/lib/molly/graph-mail';
 import { searchDriveFiles, getFileContent, listFolderContents } from '@/lib/molly/graph-drive';
+import { validateAndSanitizeQuery, logQueryAudit } from '@/lib/security/query-validator';
+import { guardToolExecution } from '@/lib/security/tool-guards';
 import { registrarYConfirmar } from '@/lib/services/pagos.service';
 import { listarTareas, crearTarea, completarTarea, migrarTarea } from '@/lib/services/tareas.service';
 import {
@@ -2655,9 +2658,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY!,
-    });
+    const anthropic = getAnthropicClient();
 
     const tools: Anthropic.Tool[] = [
       {
@@ -3158,8 +3159,25 @@ export async function POST(req: Request) {
           console.log('[AI] Tool:', block.name, ', input:', JSON.stringify(block.input).slice(0, 200));
           let result: string;
           try {
+            // Pre-execution guard: rate limits + input validation
+            const guardError = guardToolExecution(block.name, block.input);
+            if (guardError) {
+              result = guardError;
+              toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+              continue;
+            }
+
             if (block.name === 'consultar_base_datos') {
-              result = await queryDatabase((block.input as any).query);
+              const rawQuery = (block.input as any).query ?? '';
+              const validation = validateAndSanitizeQuery(rawQuery);
+              if (!validation.isValid) {
+                logQueryAudit({ toolName: 'consultar_base_datos', queryInput: rawQuery, validated: false, rejectionReason: validation.reason });
+                result = `Error: Query rechazada — ${validation.reason}. Queries permitidas: clientes_count, facturas_pendientes, cotizaciones_mes, clientes_recientes, gastos_mes, pagos_mes, buscar_contacto:[nombre]`;
+              } else {
+                const t0 = Date.now();
+                result = await queryDatabase(validation.sanitizedQuery);
+                logQueryAudit({ toolName: 'consultar_base_datos', queryInput: rawQuery, validated: true, resultPreview: result.substring(0, 200), executionMs: Date.now() - t0 });
+              }
             } else if (block.name === 'generar_documento') {
               const input = block.input as any;
               if (input.plantilla_id) {

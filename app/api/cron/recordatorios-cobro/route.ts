@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   const db = createAdminClient();
+
   const hoy = new Date().toISOString().split('T')[0];
   const resultados: { cobro_id: string; tipo: string; ok: boolean; detalle: string }[] = [];
 

@@ -7,6 +7,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
+import { validateFile } from '@/lib/security/file-validator';
+
+const AI_UPLOAD_MIME = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/jpeg', 'image/png',
+];
 
 const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3 MB (Graph API inline attachment limit)
 
@@ -50,6 +58,12 @@ export async function POST(req: NextRequest) {
         { error: `Tipo de archivo no permitido (${ext}). Permitidos: PDF, DOCX, DOC, JPG, PNG.` },
         { status: 400 },
       );
+    }
+
+    // Validate MIME type
+    const fileCheck = validateFile(file, { allowedMimeTypes: AI_UPLOAD_MIME, maxSize: MAX_FILE_SIZE });
+    if (!fileCheck.valid) {
+      return NextResponse.json({ error: fileCheck.reason }, { status: 400 });
     }
 
     // Validate size

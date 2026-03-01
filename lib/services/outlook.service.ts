@@ -555,6 +555,12 @@ export async function getAppToken(): Promise<string> {
 
   if (!res.ok) {
     console.error('[getAppToken] ERROR', res.status + ':', text.substring(0, 500));
+
+    // Detect expired client secret (Azure AD error AADSTS7000215)
+    if (text.includes('AADSTS7000215') || text.includes('expired') || text.includes('invalid_client')) {
+      console.error('[getAppToken] CRITICAL: Azure client secret has EXPIRED or is invalid. Molly Mail is DOWN.');
+    }
+
     throw new OutlookError(`Error al obtener app token: ${res.status}`, text);
   }
 

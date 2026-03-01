@@ -3,18 +3,9 @@
 // Molly Brain — clasificación y generación de borradores con Claude
 // ============================================================================
 
-import Anthropic from '@anthropic-ai/sdk';
 import type { MollyClassification, MollyDraftResult, EmailMessage } from '@/lib/types/molly';
-
-// ── Singleton Anthropic client ─────────────────────────────────────────────
-
-let anthropicClient: Anthropic | null = null;
-
-function getClient(): Anthropic {
-  if (anthropicClient) return anthropicClient;
-  anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  return anthropicClient;
-}
+import { sanitizeEmailForLLM } from '@/lib/security/email-sanitizer';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 
 // ── Parse JSON from Claude response (with markdown fence cleanup) ──────────
 
@@ -116,7 +107,7 @@ export async function classifyEmail(
   knownContact?: string | null,
   account?: string,
 ): Promise<MollyClassification> {
-  const client = getClient();
+  const client = getAnthropicClient();
 
   // Build account-aware prompt
   const accountHint = account && ACCOUNT_CLASSIFY[account]
@@ -125,7 +116,11 @@ export async function classifyEmail(
   const prompt = CLASSIFY_PROMPT_BASE + accountHint;
 
   const contactInfo = knownContact ? `\nContacto conocido: ${knownContact}` : '';
-  const userMessage = `De: ${fromEmail}${contactInfo}\nAsunto: ${subject}\n\nCuerpo:\n${bodyText.substring(0, 3000)}`;
+  const { sanitizedContent, riskLevel } = sanitizeEmailForLLM(bodyText);
+  if (riskLevel === 'high') {
+    console.warn('[molly-brain] HIGH RISK email from', fromEmail, '| asunto:', subject.substring(0, 60));
+  }
+  const userMessage = `De: ${fromEmail}${contactInfo}\nAsunto: ${subject}\n\n${sanitizedContent}`;
 
   console.log('[molly-brain] Clasificando email de', fromEmail, '| cuenta:', account ?? 'n/a', '| asunto:', subject.substring(0, 60));
 
@@ -187,11 +182,15 @@ export async function generateDraft(
   recentMessages?: Array<{ from: string; body: string }>,
   account?: string,
 ): Promise<MollyDraftResult> {
-  const client = getClient();
+  const client = getAnthropicClient();
 
   const prompt = buildDraftPrompt(account);
 
-  let context = `Email a responder:\nDe: ${email.from_name || email.from_email} <${email.from_email}>\nAsunto: ${email.subject}\n\nCuerpo:\n${(email.body_text || '').substring(0, 4000)}`;
+  const { sanitizedContent: sanitizedBody, riskLevel } = sanitizeEmailForLLM(email.body_text || '');
+  if (riskLevel === 'high') {
+    console.warn('[molly-brain] HIGH RISK email for draft from', email.from_email, '| asunto:', email.subject.substring(0, 60));
+  }
+  let context = `Email a responder:\nDe: ${email.from_name || email.from_email} <${email.from_email}>\nAsunto: ${email.subject}\n\n${sanitizedBody}`;
 
   if (clientContext) {
     context += `\n\nContexto del cliente:\n${clientContext}`;

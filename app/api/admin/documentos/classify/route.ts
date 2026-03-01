@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { PDFDocument } from 'pdf-lib';
 import mammoth from 'mammoth';
 import {
@@ -104,9 +104,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY!,
-    });
+    const anthropic = getAnthropicClient();
 
     // Paso 1: Verificar que el documento existe y está pendiente
     console.log(`[Classify] Paso 1: Buscando documento en BD...`);

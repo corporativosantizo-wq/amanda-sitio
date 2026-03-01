@@ -99,6 +99,9 @@ async function buildWeeklySummary(): Promise<string> {
     .eq('status', 'enviado')
     .gte('sent_at', `${inicioSemana}T00:00:00`);
 
+  // ── Financial stats
+  const finSection = await buildFinancialSection(inicioSemana, hoy);
+
   // ── Build message
   const completionRate = tareasCreadas > 0
     ? Math.round((tareasCompletadas / tareasCreadas) * 100)
@@ -121,6 +124,8 @@ async function buildWeeklySummary(): Promise<string> {
   msg += `Hilos procesados: ${emailsProcessed ?? 0}\n`;
   msg += `Respuestas enviadas: ${draftsApproved ?? 0}`;
 
+  msg += finSection;
+
   // Motivational note based on completion rate
   msg += '\n\n';
   if (completionRate >= 80) {
@@ -132,4 +137,85 @@ async function buildWeeklySummary(): Promise<string> {
   }
 
   return msg;
+}
+
+// ── Financial section ─────────────────────────────────────────────────────
+
+const fmtQ = (n: number) => `<code>Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}</code>`;
+
+async function buildFinancialSection(inicioSemana: string, hoy: string): Promise<string> {
+  try {
+    // Previous week boundaries for comparison
+    const prevEnd = new Date(inicioSemana + 'T00:00:00');
+    prevEnd.setDate(prevEnd.getDate() - 1);
+    const prevStart = new Date(prevEnd);
+    prevStart.setDate(prevStart.getDate() - 6);
+    const prevStartStr = prevStart.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+    const prevEndStr = prevEnd.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+    // This week: confirmed payments linked to cobros
+    const { data: pagosThisWeek } = await db()
+      .from('pagos')
+      .select('monto')
+      .eq('estado', 'confirmado')
+      .gte('fecha_pago', inicioSemana)
+      .lte('fecha_pago', hoy);
+
+    const cobradoSemana = (pagosThisWeek ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
+
+    // Previous week: confirmed payments for comparison
+    const { data: pagosPrevWeek } = await db()
+      .from('pagos')
+      .select('monto')
+      .eq('estado', 'confirmado')
+      .gte('fecha_pago', prevStartStr)
+      .lte('fecha_pago', prevEndStr);
+
+    const cobradoPrevSemana = (pagosPrevWeek ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
+
+    // Current totals: pending and overdue
+    const { data: cobrosActivos } = await db()
+      .from('cobros')
+      .select('saldo_pendiente, fecha_vencimiento, estado')
+      .not('estado', 'in', '("pagado","cancelado")')
+      .gt('saldo_pendiente', 0);
+
+    let totalPendiente = 0;
+    let totalVencido = 0;
+    let countVencidos = 0;
+
+    for (const c of cobrosActivos ?? []) {
+      const saldo = c.saldo_pendiente ?? 0;
+      totalPendiente += saldo;
+      if (c.estado === 'vencido' || (c.fecha_vencimiento && c.fecha_vencimiento < hoy)) {
+        totalVencido += saldo;
+        countVencidos++;
+      }
+    }
+
+    let section = `\n\n\u{1F4B0} <b>Cobros</b>\n`;
+    section += `\u{1F4B5} Cobrado esta semana: ${fmtQ(cobradoSemana)}`;
+
+    // Comparison vs previous week
+    if (cobradoPrevSemana > 0) {
+      const diff = cobradoSemana - cobradoPrevSemana;
+      const pct = Math.round((diff / cobradoPrevSemana) * 100);
+      const arrow = diff >= 0 ? '\u{1F4C8}' : '\u{1F4C9}';
+      const sign = diff >= 0 ? '+' : '';
+      section += ` ${arrow} ${sign}${pct}% vs anterior`;
+    }
+
+    section += `\n\u{1F4CA} Total pendiente: ${fmtQ(totalPendiente)}`;
+
+    if (countVencidos > 0) {
+      section += `\n\u{1F534} Vencidos (${countVencidos}): ${fmtQ(totalVencido)}`;
+    } else {
+      section += `\n\u2705 Sin cobros vencidos`;
+    }
+
+    return section;
+  } catch (err) {
+    console.error('[resumen-semanal] Error building financial section:', err);
+    return '';
+  }
 }

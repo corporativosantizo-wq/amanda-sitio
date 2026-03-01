@@ -5,10 +5,16 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import mammoth from 'mammoth';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
+import { validateFile } from '@/lib/security/file-validator';
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_MIME = [
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 
 const ANALYSIS_PROMPT = `Eres un experto en documentos legales guatemaltecos. Analiza el siguiente texto extraído de un documento .docx y devuelve ÚNICAMENTE un JSON válido con la estructura de plantilla.
 
@@ -63,6 +69,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solo se aceptan archivos .docx' }, { status: 400 });
     }
 
+    const fileCheck = validateFile(archivo, { allowedMimeTypes: ALLOWED_MIME, maxSize: MAX_FILE_SIZE });
+    if (!fileCheck.valid) {
+      return NextResponse.json({ error: fileCheck.reason }, { status: 400 });
+    }
+
     console.log('[Analizar] Archivo recibido:', archivo.name, '(' + (archivo.size / 1024).toFixed(0) + ' KB)');
 
     // 2. Subir original a Storage
@@ -104,7 +115,7 @@ export async function POST(req: NextRequest) {
     console.log('[Analizar] Texto extraído:', textoExtraido.length, 'caracteres');
 
     // 4. Enviar a Claude para análisis
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+    const anthropic = getAnthropicClient();
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',

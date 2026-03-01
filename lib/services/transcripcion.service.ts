@@ -3,7 +3,7 @@
 // Transcripción de documentos PDF a DOCX usando Claude IA
 // ============================================================================
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { PDFDocument } from 'pdf-lib';
 import {
   Document, Packer, Paragraph, TextRun, Header, Footer,
@@ -45,7 +45,7 @@ export async function transcribirDocumento(
   if (!process.env.ANTHROPIC_API_KEY) throw new DocumentoError('Falta ANTHROPIC_API_KEY.');
 
   const db = createAdminClient();
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const anthropic = getAnthropicClient();
 
   // 1. Get document from DB
   const { data: doc, error: fetchErr } = await db

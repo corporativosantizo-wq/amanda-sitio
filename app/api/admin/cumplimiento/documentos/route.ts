@@ -6,6 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
+import { validateFile } from '@/lib/security/file-validator';
+
+const CUMPLIMIENTO_MIME = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 
 const db = () => createAdminClient();
 
@@ -63,6 +70,11 @@ export async function POST(request: NextRequest) {
     }
     if (tipo === 'docx' && !['docx', 'doc'].includes(ext)) {
       return NextResponse.json({ error: 'Solo se permiten archivos .docx o .doc' }, { status: 400 });
+    }
+
+    const fileCheck = validateFile(file, { allowedMimeTypes: CUMPLIMIENTO_MIME, maxSize: 150 * 1024 * 1024 });
+    if (!fileCheck.valid) {
+      return NextResponse.json({ error: fileCheck.reason }, { status: 400 });
     }
 
     const config = MODULO_CONFIG[modulo as Modulo];

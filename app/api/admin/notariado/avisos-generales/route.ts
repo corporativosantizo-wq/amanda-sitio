@@ -7,6 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
+import { validateFile } from '@/lib/security/file-validator';
+
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
+const ALLOWED_MIME = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 
 const db = () => createAdminClient();
 
@@ -50,6 +57,11 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     if (!['docx', 'pdf'].includes(ext)) {
       return NextResponse.json({ error: 'Solo se permiten archivos DOCX o PDF' }, { status: 400 });
+    }
+
+    const fileCheck = validateFile(file, { allowedMimeTypes: ALLOWED_MIME, maxSize: MAX_FILE_SIZE });
+    if (!fileCheck.valid) {
+      return NextResponse.json({ error: fileCheck.reason }, { status: 400 });
     }
 
     const timestamp = Date.now();

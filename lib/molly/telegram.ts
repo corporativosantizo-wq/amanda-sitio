@@ -3,6 +3,7 @@
 // Telegram Bot — notificaciones y botones para Molly Mail
 // ============================================================================
 
+import { timingSafeEqual } from 'crypto';
 import type { EmailThread, EmailMessage, MollyClassification, EmailDraft, EmailSchedulingIntent } from '@/lib/types/molly';
 import type { FreeSlot } from '@/lib/molly/calendar';
 
@@ -143,8 +144,23 @@ export function validateWebhookSecret(req: Request): boolean {
   const secret = req.headers.get('x-telegram-bot-api-secret-token');
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
 
-  if (!expected || !secret) return false;
-  return secret === expected;
+  if (!expected) {
+    console.error('[telegram] TELEGRAM_WEBHOOK_SECRET not configured');
+    return false;
+  }
+  if (!secret) return false;
+
+  try {
+    const bufA = Buffer.from(secret, 'utf8');
+    const bufB = Buffer.from(expected, 'utf8');
+    if (bufA.length !== bufB.length) {
+      timingSafeEqual(bufB, bufB); // constant time even on length mismatch
+      return false;
+    }
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
 }
 
 // ── Answer callback query (remove loading state) ───────────────────────────
