@@ -534,6 +534,7 @@ async function getRecentThreadMessages(
 export async function approveDraft(
   draftId: string,
   via: ApprovedVia,
+  customBody?: string,
 ): Promise<void> {
   const { data: draft, error } = await db()
     .from('email_drafts')
@@ -546,23 +547,35 @@ export async function approveDraft(
 
   const account = (draft as any).email_threads?.account as MailboxAlias;
 
+  // Use custom body if provided (edited draft)
+  const bodyToSend = customBody ?? draft.body_text;
+  const htmlBody = customBody
+    ? `<p>${customBody.replace(/\n/g, '<br>')}</p>`
+    : (draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`);
+
   // Send email via Graph API
   await sendMail({
     from: account || 'asistente@papeleo.legal',
     to: draft.to_email,
     subject: draft.subject,
-    htmlBody: draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`,
+    htmlBody,
   });
 
-  // Update draft status
+  // Update draft status (+ edited body for historical record)
+  const updatePayload: Record<string, any> = {
+    status: 'enviado',
+    approved_via: via,
+    approved_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (customBody) {
+    updatePayload.body_text = customBody;
+    updatePayload.body_html = htmlBody;
+  }
+
   await db()
     .from('email_drafts')
-    .update({
-      status: 'enviado',
-      approved_via: via,
-      approved_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', draftId);
 
   console.log(`[molly] Borrador ${draftId} aprobado via ${via} y enviado`);

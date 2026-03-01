@@ -72,6 +72,8 @@ export default function MollyMailPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [triggerLoading, setTriggerLoading] = useState(false)
+  const [editingDraft, setEditingDraft] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
 
   const fetchData = useCallback(async () => {
     try {
@@ -101,16 +103,21 @@ export default function MollyMailPage() {
     fetchData()
   }, [fetchData])
 
-  const handleDraftAction = async (draftId: string, action: 'approve' | 'reject') => {
+  const handleDraftAction = async (draftId: string, action: 'approve' | 'reject', customBody?: string) => {
     setActionLoading(draftId)
     try {
+      const payload: Record<string, string> = { draftId, action }
+      if (customBody) payload.custom_body = customBody
+
       const res = await fetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ draftId, action }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         setDrafts((prev) => prev.filter((d) => d.id !== draftId))
+        setEditingDraft(null)
+        setEditContent('')
         fetchData()
       }
     } catch (err) {
@@ -221,31 +228,66 @@ export default function MollyMailPage() {
                     {draft.message?.resumen && (
                       <p className="text-sm text-slate italic mb-2">{draft.message.resumen}</p>
                     )}
-                    <div className="bg-slate-50 rounded-lg p-3 mt-2">
-                      <p className="text-xs text-slate mb-1 font-medium">Borrador propuesto:</p>
-                      <p className="text-sm text-navy whitespace-pre-wrap">
-                        {draft.body_text.length > 300
-                          ? draft.body_text.substring(0, 300) + '...'
-                          : draft.body_text}
-                      </p>
-                    </div>
+                    {editingDraft === draft.id ? (
+                      <textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        className="w-full mt-2 p-3 text-sm border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-h-[120px] resize-y"
+                      />
+                    ) : (
+                      <div className="bg-slate-50 rounded-lg p-3 mt-2">
+                        <p className="text-xs text-slate mb-1 font-medium">Borrador propuesto:</p>
+                        <p className="text-sm text-navy whitespace-pre-wrap">
+                          {draft.body_text.length > 300
+                            ? draft.body_text.substring(0, 300) + '...'
+                            : draft.body_text}
+                        </p>
+                      </div>
+                    )}
                     <p className="text-xs text-slate mt-2">{formatDate(draft.created_at)}</p>
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => handleDraftAction(draft.id, 'approve')}
-                      disabled={actionLoading === draft.id}
-                      className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                    >
-                      Aprobar
-                    </button>
-                    <button
-                      onClick={() => handleDraftAction(draft.id, 'reject')}
-                      disabled={actionLoading === draft.id}
-                      className="px-4 py-2 bg-red-100 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
-                    >
-                      Rechazar
-                    </button>
+                    {editingDraft === draft.id ? (
+                      <>
+                        <button
+                          onClick={() => handleDraftAction(draft.id, 'approve', editContent)}
+                          disabled={actionLoading === draft.id}
+                          className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                        >
+                          Enviar editado
+                        </button>
+                        <button
+                          onClick={() => { setEditingDraft(null); setEditContent('') }}
+                          className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleDraftAction(draft.id, 'approve')}
+                          disabled={actionLoading === draft.id}
+                          className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                        >
+                          Aprobar
+                        </button>
+                        <button
+                          onClick={() => { setEditingDraft(draft.id); setEditContent(draft.body_text) }}
+                          disabled={actionLoading === draft.id}
+                          className="px-4 py-2 bg-blue-50 text-blue-600 text-sm font-semibold rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDraftAction(draft.id, 'reject')}
+                          disabled={actionLoading === draft.id}
+                          className="px-4 py-2 bg-red-100 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
+                        >
+                          Rechazar
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

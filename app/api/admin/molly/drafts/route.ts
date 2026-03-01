@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { draftId, action } = body;
+    const { draftId, action, custom_body } = body;
 
     if (!draftId || !action) {
       return NextResponse.json(
@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest) {
 
     switch (action) {
       case 'approve':
-        await approveDraft(draftId, 'dashboard');
+        await approveDraft(draftId, 'dashboard', custom_body || undefined);
         return NextResponse.json({ ok: true, message: 'Borrador aprobado y enviado' });
       case 'reject':
         await rejectDraft(draftId);

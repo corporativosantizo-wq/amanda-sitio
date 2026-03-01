@@ -73,3 +73,10 @@
     }
   }
 }
+
+/* Arturia sidebar button hover */
+.arturia-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F3F5F9 100%) !important;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9) !important;
+}
