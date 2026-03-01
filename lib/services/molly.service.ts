@@ -15,8 +15,12 @@ import {
   getCalendarEvents,
   findFreeSlots,
   getDayBounds,
+  getNextBusinessDays,
   formatAgendaForTelegram,
   formatAvailabilityForTelegram,
+  formatDayViewForTelegram,
+  formatWeekViewForTelegram,
+  formatMultiDayAvailability,
   formatDateSpanish,
 } from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
@@ -641,6 +645,60 @@ export async function getAvailability(
   const slots = await findFreeSlots(targetDate);
   const label = formatDateSpanish(targetDate);
   return formatAvailabilityForTelegram(slots, label);
+}
+
+// ── Enhanced calendar views (used by Telegram bot) ──────────────────────────
+
+export async function getDayView(offsetDays: number): Promise<string> {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+
+  const { start, end } = getDayBounds(date);
+  const [events, freeSlots] = await Promise.all([
+    getCalendarEvents(start, end),
+    findFreeSlots(date),
+  ]);
+
+  return formatDayViewForTelegram(events, date, freeSlots.length);
+}
+
+export async function getWeekView(): Promise<string> {
+  const now = new Date();
+  const weekEnd = new Date(now);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  const { start } = getDayBounds(now);
+  const { end } = getDayBounds(weekEnd);
+  const events = await getCalendarEvents(start, end);
+
+  // Group events by date (YYYY-MM-DD)
+  const eventsByDay = new Map<string, typeof events>();
+  for (const e of events) {
+    const dateKey = e.start.substring(0, 10);
+    if (!eventsByDay.has(dateKey)) eventsByDay.set(dateKey, []);
+    eventsByDay.get(dateKey)!.push(e);
+  }
+
+  return formatWeekViewForTelegram(eventsByDay, now, weekEnd);
+}
+
+export async function getMultiDayAvailability(): Promise<string> {
+  const businessDays = getNextBusinessDays(new Date(), 5);
+  const daySlots = await Promise.all(
+    businessDays.map(async (date) => ({
+      date,
+      slots: await findFreeSlots(date),
+    })),
+  );
+
+  return formatMultiDayAvailability(daySlots);
+}
+
+// ── Scheduled drafts ────────────────────────────────────────────────────────
+
+// TODO: Implement scheduled draft sending once email_drafts has a scheduled_at column
+export async function sendScheduledDrafts(): Promise<{ enviados: number; errores: number }> {
+  return { enviados: 0, errores: 0 };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
