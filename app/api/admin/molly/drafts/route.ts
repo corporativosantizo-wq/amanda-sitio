@@ -5,25 +5,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/api-auth';
-import {
-  listPendingDrafts,
-  listScheduledDrafts,
-  approveDraft,
-  rejectDraft,
-  scheduleDraft,
-  cancelScheduledDraft,
-} from '@/lib/services/molly.service';
+import { listPendingDrafts, approveDraft, rejectDraft } from '@/lib/services/molly.service';
 
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();
   if (session instanceof NextResponse) return session;
 
   try {
-    const [drafts, scheduled] = await Promise.all([
-      listPendingDrafts(),
-      listScheduledDrafts(),
-    ]);
-    return NextResponse.json({ data: drafts, scheduled });
+    const drafts = await listPendingDrafts();
+    return NextResponse.json({ data: drafts });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -35,7 +25,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { draftId, action, custom_body } = body;
+    const { draftId, action, editedBody } = body;
 
     if (!draftId || !action) {
       return NextResponse.json(
@@ -46,24 +36,15 @@ export async function PATCH(req: NextRequest) {
 
     switch (action) {
       case 'approve':
-        await approveDraft(draftId, 'dashboard', custom_body || undefined);
+        await approveDraft(draftId, 'dashboard', editedBody);
         return NextResponse.json({ ok: true, message: 'Borrador aprobado y enviado' });
       case 'reject':
         await rejectDraft(draftId);
         return NextResponse.json({ ok: true, message: 'Borrador rechazado' });
-      case 'schedule': {
-        const { scheduled_at, custom_body } = body;
-        if (!scheduled_at) return NextResponse.json({ error: 'scheduled_at requerido' }, { status: 400 });
-        await scheduleDraft(draftId, scheduled_at, custom_body || undefined);
-        return NextResponse.json({ ok: true, message: 'Borrador programado' });
-      }
-      case 'cancel_schedule':
-        await cancelScheduledDraft(draftId);
-        return NextResponse.json({ ok: true, message: 'Programación cancelada' });
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Error interno del servidor' }, { status: 500 });
   }
 }

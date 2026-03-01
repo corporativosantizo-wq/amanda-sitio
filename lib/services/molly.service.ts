@@ -10,7 +10,6 @@ import {
   sendTelegramMessage,
   buildEmailNotification,
   buildUrgentAlert,
-  buildSchedulingNotification,
 } from '@/lib/molly/telegram';
 import {
   getCalendarEvents,
@@ -19,11 +18,6 @@ import {
   formatAgendaForTelegram,
   formatAvailabilityForTelegram,
   formatDateSpanish,
-  formatDayViewForTelegram,
-  formatWeekViewForTelegram,
-  formatMultiDayAvailability,
-  getNextBusinessDays,
-  gtDateStr,
 } from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
@@ -31,7 +25,6 @@ import type {
   EmailThread,
   EmailMessage,
   EmailDraft,
-  EmailSchedulingIntent,
   GraphMailMessage,
   MollyClassification,
   ApprovedVia,
@@ -52,7 +45,7 @@ export class MollyError extends Error {
 
 // ── Accounts to poll ───────────────────────────────────────────────────────
 
-const ACCOUNTS: MailboxAlias[] = ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'];
+const ACCOUNTS: MailboxAlias[] = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
 
 // ── Main pipeline ──────────────────────────────────────────────────────────
 
@@ -76,12 +69,8 @@ export async function checkAndProcessEmails(): Promise<{
 
   for (const account of ACCOUNTS) {
     try {
-      // Buffer de 5 minutos: Graph API puede demorar en indexar emails nuevos.
-      // Sin buffer, emails con receivedDateTime < lastCheck se pierden si Graph
-      // los indexa después. La dedup por microsoft_id en processOneEmail evita reprocesar.
-      const rawSince = lastCheck[account] || new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const sinceWithBuffer = new Date(new Date(rawSince).getTime() - 5 * 60 * 1000).toISOString();
-      const messages = await fetchNewEmails(account, sinceWithBuffer);
+      const since = lastCheck[account] || new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const messages = await fetchNewEmails(account, since);
 
       // Process max 10 per cycle per account
       for (const msg of messages.slice(0, 10)) {
@@ -190,9 +179,9 @@ async function processOneEmail(
     return { draftCreated: false };
   }
 
-  // Classify with Claude (account-aware)
+  // Classify with Claude
   const knownContact = await getContactName(fromEmail);
-  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact, account);
+  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact);
 
   // Update message with classification
   await db()
@@ -217,15 +206,6 @@ async function processOneEmail(
   // Try to match contact to client
   await matchContactToClient(fromEmail, classification.cliente_probable);
 
-  // Check scheduling intent (skip for contador@ — financial emails don't schedule)
-  if (classification.scheduling_intent && account !== 'contador@papeleo.legal') {
-    try {
-      await handleSchedulingIntent(classification, emailMsg as EmailMessage, thread);
-    } catch (err: any) {
-      console.error('[molly] Error procesando scheduling intent:', err.message);
-    }
-  }
-
   // Generate draft if needed
   let draftCreated = false;
   if (classification.requiere_respuesta && classification.tipo !== 'spam') {
@@ -233,7 +213,7 @@ async function processOneEmail(
       const clientContext = await getClientContext(fromEmail);
       const recentMessages = await getRecentThreadMessages(thread.id);
 
-      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages, account);
+      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages);
 
       const { data: draft } = await db()
         .from('email_drafts')
@@ -275,87 +255,6 @@ async function processOneEmail(
   }
 
   return { draftCreated };
-}
-
-// ── Scheduling intent handler ─────────────────────────────────────────────
-
-async function handleSchedulingIntent(
-  classification: MollyClassification,
-  message: EmailMessage,
-  thread: EmailThread,
-): Promise<void> {
-  const eventType = classification.event_type ?? 'consulta_nueva';
-  const durationMin = eventType === 'consulta_nueva' ? 60 : 30;
-
-  // Determine target date
-  let targetDate: Date;
-  if (classification.suggested_date) {
-    targetDate = new Date(classification.suggested_date + 'T12:00:00');
-    if (isNaN(targetDate.getTime())) {
-      targetDate = getNextBusinessDay();
-    }
-  } else {
-    targetDate = getNextBusinessDay();
-  }
-
-  // Skip weekends
-  while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
-    targetDate.setDate(targetDate.getDate() + 1);
-  }
-
-  // Find free slots
-  const slots = await findFreeSlots(targetDate, durationMin);
-
-  // Save intent to DB
-  const { data: intent, error } = await db()
-    .from('email_scheduling_intents')
-    .insert({
-      thread_id: thread.id,
-      message_id: message.id,
-      from_email: message.from_email,
-      event_type: eventType,
-      suggested_date: formatDateYMD(targetDate),
-      suggested_time: classification.suggested_time ?? null,
-      available_slots: slots,
-      status: 'pendiente',
-    })
-    .select()
-    .single();
-
-  if (error || !intent) {
-    console.error('[molly] Error guardando scheduling intent:', error);
-    return;
-  }
-
-  // Send Telegram notification with slot buttons
-  const dateLabel = formatDateSpanish(targetDate);
-  const notification = buildSchedulingNotification(
-    intent as EmailSchedulingIntent,
-    message,
-    classification,
-    slots,
-    dateLabel,
-  );
-
-  await sendTelegramMessage(notification.text, {
-    parse_mode: 'HTML',
-    reply_markup: notification.reply_markup,
-  });
-
-  console.log(`[molly] Scheduling intent detectado: ${eventType} para ${formatDateYMD(targetDate)}, ${slots.length} slots disponibles`);
-}
-
-function getNextBusinessDay(): Date {
-  const d = new Date(gtDateStr(new Date()) + 'T12:00:00');
-  d.setDate(d.getDate() + 1);
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1);
-  }
-  return d;
-}
-
-function formatDateYMD(date: Date): string {
-  return gtDateStr(date);
 }
 
 // ── Thread management ──────────────────────────────────────────────────────
@@ -534,7 +433,7 @@ async function getRecentThreadMessages(
 export async function approveDraft(
   draftId: string,
   via: ApprovedVia,
-  customBody?: string,
+  editedBody?: string,
 ): Promise<void> {
   const { data: draft, error } = await db()
     .from('email_drafts')
@@ -547,30 +446,31 @@ export async function approveDraft(
 
   const account = (draft as any).email_threads?.account as MailboxAlias;
 
-  // Use custom body if provided (edited draft)
-  const bodyToSend = customBody ?? draft.body_text;
-  const htmlBody = customBody
-    ? `<p>${customBody.replace(/\n/g, '<br>')}</p>`
-    : (draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`);
+  // Use edited body if provided, otherwise use original
+  const finalBodyText = editedBody ?? draft.body_text;
+  const finalBodyHtml = editedBody
+    ? `<p>${editedBody.replace(/\n/g, '<br>')}</p>`
+    : draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`;
 
   // Send email via Graph API
   await sendMail({
     from: account || 'asistente@papeleo.legal',
     to: draft.to_email,
     subject: draft.subject,
-    htmlBody,
+    htmlBody: finalBodyHtml,
   });
 
-  // Update draft status (+ edited body for historical record)
-  const updatePayload: Record<string, any> = {
+  // Update draft status (and body if edited)
+  const updatePayload: Record<string, unknown> = {
     status: 'enviado',
     approved_via: via,
     approved_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-  if (customBody) {
-    updatePayload.body_text = customBody;
-    updatePayload.body_html = htmlBody;
+
+  if (editedBody) {
+    updatePayload.body_text = finalBodyText;
+    updatePayload.body_html = finalBodyHtml;
   }
 
   await db()
@@ -578,7 +478,7 @@ export async function approveDraft(
     .update(updatePayload)
     .eq('id', draftId);
 
-  console.log(`[molly] Borrador ${draftId} aprobado via ${via} y enviado`);
+  console.log(`[molly] Borrador ${draftId} aprobado via ${via}${editedBody ? ' (editado)' : ''} y enviado`);
 }
 
 export async function rejectDraft(draftId: string): Promise<void> {
@@ -592,136 +492,6 @@ export async function rejectDraft(draftId: string): Promise<void> {
 
   if (error) throw new MollyError('Error rechazando borrador', error);
   console.log(`[molly] Borrador ${draftId} rechazado`);
-}
-
-// ── Scheduled drafts ──────────────────────────────────────────────────────
-
-export async function scheduleDraft(
-  draftId: string,
-  scheduledAt: string,
-  customBody?: string,
-): Promise<void> {
-  const { data: draft, error } = await db()
-    .from('email_drafts')
-    .select('id, status')
-    .eq('id', draftId)
-    .single();
-
-  if (error || !draft) throw new MollyError('Borrador no encontrado', error);
-  if (draft.status !== 'pendiente') throw new MollyError(`Borrador no está pendiente (estado: ${draft.status})`);
-
-  const updatePayload: Record<string, any> = {
-    status: 'programado',
-    scheduled_at: scheduledAt,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (customBody) {
-    updatePayload.body_text = customBody;
-    updatePayload.body_html = `<p>${customBody.replace(/\n/g, '<br>')}</p>`;
-  }
-
-  const { error: updateErr } = await db()
-    .from('email_drafts')
-    .update(updatePayload)
-    .eq('id', draftId);
-
-  if (updateErr) throw new MollyError('Error programando borrador', updateErr);
-  console.log(`[molly] Borrador ${draftId} programado para ${scheduledAt}`);
-}
-
-export async function cancelScheduledDraft(draftId: string): Promise<void> {
-  const { data: draft, error } = await db()
-    .from('email_drafts')
-    .select('id, status')
-    .eq('id', draftId)
-    .single();
-
-  if (error || !draft) throw new MollyError('Borrador no encontrado', error);
-  if (draft.status !== 'programado') throw new MollyError(`Borrador no está programado (estado: ${draft.status})`);
-
-  const { error: updateErr } = await db()
-    .from('email_drafts')
-    .update({
-      status: 'pendiente',
-      scheduled_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', draftId);
-
-  if (updateErr) throw new MollyError('Error cancelando programación', updateErr);
-  console.log(`[molly] Programación cancelada para borrador ${draftId}`);
-}
-
-export async function listScheduledDrafts(): Promise<
-  Array<EmailDraft & { thread: EmailThread; message: EmailMessage | null }>
-> {
-  const { data, error } = await db()
-    .from('email_drafts')
-    .select('*, thread:email_threads(*), message:email_messages(*)')
-    .eq('status', 'programado')
-    .not('scheduled_at', 'is', null)
-    .order('scheduled_at', { ascending: true })
-    .limit(50);
-
-  if (error) throw new MollyError('Error listando borradores programados', error);
-  return (data ?? []) as any;
-}
-
-export async function sendScheduledDrafts(): Promise<{ enviados: number; errores: number }> {
-  const { data: drafts, error } = await db()
-    .from('email_drafts')
-    .select('*, email_threads!inner(account)')
-    .eq('status', 'programado')
-    .lte('scheduled_at', new Date().toISOString());
-
-  if (error) {
-    console.error('[molly] Error buscando borradores programados:', error);
-    return { enviados: 0, errores: 1 };
-  }
-
-  if (!drafts || drafts.length === 0) return { enviados: 0, errores: 0 };
-
-  let enviados = 0;
-  let errores = 0;
-
-  for (const draft of drafts) {
-    try {
-      const account = (draft as any).email_threads?.account as MailboxAlias;
-      const htmlBody = draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`;
-
-      await sendMail({
-        from: account || 'asistente@papeleo.legal',
-        to: draft.to_email,
-        subject: draft.subject,
-        htmlBody,
-      });
-
-      await db()
-        .from('email_drafts')
-        .update({
-          status: 'enviado',
-          approved_via: 'dashboard',
-          approved_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', draft.id);
-
-      // Notify via Telegram
-      await sendTelegramMessage(
-        `📨 <b>Borrador enviado (programado)</b>\n${draft.subject}\n→ ${draft.to_email}`,
-        { parse_mode: 'HTML' },
-      );
-
-      console.log(`[molly] Borrador programado ${draft.id} enviado a ${draft.to_email}`);
-      enviados++;
-    } catch (err: any) {
-      console.error(`[molly] Error enviando borrador programado ${draft.id}:`, err.message);
-      errores++;
-    }
-  }
-
-  return { enviados, errores };
 }
 
 // ── List / Query ───────────────────────────────────────────────────────────
@@ -811,8 +581,7 @@ export async function getStats(): Promise<{
 export async function getAgenda(
   range: 'hoy' | 'mañana' | 'semana',
 ): Promise<string> {
-  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
-  const now = new Date(gtDateStr(new Date()) + 'T12:00:00');
+  const now = new Date();
 
   let startDate: Date;
   let endDate: Date;
@@ -860,8 +629,8 @@ export async function getAvailability(
       return 'Fecha no válida. Usa formato YYYY-MM-DD';
     }
   } else {
-    // Default: tomorrow (Guatemala time)
-    targetDate = new Date(gtDateStr(new Date()) + 'T12:00:00');
+    // Default: tomorrow
+    targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + 1);
     // Skip to Monday if tomorrow is weekend
     while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
@@ -872,82 +641,6 @@ export async function getAvailability(
   const slots = await findFreeSlots(targetDate);
   const label = formatDateSpanish(targetDate);
   return formatAvailabilityForTelegram(slots, label);
-}
-
-// ── Enhanced calendar views for Telegram ──────────────────────────────────
-
-/** /hoy or /mañana — rich day view with emojis, stats, free slots */
-export async function getDayView(
-  offset: 0 | 1,
-): Promise<string> {
-  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
-  const date = new Date(gtDateStr(new Date()) + 'T12:00:00');
-  if (offset === 1) date.setDate(date.getDate() + 1);
-
-  const { start, end } = getDayBounds(date);
-  const events = await getCalendarEvents(start, end);
-
-  // Count free slots for the footer
-  let freeSlotCount = 0;
-  try {
-    const slots = await findFreeSlots(date);
-    freeSlotCount = slots.length;
-  } catch { /* weekend or error */ }
-
-  return formatDayViewForTelegram(events, date, freeSlotCount);
-}
-
-/** /semana — compact week overview grouped by day */
-export async function getWeekView(): Promise<string> {
-  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
-  const now = new Date(gtDateStr(new Date()) + 'T12:00:00');
-  // Start from Monday of current week
-  const dow = now.getDay(); // safe: noon can't cross day boundary
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
-
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-
-  const { start } = getDayBounds(monday);
-  const { end } = getDayBounds(sunday);
-  const events = await getCalendarEvents(start, end);
-
-  // Group by date string
-  const byDay = new Map<string, typeof events>();
-  for (const e of events) {
-    const dateStr = e.start.substring(0, 10);
-    if (!byDay.has(dateStr)) byDay.set(dateStr, []);
-    byDay.get(dateStr)!.push(e);
-  }
-
-  return formatWeekViewForTelegram(byDay, monday, sunday);
-}
-
-/** /libre — availability for next 3 business days */
-export async function getMultiDayAvailability(): Promise<string> {
-  // Use Guatemala date at noon to avoid day-boundary issues on UTC server
-  const startDate = new Date(gtDateStr(new Date()) + 'T12:00:00');
-  while (startDate.getDay() === 0 || startDate.getDay() === 6) {
-    startDate.setDate(startDate.getDate() + 1);
-  }
-
-  // Get today + next 2 business days
-  const dates = [new Date(startDate)];
-  const nextDays = getNextBusinessDays(startDate, 2);
-  dates.push(...nextDays);
-
-  const daySlots: Array<{ date: Date; slots: Awaited<ReturnType<typeof findFreeSlots>> }> = [];
-  for (const d of dates) {
-    try {
-      const slots = await findFreeSlots(d);
-      daySlots.push({ date: d, slots });
-    } catch {
-      daySlots.push({ date: d, slots: [] });
-    }
-  }
-
-  return formatMultiDayAvailability(daySlots);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
