@@ -18,6 +18,7 @@ interface Draft {
   body_text: string
   tone: string | null
   status: string
+  scheduled_at: string | null
   created_at: string
   thread: { id: string; subject: string; account: string; clasificacion: string; urgencia: number }
   message: { from_email: string; from_name: string | null; resumen: string | null } | null
@@ -63,16 +64,57 @@ function formatDate(dateString: string) {
   })
 }
 
+// ── Schedule helpers ──────────────────────────────────────────────────────
+
+function getQuickScheduleOptions(): Array<{ label: string; date: string; time: string }> {
+  const now = new Date()
+  const gt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guatemala' }))
+  const day = gt.getDay()
+
+  const tomorrow = new Date(gt)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+  const options: Array<{ label: string; date: string; time: string }> = [
+    { label: 'Mañana 8am', date: tomorrowStr, time: '08:00' },
+    { label: 'Mañana 2pm', date: tomorrowStr, time: '14:00' },
+  ]
+
+  if (day === 5 || day === 6 || day === 0) {
+    const daysToMonday = day === 0 ? 1 : 8 - day
+    const monday = new Date(gt)
+    monday.setDate(monday.getDate() + daysToMonday)
+    options.push({ label: 'Lunes 8am', date: monday.toISOString().split('T')[0], time: '08:00' })
+  }
+
+  return options
+}
+
+function formatScheduledDate(isoStr: string): string {
+  const d = new Date(isoStr)
+  return d.toLocaleDateString('es-GT', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 // ── Page component ─────────────────────────────────────────────────────────
 
 export default function MollyMailPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [drafts, setDrafts] = useState<Draft[]>([])
+  const [scheduled, setScheduled] = useState<Draft[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [triggerLoading, setTriggerLoading] = useState(false)
   const [editedBodies, setEditedBodies] = useState<Record<string, string>>({})
+  const [schedulingDraft, setSchedulingDraft] = useState<string | null>(null)
+  const [scheduleDate, setScheduleDate] = useState('')
+  const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
@@ -87,6 +129,7 @@ export default function MollyMailPage() {
       if (draftsRes.ok) {
         const d = await draftsRes.json()
         setDrafts(d.data ?? [])
+        setScheduled(d.scheduled ?? [])
       }
       if (threadsRes.ok) {
         const t = await threadsRes.json()
@@ -136,6 +179,73 @@ export default function MollyMailPage() {
       const msg = err.message || 'Error al procesar la acción'
       setErrorMsg(msg)
       console.error('Error:', msg)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleSchedule = async (draftId: string) => {
+    if (!scheduleDate || !scheduleTime) {
+      setErrorMsg('Selecciona fecha y hora para programar')
+      return
+    }
+    setActionLoading(draftId)
+    setErrorMsg(null)
+    try {
+      const scheduledAt = `${scheduleDate}T${scheduleTime}:00-06:00`
+      const payload: Record<string, string> = { draftId, action: 'schedule', scheduled_at: scheduledAt }
+      const edited = editedBodies[draftId]
+      if (edited !== undefined && edited !== drafts.find((d) => d.id === draftId)?.body_text) {
+        payload.editedBody = edited
+      }
+
+      const res = await fetch('/api/admin/molly/drafts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setErrorMsg(data.error || `Error ${res.status}`)
+        return
+      }
+
+      setSchedulingDraft(null)
+      setScheduleDate('')
+      setScheduleTime('')
+      setEditedBodies((prev) => {
+        const next = { ...prev }
+        delete next[draftId]
+        return next
+      })
+      fetchData()
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de conexión')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleCancelSchedule = async (draftId: string) => {
+    setActionLoading(draftId)
+    setErrorMsg(null)
+    try {
+      const res = await fetch('/api/admin/molly/drafts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draftId, action: 'cancel_schedule' }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setErrorMsg(data.error || `Error ${res.status}`)
+        return
+      }
+
+      fetchData()
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de conexión')
     } finally {
       setActionLoading(null)
     }
@@ -291,6 +401,17 @@ export default function MollyMailPage() {
                       </button>
                     )}
                     <button
+                      onClick={() => {
+                        setSchedulingDraft(schedulingDraft === draft.id ? null : draft.id)
+                        setScheduleDate('')
+                        setScheduleTime('')
+                      }}
+                      disabled={actionLoading === draft.id}
+                      className="px-4 py-2 bg-amber-50 text-amber-700 text-sm font-semibold rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                    >
+                      Programar
+                    </button>
+                    <button
                       onClick={() => handleDraftAction(draft.id, 'reject')}
                       disabled={actionLoading === draft.id}
                       className="px-4 py-2 bg-red-100 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
@@ -299,11 +420,113 @@ export default function MollyMailPage() {
                     </button>
                   </div>
                 </div>
+                {/* Schedule panel */}
+                {schedulingDraft === draft.id && (
+                  <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm font-semibold text-amber-800 mb-3">Programar envío</p>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      {getQuickScheduleOptions().map((opt) => (
+                        <button
+                          key={opt.label}
+                          onClick={() => { setScheduleDate(opt.date); setScheduleTime(opt.time) }}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                            scheduleDate === opt.date && scheduleTime === opt.time
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white text-amber-700 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                      <input
+                        type="datetime-local"
+                        value={scheduleDate && scheduleTime ? `${scheduleDate}T${scheduleTime}` : ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val) {
+                            setScheduleDate(val.split('T')[0])
+                            setScheduleTime(val.split('T')[1]?.substring(0, 5) || '')
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs border border-amber-300 rounded-lg bg-white text-amber-800 focus:ring-2 focus:ring-amber-400 outline-none"
+                      />
+                    </div>
+                    {scheduleDate && scheduleTime && (
+                      <p className="text-xs text-amber-600 mb-3">
+                        Se enviará: {formatScheduledDate(`${scheduleDate}T${scheduleTime}:00-06:00`)}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSchedule(draft.id)}
+                        disabled={actionLoading === draft.id || !scheduleDate || !scheduleTime}
+                        className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        onClick={() => { setSchedulingDraft(null); setScheduleDate(''); setScheduleTime('') }}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Scheduled drafts */}
+      {scheduled.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-navy mb-4">
+            Programados ({scheduled.length})
+          </h2>
+          <div className="space-y-4">
+            {scheduled.map((draft) => (
+              <div key={draft.id} className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-amber-400">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">
+                        {draft.scheduled_at ? formatScheduledDate(draft.scheduled_at) : 'Programado'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                          CLASIFICACION_COLORS[draft.thread.clasificacion] || CLASIFICACION_COLORS.pendiente
+                        }`}
+                      >
+                        {draft.thread.clasificacion}
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-navy mb-1">{draft.subject}</h3>
+                    <p className="text-sm text-slate mb-1">
+                      Para: {draft.to_email} &bull; {draft.thread.account}
+                    </p>
+                    <div className="bg-slate-50 rounded-lg p-3 mt-2">
+                      <p className="text-sm text-navy whitespace-pre-wrap">
+                        {draft.body_text.length > 200
+                          ? draft.body_text.substring(0, 200) + '...'
+                          : draft.body_text}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleCancelSchedule(draft.id)}
+                    disabled={actionLoading === draft.id}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    Cancelar programación
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent threads */}
       <div>
