@@ -5,15 +5,25 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/api-auth';
-import { listPendingDrafts, approveDraft, rejectDraft } from '@/lib/services/molly.service';
+import {
+  listPendingDrafts,
+  listScheduledDrafts,
+  approveDraft,
+  rejectDraft,
+  scheduleDraft,
+  cancelScheduledDraft,
+} from '@/lib/services/molly.service';
 
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();
   if (session instanceof NextResponse) return session;
 
   try {
-    const drafts = await listPendingDrafts();
-    return NextResponse.json({ data: drafts });
+    const [drafts, scheduled] = await Promise.all([
+      listPendingDrafts(),
+      listScheduledDrafts(),
+    ]);
+    return NextResponse.json({ data: drafts, scheduled });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -41,6 +51,15 @@ export async function PATCH(req: NextRequest) {
       case 'reject':
         await rejectDraft(draftId);
         return NextResponse.json({ ok: true, message: 'Borrador rechazado' });
+      case 'schedule': {
+        const { scheduled_at, custom_body } = body;
+        if (!scheduled_at) return NextResponse.json({ error: 'scheduled_at requerido' }, { status: 400 });
+        await scheduleDraft(draftId, scheduled_at, custom_body || undefined);
+        return NextResponse.json({ ok: true, message: 'Borrador programado' });
+      }
+      case 'cancel_schedule':
+        await cancelScheduledDraft(draftId);
+        return NextResponse.json({ ok: true, message: 'Programación cancelada' });
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }

@@ -22,6 +22,7 @@ import {
 } from '@/lib/templates/emails';
 
 import { requireCronAuth } from '@/lib/auth/cron-auth';
+import { sendScheduledDrafts } from '@/lib/services/molly.service';
 
 export async function GET(req: NextRequest) {
   const authError = requireCronAuth(req);
@@ -171,12 +172,17 @@ export async function GET(req: NextRequest) {
     const fallidas = resultados.filter((r: any) => !r.ok).length;
     console.log('[Cron Tareas] Resultado:', exitosas, 'exitosas,', fallidas, 'fallidas de', tareas.length, 'total');
 
+    // Enviar borradores Molly programados cuya hora ya pasó
+    const mollyScheduled = await sendScheduledDrafts();
+    console.log('[Cron] Molly scheduled:', mollyScheduled.enviados, 'enviados,', mollyScheduled.errores, 'errores');
+
     return NextResponse.json({
       ok: true,
       total: tareas.length,
       exitosas,
       fallidas,
       resultados,
+      mollyScheduled,
     });
 
   } catch (err: any) {

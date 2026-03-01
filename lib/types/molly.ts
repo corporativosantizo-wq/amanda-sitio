@@ -16,7 +16,7 @@ export type EmailClasificacion =
 
 export type ThreadStatus = 'abierto' | 'en_proceso' | 'cerrado' | 'archivado';
 
-export type DraftStatus = 'pendiente' | 'aprobado' | 'enviado' | 'rechazado' | 'editado';
+export type DraftStatus = 'pendiente' | 'aprobado' | 'enviado' | 'rechazado' | 'editado' | 'programado';
 
 export type ContactTipo =
   | 'cliente'
@@ -90,6 +90,7 @@ export interface EmailDraft {
   body_html: string | null;
   tone: string | null;
   status: DraftStatus;
+  scheduled_at: string | null;
   approved_via: ApprovedVia | null;
   approved_at: string | null;
   created_at: string;

@@ -594,6 +594,136 @@ export async function rejectDraft(draftId: string): Promise<void> {
   console.log(`[molly] Borrador ${draftId} rechazado`);
 }
 
+// ── Scheduled drafts ──────────────────────────────────────────────────────
+
+export async function scheduleDraft(
+  draftId: string,
+  scheduledAt: string,
+  customBody?: string,
+): Promise<void> {
+  const { data: draft, error } = await db()
+    .from('email_drafts')
+    .select('id, status')
+    .eq('id', draftId)
+    .single();
+
+  if (error || !draft) throw new MollyError('Borrador no encontrado', error);
+  if (draft.status !== 'pendiente') throw new MollyError(`Borrador no está pendiente (estado: ${draft.status})`);
+
+  const updatePayload: Record<string, any> = {
+    status: 'programado',
+    scheduled_at: scheduledAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (customBody) {
+    updatePayload.body_text = customBody;
+    updatePayload.body_html = `<p>${customBody.replace(/\n/g, '<br>')}</p>`;
+  }
+
+  const { error: updateErr } = await db()
+    .from('email_drafts')
+    .update(updatePayload)
+    .eq('id', draftId);
+
+  if (updateErr) throw new MollyError('Error programando borrador', updateErr);
+  console.log(`[molly] Borrador ${draftId} programado para ${scheduledAt}`);
+}
+
+export async function cancelScheduledDraft(draftId: string): Promise<void> {
+  const { data: draft, error } = await db()
+    .from('email_drafts')
+    .select('id, status')
+    .eq('id', draftId)
+    .single();
+
+  if (error || !draft) throw new MollyError('Borrador no encontrado', error);
+  if (draft.status !== 'programado') throw new MollyError(`Borrador no está programado (estado: ${draft.status})`);
+
+  const { error: updateErr } = await db()
+    .from('email_drafts')
+    .update({
+      status: 'pendiente',
+      scheduled_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', draftId);
+
+  if (updateErr) throw new MollyError('Error cancelando programación', updateErr);
+  console.log(`[molly] Programación cancelada para borrador ${draftId}`);
+}
+
+export async function listScheduledDrafts(): Promise<
+  Array<EmailDraft & { thread: EmailThread; message: EmailMessage | null }>
+> {
+  const { data, error } = await db()
+    .from('email_drafts')
+    .select('*, thread:email_threads(*), message:email_messages(*)')
+    .eq('status', 'programado')
+    .not('scheduled_at', 'is', null)
+    .order('scheduled_at', { ascending: true })
+    .limit(50);
+
+  if (error) throw new MollyError('Error listando borradores programados', error);
+  return (data ?? []) as any;
+}
+
+export async function sendScheduledDrafts(): Promise<{ enviados: number; errores: number }> {
+  const { data: drafts, error } = await db()
+    .from('email_drafts')
+    .select('*, email_threads!inner(account)')
+    .eq('status', 'programado')
+    .lte('scheduled_at', new Date().toISOString());
+
+  if (error) {
+    console.error('[molly] Error buscando borradores programados:', error);
+    return { enviados: 0, errores: 1 };
+  }
+
+  if (!drafts || drafts.length === 0) return { enviados: 0, errores: 0 };
+
+  let enviados = 0;
+  let errores = 0;
+
+  for (const draft of drafts) {
+    try {
+      const account = (draft as any).email_threads?.account as MailboxAlias;
+      const htmlBody = draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`;
+
+      await sendMail({
+        from: account || 'asistente@papeleo.legal',
+        to: draft.to_email,
+        subject: draft.subject,
+        htmlBody,
+      });
+
+      await db()
+        .from('email_drafts')
+        .update({
+          status: 'enviado',
+          approved_via: 'dashboard',
+          approved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', draft.id);
+
+      // Notify via Telegram
+      await sendTelegramMessage(
+        `📨 <b>Borrador enviado (programado)</b>\n${draft.subject}\n→ ${draft.to_email}`,
+        { parse_mode: 'HTML' },
+      );
+
+      console.log(`[molly] Borrador programado ${draft.id} enviado a ${draft.to_email}`);
+      enviados++;
+    } catch (err: any) {
+      console.error(`[molly] Error enviando borrador programado ${draft.id}:`, err.message);
+      errores++;
+    }
+  }
+
+  return { enviados, errores };
+}
+
 // ── List / Query ───────────────────────────────────────────────────────────
 
 interface ListThreadsParams {
