@@ -1049,7 +1049,7 @@ function DraftEmailCard({
 function parseDraftEmail(content: string): {
   before: string; de: string; para: string; asunto: string; cuerpo: string; after: string;
 } | null {
-  const pattern = /\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
+  const pattern = /(?:📧\s*)?\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
   const match = content.match(pattern);
   if (!match) return null;
 
