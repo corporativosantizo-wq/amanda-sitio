@@ -8,7 +8,25 @@ interface Stats {
   totalThreads: number
   pendingDrafts: number
   emailsToday: number
+  filteredToday: number
   threadsByClasificacion: Record<string, number>
+}
+
+interface FilteredThread {
+  id: string
+  subject: string
+  account: string
+  clasificacion: string
+  updated_at: string
+  messages: Array<{
+    id: string
+    from_email: string
+    from_name: string | null
+    subject: string
+    clasificacion: string | null
+    confidence_score: number | null
+    received_at: string
+  }>
 }
 
 interface Draft {
@@ -42,6 +60,8 @@ const CLASIFICACION_COLORS: Record<string, string> = {
   administrativo: 'bg-gray-100 text-gray-700',
   financiero: 'bg-green-100 text-green-700',
   spam: 'bg-red-100 text-red-700',
+  publicidad: 'bg-amber-100 text-amber-700',
+  notificacion_sistema: 'bg-slate-100 text-slate-600',
   personal: 'bg-purple-100 text-purple-700',
   urgente: 'bg-orange-100 text-orange-700',
   pendiente: 'bg-yellow-100 text-yellow-700',
@@ -116,13 +136,16 @@ export default function MollyMailPage() {
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [filtered, setFiltered] = useState<FilteredThread[]>([])
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, draftsRes, threadsRes] = await Promise.all([
+      const [statsRes, draftsRes, threadsRes, filteredRes] = await Promise.all([
         fetch('/api/admin/molly/stats'),
         fetch('/api/admin/molly/drafts'),
         fetch('/api/admin/molly?limit=10'),
+        fetch('/api/admin/molly/filtered'),
       ])
 
       if (statsRes.ok) setStats(await statsRes.json())
@@ -134,6 +157,10 @@ export default function MollyMailPage() {
       if (threadsRes.ok) {
         const t = await threadsRes.json()
         setThreads(t.data ?? [])
+      }
+      if (filteredRes.ok) {
+        const f = await filteredRes.json()
+        setFiltered(f.data ?? [])
       }
     } catch (err) {
       console.error('Error cargando datos:', err)
@@ -263,6 +290,27 @@ export default function MollyMailPage() {
     }
   }
 
+  const handleRestore = async (threadId: string) => {
+    setRestoringId(threadId)
+    try {
+      const res = await fetch('/api/admin/molly/filtered', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setErrorMsg(data.error || `Error ${res.status}`)
+        return
+      }
+      fetchData()
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de conexión')
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -298,7 +346,7 @@ export default function MollyMailPage() {
 
       {/* Stats bar */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-5">
             <div className="text-sm text-slate mb-1">Total hilos</div>
             <div className="text-2xl font-bold text-navy">{stats.totalThreads}</div>
@@ -310,6 +358,10 @@ export default function MollyMailPage() {
           <div className="bg-white rounded-xl shadow-sm p-5">
             <div className="text-sm text-slate mb-1">Emails hoy</div>
             <div className="text-2xl font-bold text-navy">{stats.emailsToday}</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <div className="text-sm text-slate mb-1">Filtrados hoy</div>
+            <div className="text-2xl font-bold text-red-500">{stats.filteredToday}</div>
           </div>
         </div>
       )}
@@ -524,6 +576,66 @@ export default function MollyMailPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filtered emails */}
+      {filtered.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-navy mb-4">
+            Filtrados <span className="text-sm font-normal text-slate">({filtered.length})</span>
+          </h2>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3">Asunto</th>
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3">De</th>
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3">Tipo</th>
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3">Confianza</th>
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3">Fecha</th>
+                  <th className="text-left text-xs font-medium text-slate uppercase tracking-wider px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filtered.map((t) => {
+                  const msg = t.messages?.[0]
+                  return (
+                    <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-5 py-3">
+                        <span className="text-sm font-medium text-navy">
+                          {t.subject.length > 40 ? t.subject.substring(0, 40) + '...' : t.subject}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate">
+                        {msg?.from_name || msg?.from_email || '—'}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${CLASIFICACION_COLORS[t.clasificacion] || CLASIFICACION_COLORS.pendiente}`}>
+                          {t.clasificacion}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate">
+                        {msg?.confidence_score != null ? `${Math.round(msg.confidence_score * 100)}%` : '—'}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate">
+                        {formatDate(t.updated_at)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => handleRestore(t.id)}
+                          disabled={restoringId === t.id}
+                          className="px-3 py-1 text-xs font-medium bg-white text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50 disabled:opacity-50 transition-colors"
+                        >
+                          {restoringId === t.id ? 'Restaurando...' : 'No es spam'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

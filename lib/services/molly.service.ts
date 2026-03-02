@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchNewEmails, stripHtmlToText } from '@/lib/molly/graph-mail';
+import { fetchNewEmails, stripHtmlToText, getOrCreateFilteredFolder, moveEmailToFolder, moveEmailToInbox } from '@/lib/molly/graph-mail';
 import { classifyEmail, generateDraft } from '@/lib/molly/brain';
 import {
   sendTelegramMessage,
@@ -50,6 +50,13 @@ export class MollyError extends Error {
 // ── Accounts to poll ───────────────────────────────────────────────────────
 
 const ACCOUNTS: MailboxAlias[] = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
+
+// ── Filterable categories ─────────────────────────────────────────────────
+
+const FILTERABLE_CATEGORIES = ['spam', 'publicidad', 'notificacion_sistema'] as const;
+function isFilterable(tipo: string): boolean {
+  return (FILTERABLE_CATEGORIES as readonly string[]).includes(tipo);
+}
 
 // ── Main pipeline ──────────────────────────────────────────────────────────
 
@@ -210,9 +217,25 @@ async function processOneEmail(
   // Try to match contact to client
   await matchContactToClient(fromEmail, classification.cliente_probable);
 
+  // Filter spam/publicidad/notificacion_sistema with high confidence
+  if (isFilterable(classification.tipo) && classification.confianza > 0.9) {
+    try {
+      const folderId = await getOrCreateFilteredFolder(account);
+      await moveEmailToFolder(account, msg.id, folderId);
+    } catch (err: any) {
+      console.error('[molly] Error moviendo email filtrado:', err.message);
+    }
+    await db()
+      .from('email_threads')
+      .update({ status: 'archivado', updated_at: new Date().toISOString() })
+      .eq('id', thread.id);
+    console.log(`[molly] Email filtrado (${classification.tipo}): ${msg.subject.substring(0, 60)}`);
+    return { draftCreated: false };
+  }
+
   // Generate draft if needed
   let draftCreated = false;
-  if (classification.requiere_respuesta && classification.tipo !== 'spam') {
+  if (classification.requiere_respuesta && !isFilterable(classification.tipo)) {
     try {
       const clientContext = await getClientContext(fromEmail);
       const recentMessages = await getRecentThreadMessages(thread.id);
@@ -554,15 +577,20 @@ export async function getStats(): Promise<{
   totalThreads: number;
   pendingDrafts: number;
   emailsToday: number;
+  filteredToday: number;
   threadsByClasificacion: Record<string, number>;
 }> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [threads, drafts, todayMsgs, clasificaciones] = await Promise.all([
+  const [threads, drafts, todayMsgs, filtered, clasificaciones] = await Promise.all([
     db().from('email_threads').select('*', { count: 'exact', head: true }),
     db().from('email_drafts').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
     db().from('email_messages').select('*', { count: 'exact', head: true }).gte('received_at', today.toISOString()),
+    db().from('email_threads').select('*', { count: 'exact', head: true })
+      .in('clasificacion', [...FILTERABLE_CATEGORIES])
+      .eq('status', 'archivado')
+      .gte('updated_at', today.toISOString()),
     db().from('email_threads').select('clasificacion'),
   ]);
 
@@ -576,8 +604,64 @@ export async function getStats(): Promise<{
     totalThreads: threads.count ?? 0,
     pendingDrafts: drafts.count ?? 0,
     emailsToday: todayMsgs.count ?? 0,
+    filteredToday: filtered.count ?? 0,
     threadsByClasificacion: byClasificacion,
   };
+}
+
+// ── Filtered emails ──────────────────────────────────────────────────────
+
+export async function getFilteredEmails(limit = 50) {
+  const { data, error } = await db()
+    .from('email_threads')
+    .select('id, subject, account, clasificacion, urgencia, updated_at, messages:email_messages(id, microsoft_id, from_email, from_name, subject, clasificacion, confidence_score, resumen, received_at)')
+    .in('clasificacion', [...FILTERABLE_CATEGORIES])
+    .eq('status', 'archivado')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw new MollyError('Error listando emails filtrados', error);
+  return data ?? [];
+}
+
+export async function restoreFilteredEmail(threadId: string): Promise<void> {
+  const { data: thread } = await db()
+    .from('email_threads')
+    .select('id, subject, account, messages:email_messages(id, microsoft_id)')
+    .eq('id', threadId)
+    .single();
+
+  if (!thread) throw new MollyError('Thread no encontrado');
+
+  // Move back to Inbox in Outlook (best-effort)
+  const latestMsg = (thread as any).messages?.[0];
+  if (latestMsg?.microsoft_id) {
+    try {
+      await moveEmailToInbox(thread.account as MailboxAlias, latestMsg.microsoft_id);
+    } catch (err: any) {
+      console.error('[molly] Error restaurando email a Inbox:', err.message);
+    }
+  }
+
+  // Reset thread to open + pendiente
+  await db()
+    .from('email_threads')
+    .update({
+      status: 'abierto',
+      clasificacion: 'pendiente',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', threadId);
+
+  // Reset message classification
+  if (latestMsg) {
+    await db()
+      .from('email_messages')
+      .update({ clasificacion: 'pendiente', confidence_score: null, resumen: null })
+      .eq('id', latestMsg.id);
+  }
+
+  console.log(`[molly] Email restaurado: ${thread.subject?.substring(0, 60)}`);
 }
 
 // ── Calendar / Agenda ──────────────────────────────────────────────────────

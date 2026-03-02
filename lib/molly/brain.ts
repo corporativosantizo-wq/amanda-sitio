@@ -85,13 +85,21 @@ Reglas de tipo:
 - "legal": relacionado a casos, expedientes, juzgados, audiencias, contratos
 - "administrativo": citas, reuniones, trámites internos, registros
 - "financiero": facturas, pagos, cobros, cotizaciones, honorarios
-- "spam": marketing, newsletters no solicitados, phishing
+- "spam": spam, phishing, scams, emails fraudulentos
+- "publicidad": newsletters, marketing, promociones, suscripciones, ofertas comerciales, boletines informativos
+- "notificacion_sistema": notificaciones automáticas de apps, alertas de sistema, confirmaciones automáticas, emails de no-reply
 - "personal": asuntos personales no laborales
 - "urgente": requiere atención inmediata (también marcar urgencia >= 2)
 
 Reglas de respuesta:
-- requiere_respuesta = false para: spam, newsletters, notificaciones automáticas, emails donde Amanda es CC
+- requiere_respuesta = false para: spam, publicidad, notificacion_sistema, emails donde Amanda es CC
 - requiere_respuesta = true para: preguntas directas, solicitudes, citas, asuntos legales
+
+Reglas de filtrado (CRÍTICAS — leer con cuidado):
+- Si se indica "Contacto conocido: ..." → NUNCA clasificar como spam, publicidad ni notificacion_sistema. Estos son contactos reales del despacho.
+- Si el asunto menciona número de expediente, caso, audiencia, juzgado o tribunal → NUNCA clasificar como spam/publicidad/notificacion_sistema
+- Solo clasificar como spam/publicidad/notificacion_sistema cuando tengas MÁS DE 90% de confianza (confianza > 0.9)
+- Si hay CUALQUIER duda sobre si es spam/publicidad → clasificar como "administrativo" con urgencia 0
 
 Reglas de intención de cita (scheduling_intent):
 - scheduling_intent = true si el email solicita, propone o pregunta por: cita, reunión, consulta, meeting, appointment, agendar, disponibilidad, horario, "cuándo podemos vernos", "me gustaría agendar"

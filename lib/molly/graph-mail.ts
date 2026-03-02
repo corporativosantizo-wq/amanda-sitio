@@ -210,3 +210,103 @@ export async function getConversationThread(
   console.log(`[graph-mail] THREAD: ${messages.length} mensajes en hilo`);
   return messages;
 }
+
+// ── Move emails to folders (for spam filtering) ──────────────────────────
+
+// Cache folderId per account to avoid repeated API lookups
+const filteredFolderCache: Record<string, string> = {};
+
+export async function getOrCreateFilteredFolder(account: MailboxAlias): Promise<string> {
+  if (filteredFolderCache[account]) return filteredFolderCache[account];
+
+  const token = await getAppToken();
+  const folderName = 'Filtrados por Molly';
+
+  // Try to find existing folder
+  const listUrl =
+    `https://graph.microsoft.com/v1.0/users/${account}/mailFolders` +
+    `?$filter=${encodeURIComponent(`displayName eq '${folderName}'`)}`;
+  const listRes = await fetch(listUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (listRes.ok) {
+    const listData = await listRes.json();
+    if (listData.value?.length > 0) {
+      filteredFolderCache[account] = listData.value[0].id;
+      console.log(`[graph-mail] Found folder "${folderName}" for ${account}`);
+      return filteredFolderCache[account];
+    }
+  }
+
+  // Create folder if it doesn't exist
+  const createUrl = `https://graph.microsoft.com/v1.0/users/${account}/mailFolders`;
+  const createRes = await fetch(createUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ displayName: folderName }),
+  });
+
+  if (!createRes.ok) {
+    const errText = await createRes.text();
+    throw new Error(`Error creating mail folder: ${createRes.status} — ${errText.substring(0, 200)}`);
+  }
+
+  const folder = await createRes.json();
+  filteredFolderCache[account] = folder.id;
+  console.log(`[graph-mail] Created folder "${folderName}" for ${account}: ${folder.id}`);
+  return folder.id;
+}
+
+export async function moveEmailToFolder(
+  account: MailboxAlias,
+  messageId: string,
+  folderId: string,
+): Promise<void> {
+  const token = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${account}/messages/${messageId}/move`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ destinationId: folderId }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[graph-mail] MOVE ERROR ${res.status}:`, errText.substring(0, 300));
+    // Best-effort — don't throw to avoid blocking the classification pipeline
+  } else {
+    console.log(`[graph-mail] Moved message ${messageId.substring(0, 20)}... to folder`);
+  }
+}
+
+export async function moveEmailToInbox(
+  account: MailboxAlias,
+  messageId: string,
+): Promise<void> {
+  const token = await getAppToken();
+  const url = `https://graph.microsoft.com/v1.0/users/${account}/messages/${messageId}/move`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ destinationId: 'Inbox' }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[graph-mail] MOVE-TO-INBOX ERROR ${res.status}:`, errText.substring(0, 300));
+  } else {
+    console.log(`[graph-mail] Restored message ${messageId.substring(0, 20)}... to Inbox`);
+  }
+}

@@ -53,6 +53,8 @@ const CLASIFICACION_EMOJI: Record<string, string> = {
   administrativo: '\uD83D\uDCCB',
   financiero: '\uD83D\uDCB0',
   spam: '\uD83D\uDEAB',
+  publicidad: '\uD83D\uDCE2',
+  notificacion_sistema: '\uD83D\uDD14',
   personal: '\uD83D\uDC64',
   urgente: '\uD83D\uDEA8',
   pendiente: '\u23F3',

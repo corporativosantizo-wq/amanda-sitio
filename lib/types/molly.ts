@@ -10,6 +10,8 @@ export type EmailClasificacion =
   | 'administrativo'
   | 'financiero'
   | 'spam'
+  | 'publicidad'
+  | 'notificacion_sistema'
   | 'personal'
   | 'urgente'
   | 'pendiente';
