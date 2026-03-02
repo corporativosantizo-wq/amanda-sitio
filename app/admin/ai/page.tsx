@@ -699,32 +699,61 @@ export default function AIAssistantPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-5 max-w-3xl mx-auto">
-              {messages.map((msg: Message) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+              {messages.map((msg: Message, msgIdx: number) => {
+                const isLastAssistant = msg.role === 'assistant' && msgIdx === messages.map(m => m.role).lastIndexOf('assistant');
+                const draft = msg.role === 'assistant' ? parseDraftEmail(msg.content) : null;
+                const showDraftCard = draft && isLastAssistant;
+
+                return (
                   <div
-                    className={`max-w-[80%] px-4 py-3 text-sm leading-relaxed shadow-sm ${
-                      msg.role === 'user'
-                        ? 'bg-gradient-to-br from-teal-500 to-cyan-500 text-white rounded-2xl rounded-br-sm'
-                        : 'bg-white text-slate-800 rounded-2xl rounded-bl-sm'
-                    }`}
+                    key={msg.id}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {msg.role === 'assistant' ? (
-                      <div
-                        className="whitespace-pre-wrap"
-                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatMarkdown(msg.content)) }}
-                      />
-                    ) : (
-                      <span>{msg.content}</span>
-                    )}
-                    <div className={`text-[10px] mt-1.5 text-right ${msg.role === 'user' ? 'opacity-60' : 'text-slate-400'}`}>
-                      {msg.timestamp.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
+                    <div
+                      className={`max-w-[80%] px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                        msg.role === 'user'
+                          ? 'bg-gradient-to-br from-teal-500 to-cyan-500 text-white rounded-2xl rounded-br-sm'
+                          : 'bg-white text-slate-800 rounded-2xl rounded-bl-sm'
+                      }`}
+                    >
+                      {msg.role === 'assistant' ? (
+                        showDraftCard ? (
+                          <>
+                            {draft.before && (
+                              <div
+                                className="whitespace-pre-wrap mb-2"
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatMarkdown(draft.before)) }}
+                              />
+                            )}
+                            <DraftEmailCard
+                              de={draft.de}
+                              para={draft.para}
+                              asunto={draft.asunto}
+                              cuerpo={draft.cuerpo}
+                              isLoading={isLoading}
+                              onSend={() => sendMessage('Apruebo el envío')}
+                              onSendEdited={(asunto, cuerpo) =>
+                                sendMessage(`Envía con estos cambios:\nAsunto: ${asunto}\nCuerpo:\n${cuerpo}`)
+                              }
+                              onCancel={() => sendMessage('No envíes este correo')}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            className="whitespace-pre-wrap"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(formatMarkdown(msg.content)) }}
+                          />
+                        )
+                      ) : (
+                        <span>{msg.content}</span>
+                      )}
+                      <div className={`text-[10px] mt-1.5 text-right ${msg.role === 'user' ? 'opacity-60' : 'text-slate-400'}`}>
+                        {msg.timestamp.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {isLoading && (
                 <div className="flex justify-start">
@@ -922,6 +951,121 @@ function BulletItem({
       </div>
     </div>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DraftEmailCard — editable email draft card
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DraftEmailCard({
+  de, para, asunto, cuerpo, onSend, onSendEdited, onCancel, isLoading,
+}: {
+  de: string; para: string; asunto: string; cuerpo: string;
+  onSend: () => void; onSendEdited: (asunto: string, cuerpo: string) => void;
+  onCancel: () => void; isLoading: boolean;
+}) {
+  const [editedAsunto, setEditedAsunto] = useState(asunto);
+  const [editedCuerpo, setEditedCuerpo] = useState(cuerpo);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const hasEdits = editedAsunto !== asunto || editedCuerpo !== cuerpo;
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+  }, [editedCuerpo]);
+
+  return (
+    <div className="border-l-[3px] border-blue-500 bg-slate-50 rounded-r-lg p-4 my-2">
+      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">Borrador de email</p>
+
+      <div className="space-y-2 text-sm">
+        <div className="flex gap-2">
+          <span className="font-semibold text-slate-500 shrink-0 w-12">De:</span>
+          <span className="text-slate-700">{de}</span>
+        </div>
+        <div className="flex gap-2">
+          <span className="font-semibold text-slate-500 shrink-0 w-12">Para:</span>
+          <span className="text-slate-700">{para}</span>
+        </div>
+        <div className="flex gap-2 items-center">
+          <span className="font-semibold text-slate-500 shrink-0 w-12">Asunto:</span>
+          <input
+            type="text"
+            value={editedAsunto}
+            onChange={(e) => setEditedAsunto(e.target.value)}
+            className="flex-1 px-2 py-1 text-sm border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <span className="font-semibold text-slate-500 text-sm">Cuerpo:</span>
+          <textarea
+            ref={textareaRef}
+            value={editedCuerpo}
+            onChange={(e) => setEditedCuerpo(e.target.value)}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 resize-none leading-relaxed"
+            rows={3}
+            disabled={isLoading}
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-3">
+        {hasEdits ? (
+          <button
+            onClick={() => onSendEdited(editedAsunto, editedCuerpo)}
+            disabled={isLoading}
+            className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            Enviar editado
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={isLoading}
+            className="px-3 py-1.5 text-xs font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+          >
+            Enviar
+          </button>
+        )}
+        <button
+          onClick={onCancel}
+          disabled={isLoading}
+          className="px-3 py-1.5 text-xs font-medium bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Draft email detection
+// ═══════════════════════════════════════════════════════════════════════════
+
+function parseDraftEmail(content: string): {
+  before: string; de: string; para: string; asunto: string; cuerpo: string; after: string;
+} | null {
+  const pattern = /\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
+  const match = content.match(pattern);
+  if (!match) return null;
+
+  const fullMatch = match[0];
+  const idx = content.indexOf(fullMatch);
+  const before = content.slice(0, idx).trim();
+  const after = content.slice(idx + fullMatch.length).trim();
+
+  return {
+    before,
+    de: match[1].trim(),
+    para: match[2].trim(),
+    asunto: match[3].trim(),
+    cuerpo: match[4].trim(),
+    after,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
