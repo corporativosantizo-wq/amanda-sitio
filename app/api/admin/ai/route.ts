@@ -2660,13 +2660,6 @@ export async function POST(req: Request) {
 
     const anthropic = getAnthropicClient();
 
-    // TODO: TEMPORAL — remover después de diagnosticar error ZDR
-    console.log('[DEBUG-ZDR] Anthropic client config:', {
-      baseURL: anthropic.baseURL,
-      defaultHeaders: (anthropic as any)._options?.defaultHeaders,
-      allOptions: JSON.stringify((anthropic as any)._options, null, 2),
-    });
-
     const tools: Anthropic.Tool[] = [
       {
         name: 'consultar_base_datos',
