@@ -52,6 +52,7 @@ import {
 import {
   crearCotizacion,
   obtenerCotizacion,
+  listarCotizaciones,
   obtenerConfiguracion as obtenerConfigCotizacion,
 } from '@/lib/services/cotizaciones.service';
 import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
@@ -245,6 +246,26 @@ Puedes crear cotizaciones completas con PDF profesional usando la herramienta cr
 - Usa esta herramienta (NO enviar_email tipo=cotizacion) cuando Amanda quiera crear una cotización formal con PDF
 - Si Amanda dice "cotiza y envíale" o "envíasela", usa enviar_por_correo=true
 - Después de crear, reporta: número de cotización, total con IVA, anticipo, y si se envió el email
+
+## CONSULTAR COTIZACIONES EXISTENTES
+Usa la herramienta consultar_cotizaciones para buscar cotizaciones ya creadas.
+Cuando Amanda mencione una cotización o pida incluir montos de una cotización en un email:
+1. Usa consultar_cotizaciones para buscar la cotización por número (COT-XXXXX) o por nombre del cliente
+2. Extrae los datos reales (monto, items, cliente)
+3. NUNCA inventes montos — siempre consulta primero
+
+Ejemplos:
+- "Incluí el monto de la COT-000014 en el email" → consultar_cotizaciones(busqueda="COT-000014") → usar total real
+- "¿Cuánto le cotizamos a Silvia?" → consultar_cotizaciones(busqueda="Silvia")
+- "Enséñame las cotizaciones recientes" → consultar_cotizaciones(busqueda="recientes")
+
+## CONSULTAR COBROS PENDIENTES
+Usa la herramienta consultar_cobros_pendientes para ver cobros pendientes de un cliente.
+Cuando Amanda pida enviar cobro o preguntar cuánto debe un cliente:
+1. Busca con consultar_cobros_pendientes para ver montos reales
+2. Usa los datos reales para redactar emails o crear cobros
+- "¿Cuánto debe Procapeli?" → consultar_cobros_pendientes(busqueda="Procapeli")
+- "Envíale cobro a Roberto" → primero consultar_cobros_pendientes para ver cuánto debe
 
 ## PLANTILLA DE RECORDATORIO DE AUDIENCIA
 Puedes consultar la plantilla de recordatorio de audiencia usando consultar_catalogo con consulta="plantilla_recordatorio_audiencia". Esto te da la estructura y campos disponibles para generar recordatorios con la herramienta generar_documento.
@@ -1599,6 +1620,140 @@ async function handleGestionarCobros(
   }
 }
 
+// ── Consultar cotizaciones existentes ──────────────────────────────────────
+
+async function handleConsultarCotizaciones(
+  busqueda: string,
+  estado?: string,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // If exact COT number, fetch detail with items
+  const cotMatch = busqueda.match(/COT-?\d+/i);
+  if (cotMatch) {
+    const numero = cotMatch[0].toUpperCase();
+    const { data, error } = await db
+      .from('cotizaciones')
+      .select('*, cliente:clientes!cliente_id(id, nombre, email)')
+      .ilike('numero', `%${numero}%`)
+      .limit(1)
+      .single();
+
+    if (error || !data) return `No se encontró cotización con número "${numero}".`;
+
+    // Fetch items
+    const { data: items } = await db
+      .from('cotizacion_items')
+      .select('descripcion, cantidad, precio_unitario, total')
+      .eq('cotizacion_id', data.id)
+      .order('orden');
+
+    const itemLines = (items ?? []).map((it: any) =>
+      `  - ${it.descripcion} (${it.cantidad} × Q${Number(it.precio_unitario).toLocaleString('es-GT', { minimumFractionDigits: 2 })}) = Q${Number(it.total).toLocaleString('es-GT', { minimumFractionDigits: 2 })}`
+    ).join('\n');
+
+    return `**${data.numero}** — ${data.cliente?.nombre ?? 'Sin cliente'}
+- **Estado**: ${data.estado}
+- **Fecha**: ${data.fecha_emision}${data.fecha_vencimiento ? ` — vence: ${data.fecha_vencimiento}` : ''}
+- **Subtotal**: Q${Number(data.subtotal).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+- **IVA (12%)**: Q${Number(data.iva_monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+- **Total**: Q${Number(data.total).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+- **Anticipo (${data.anticipo_porcentaje}%)**: Q${Number(data.anticipo_monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+- **Saldo restante**: Q${(Number(data.total) - Number(data.anticipo_monto)).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+- **Items**:
+${itemLines}
+- **ID**: ${data.id}`;
+  }
+
+  // "recientes" → last 10
+  const isRecientes = busqueda.toLowerCase().trim() === 'recientes';
+
+  if (isRecientes) {
+    const result = await listarCotizaciones({
+      ...(estado ? { estado: estado as any } : {}),
+      limit: 10,
+    });
+    if (result.data.length === 0) return 'No hay cotizaciones registradas.';
+    return formatCotizacionList(result.data, result.total);
+  }
+
+  // Search by client name
+  // First try finding client, then list their cotizaciones
+  const contactos = await buscarContacto(db, busqueda, 3);
+  if (contactos.length > 0) {
+    const clienteIds = contactos.map((c: any) => c.id);
+    let query = db
+      .from('cotizaciones')
+      .select('*, cliente:clientes!cliente_id(id, nombre, email)', { count: 'exact' })
+      .in('cliente_id', clienteIds)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (estado) query = query.eq('estado', estado);
+
+    const { data, count, error } = await query;
+    if (error || !data?.length) return `No se encontraron cotizaciones para "${busqueda}".`;
+    return formatCotizacionList(data as any, count ?? data.length);
+  }
+
+  // Fallback: search by numero
+  const result = await listarCotizaciones({
+    busqueda,
+    ...(estado ? { estado: estado as any } : {}),
+    limit: 10,
+  });
+  if (result.data.length === 0) return `No se encontraron cotizaciones para "${busqueda}".`;
+  return formatCotizacionList(result.data, result.total);
+}
+
+function formatCotizacionList(data: any[], total: number): string {
+  const lines = data.map((c: any) => {
+    const cliente = c.cliente?.nombre ?? 'Sin cliente';
+    return `- **${c.numero}** ${cliente} — Q${Number(c.total).toLocaleString('es-GT', { minimumFractionDigits: 2 })} — ${c.estado} — ${c.fecha_emision} (id: ${c.id})`;
+  });
+  return `${total} cotización(es) encontrada(s):\n${lines.join('\n')}`;
+}
+
+// ── Consultar cobros pendientes ───────────────────────────────────────────
+
+async function handleConsultarCobrosPendientes(
+  busqueda: string,
+  estado?: string,
+): Promise<string> {
+  const db = createAdminClient();
+
+  // Try to resolve client name
+  let clienteId: string | undefined;
+  if (busqueda && busqueda.toLowerCase() !== 'todos') {
+    const contactos = await buscarContacto(db, busqueda, 1);
+    if (contactos.length > 0) {
+      clienteId = contactos[0].id;
+    }
+  }
+
+  const result = await listarCobros({
+    estado: estado ?? 'pendiente',
+    cliente_id: clienteId,
+    busqueda: clienteId ? undefined : busqueda,
+    limit: 20,
+  });
+
+  if (result.data.length === 0) {
+    return clienteId
+      ? `No se encontraron cobros pendientes para "${busqueda}".`
+      : `No se encontraron cobros con búsqueda "${busqueda}".`;
+  }
+
+  const lines = result.data.map((c: any) => {
+    const cliente = c.cliente?.nombre ?? 'Sin cliente';
+    const venc = c.fecha_vencimiento ?? 'sin vencimiento';
+    const vencido = c.fecha_vencimiento && c.fecha_vencimiento < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+    return `- **COB-${c.numero_cobro}** ${cliente} — ${c.concepto} — Monto: Q${Number(c.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}, Pagado: Q${Number(c.monto_pagado).toLocaleString('es-GT', { minimumFractionDigits: 2 })}, **Saldo: Q${Number(c.saldo_pendiente).toLocaleString('es-GT', { minimumFractionDigits: 2 })}** — ${c.estado}${vencido ? ' ⚠️ VENCIDO' : ''} — vence: ${venc} (id: ${c.id})`;
+  });
+
+  return `${result.total} cobro(s) encontrado(s):\n${lines.join('\n')}`;
+}
+
 // ── Crear cotización completa (BD + PDF + email) ──────────────────────────
 
 async function handleCrearCotizacionCompleta(
@@ -2895,6 +3050,44 @@ export async function POST(req: Request) {
         },
       },
       {
+        name: 'consultar_cotizaciones',
+        description: 'Busca cotizaciones existentes por número (COT-XXXXX), nombre de cliente, o "recientes". Retorna detalle con items si se busca por número exacto.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            busqueda: {
+              type: 'string',
+              description: 'Número de cotización (COT-000014), nombre del cliente, o "recientes" para las últimas 10.',
+            },
+            estado: {
+              type: 'string',
+              enum: ['borrador', 'enviada', 'aceptada', 'rechazada', 'vencida'],
+              description: 'Filtrar por estado. Opcional.',
+            },
+          },
+          required: ['busqueda'],
+        },
+      },
+      {
+        name: 'consultar_cobros_pendientes',
+        description: 'Busca cobros pendientes por nombre de cliente o búsqueda general. Retorna montos, saldos, vencimientos y estado de cada cobro.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            busqueda: {
+              type: 'string',
+              description: 'Nombre del cliente o "todos" para ver todos los pendientes.',
+            },
+            estado: {
+              type: 'string',
+              enum: ['pendiente', 'parcial', 'vencido', 'borrador'],
+              description: 'Filtrar por estado. Default: pendiente.',
+            },
+          },
+          required: ['busqueda'],
+        },
+      },
+      {
         name: 'gestionar_clientes',
         description: 'Buscar, actualizar y crear clientes en el sistema. Usar para cualquier operación con datos de clientes.',
         input_schema: {
@@ -3244,6 +3437,12 @@ export async function POST(req: Request) {
             } else if (block.name === 'gestionar_cobros') {
               const input = block.input as any;
               result = await handleGestionarCobros(input.accion, input.datos ?? {});
+            } else if (block.name === 'consultar_cotizaciones') {
+              const input = block.input as any;
+              result = await handleConsultarCotizaciones(input.busqueda, input.estado);
+            } else if (block.name === 'consultar_cobros_pendientes') {
+              const input = block.input as any;
+              result = await handleConsultarCobrosPendientes(input.busqueda, input.estado);
             } else if (block.name === 'gestionar_clientes') {
               const input = block.input as any;
               result = await handleGestionarClientes(input.accion, input.cliente_id, input.busqueda, input.datos ?? {});
