@@ -114,6 +114,7 @@ const DURATION_OPTIONS = [
   { value: 60, label: '1 hora' },
   { value: 90, label: '1.5 horas' },
   { value: 120, label: '2 horas' },
+  { value: 360, label: '6 horas' },
 ];
 
 // Grid: 06:00 – 21:00 (31 half-hour slots)
@@ -172,9 +173,17 @@ interface SubcatInfo {
 }
 
 const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
-  consulta_nueva: [{ label: 'Nueva', color: 'bg-blue-100 text-blue-700' }],
-  seguimiento:    [{ label: 'Seguimiento', color: 'bg-cyan-100 text-cyan-700' }],
-  audiencia:      [
+  consulta_nueva: [
+    { label: 'Primera vez', color: 'bg-blue-100 text-blue-700' },
+    { label: 'Seguimiento pagado', color: 'bg-blue-200 text-blue-900' },
+    { label: 'Urgente', color: 'bg-red-100 text-red-700' },
+  ],
+  seguimiento: [
+    { label: 'Trámite', color: 'bg-cyan-100 text-cyan-700' },
+    { label: 'Expediente', color: 'bg-teal-100 text-teal-700' },
+    { label: 'Llamada', color: 'bg-emerald-100 text-emerald-700' },
+  ],
+  audiencia: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
     { label: 'Penal', color: 'bg-red-200 text-red-900' },
     { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
@@ -189,20 +198,21 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
     { label: 'Mercantil', color: 'bg-amber-100 text-amber-800' },
   ],
   reunion: [
-    { label: 'Interna', color: 'bg-yellow-100 text-yellow-700' },
-    { label: 'Externa', color: 'bg-yellow-200 text-yellow-900' },
-    { label: 'Teams', color: 'bg-yellow-100 text-yellow-700' },
-    { label: 'Cátedra Virtual', color: 'bg-amber-100 text-amber-800' },
-    { label: 'Cátedra Presencial', color: 'bg-amber-200 text-amber-900' },
+    { label: 'Interna equipo', color: 'bg-yellow-100 text-yellow-700' },
+    { label: 'Externa cliente', color: 'bg-yellow-200 text-yellow-900' },
+    { label: 'Teams virtual', color: 'bg-purple-100 text-purple-700' },
+    { label: 'Proveedor', color: 'bg-amber-100 text-amber-800' },
   ],
   bloqueo_personal: [
+    { label: 'Deep Work', color: 'bg-blue-100 text-blue-700' },
+    { label: 'Estudio/Preparación', color: 'bg-indigo-100 text-indigo-600' },
     { label: 'Personal', color: 'bg-gray-100 text-gray-600' },
-    { label: 'Preparación', color: 'bg-slate-100 text-slate-600' },
-    { label: 'Estudio', color: 'bg-indigo-100 text-indigo-600' },
+    { label: 'Clase universidad', color: 'bg-violet-100 text-violet-700' },
   ],
   evento_libre: [
     { label: 'Capacitación', color: 'bg-purple-100 text-purple-700' },
     { label: 'Diligencia', color: 'bg-violet-100 text-violet-700' },
+    { label: 'Notarial', color: 'bg-amber-100 text-amber-700' },
     { label: 'Otro', color: 'bg-purple-50 text-purple-600' },
   ],
 };
@@ -223,18 +233,20 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
   const titulo = cita.titulo ?? '';
 
   // Detect [CLASE] prefix from Outlook events
-  if (titulo.includes('[CLASE]')) {
-    const reunionSubs = SUBCATEGORIAS.reunion;
-    if (titulo.includes('[VIRTUAL]')) return reunionSubs[3]; // Cátedra Virtual
-    if (titulo.includes('[PRESENCIAL]')) return reunionSubs[4]; // Cátedra Presencial
-    return reunionSubs[3]; // Default to Virtual
+  if (titulo.includes('[CLASE]') || t.includes('clase universidad') || t.includes('cátedra') || t.includes('catedra')) {
+    const bloqueoSubs = SUBCATEGORIAS.bloqueo_personal;
+    return bloqueoSubs[3]; // Clase universidad
   }
 
   switch (cita.tipo) {
     case 'consulta_nueva':
-      return subs[0];
+      if (t.includes('urgente')) return subs[2]; // Urgente
+      if (t.includes('seguimiento') || t.includes('pago')) return subs[1]; // Seguimiento pagado
+      return subs[0]; // Primera vez
     case 'seguimiento':
-      return subs[0];
+      if (t.includes('expediente')) return subs[1]; // Expediente
+      if (t.includes('llamada') || t.includes('teléfono') || t.includes('telefono')) return subs[2]; // Llamada
+      return subs[0]; // Trámite
     case 'audiencia':
     case 'audiencia_expediente':
       if (t.includes('penal')) return subs[1];
@@ -243,22 +255,20 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
       if (t.includes('mercantil')) return subs[4];
       return subs[0]; // Civil default
     case 'reunion':
-      if (titulo.includes('cátedra') || titulo.includes('catedra') || t.includes('universidad')) {
-        if (t.includes('virtual')) return subs[3];
-        if (t.includes('presencial')) return subs[4];
-        return subs[3];
-      }
-      if (cita.teams_link) return subs[2]; // Teams
-      if (t.includes('intern')) return subs[0];
-      return subs[1]; // Externa default
+      if (cita.teams_link || t.includes('teams') || t.includes('virtual')) return subs[2]; // Teams virtual
+      if (t.includes('proveedor')) return subs[3]; // Proveedor
+      if (t.includes('intern') || t.includes('equipo')) return subs[0]; // Interna equipo
+      return subs[1]; // Externa cliente default
     case 'bloqueo_personal':
-      if (t.includes('prepar')) return subs[1];
-      if (t.includes('estudio')) return subs[2];
-      return subs[0];
+      if (t.includes('deep work') || t.includes('profundo')) return subs[0]; // Deep Work
+      if (t.includes('estudio') || t.includes('prepar')) return subs[1]; // Estudio/Preparación
+      if (t.includes('clase') || t.includes('universidad')) return subs[3]; // Clase universidad
+      return subs[2]; // Personal
     case 'evento_libre':
-      if (t.includes('capacita')) return subs[0];
-      if (t.includes('diligencia')) return subs[1];
-      return subs[2];
+      if (t.includes('capacita')) return subs[0]; // Capacitación
+      if (t.includes('diligencia')) return subs[1]; // Diligencia
+      if (t.includes('notari')) return subs[2]; // Notarial
+      return subs[3]; // Otro
     default:
       return null;
   }
@@ -289,12 +299,12 @@ function getMonthGrid(year: number, month: number): (number | null)[][] {
 
 // CreateModal type card definitions
 const TIPO_CARDS = [
-  { value: 'consulta_nueva' as TipoCitaUI, label: 'Consulta Nueva', sub: 'Q500, 30-60 min' },
-  { value: 'seguimiento' as TipoCitaUI, label: 'Seguimiento', sub: 'Gratis, 15 min' },
-  { value: 'audiencia' as TipoCitaUI, label: 'Audiencia', sub: 'Horario libre' },
-  { value: 'reunion' as TipoCitaUI, label: 'Reunión', sub: 'Horario laboral' },
-  { value: 'bloqueo_personal' as TipoCitaUI, label: 'Bloqueo Personal', sub: '' },
-  { value: 'evento_libre' as TipoCitaUI, label: 'Evento Libre', sub: '' },
+  { value: 'consulta_nueva' as TipoCitaUI, label: '\u2696\uFE0F Consulta Nueva', sub: 'Q500, 30-60 min' },
+  { value: 'seguimiento' as TipoCitaUI, label: '\uD83D\uDD04 Seguimiento', sub: 'Gratis, 15 min' },
+  { value: 'audiencia' as TipoCitaUI, label: '\uD83C\uDFDB\uFE0F Audiencia', sub: 'Horario libre' },
+  { value: 'reunion' as TipoCitaUI, label: '\uD83D\uDC65 Reunión', sub: 'Horario laboral' },
+  { value: 'bloqueo_personal' as TipoCitaUI, label: '\u25FC Bloqueo', sub: 'Deep Work, Personal' },
+  { value: 'evento_libre' as TipoCitaUI, label: '\u2726 Evento', sub: 'Capacitación, Diligencia' },
 ];
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -850,17 +860,16 @@ function AgendaView({
 
                         {/* Event info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
-                            {(() => {
-                              const sub = inferSubcategoria(cita);
-                              return sub ? (
-                                <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium shrink-0 ${sub.color}`}>
-                                  {sub.label}
-                                </span>
-                              ) : null;
-                            })()}
-                          </div>
+                          <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
+                          {(() => {
+                            const sub = inferSubcategoria(cita);
+                            const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
+                            return sub ? (
+                              <p className="text-[10px] font-medium truncate" style={{ color: colors.hex }}>
+                                {sub.label}
+                              </p>
+                            ) : null;
+                          })()}
                           <div className="flex items-center gap-2 text-[11px] text-gray-500">
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
                             {cita.teams_link && <span className="text-purple-500">Teams</span>}
@@ -1063,16 +1072,29 @@ function WeekView({
 
               {citasEnSlot.map((cita: CitaItem) => {
                 const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
+                const sub = inferSubcategoria(cita);
+                const isDeepWorkEvent = sub?.label === 'Deep Work';
                 return (
                   <div
                     key={cita.id}
                     onClick={(e) => { e.stopPropagation(); onClickCita(cita); }}
                     onMouseEnter={(e) => handleMouseEnter(cita, e)}
                     onMouseLeave={handleMouseLeave}
-                    className={`absolute inset-x-0.5 ${colors.bg} ${colors.text} ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer z-10 transition-all duration-150 hover:shadow-lg hover:shadow-azure/20 hover:scale-[1.03] hover:z-30`}
-                    style={{ borderLeftWidth: '3px', borderLeftStyle: 'solid' }}
+                    className={`absolute inset-x-0.5 ${isDeepWorkEvent ? 'bg-blue-50' : colors.bg} ${colors.text} ${colors.border} rounded px-1.5 py-0.5 text-xs cursor-pointer z-10 transition-all duration-150 ${isDeepWorkEvent ? 'opacity-70' : 'hover:shadow-lg hover:shadow-azure/20 hover:scale-[1.03]'} hover:z-30`}
+                    style={{
+                      borderLeftWidth: '3px',
+                      borderLeftStyle: 'solid',
+                      ...(isDeepWorkEvent ? {
+                        backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(59,130,246,0.08) 4px, rgba(59,130,246,0.08) 8px)',
+                      } : {}),
+                    }}
                   >
                     <div className="font-semibold truncate">{cita.titulo}</div>
+                    {sub && (
+                      <span className={`inline-block text-[8px] px-1 py-0 rounded-full font-medium leading-tight ${sub.color}`}>
+                        {sub.label}
+                      </span>
+                    )}
                     <div className="text-[10px] opacity-75 truncate">
                       {cita.cliente?.nombre ?? (cita._source === 'outlook' ? cita.hora_inicio : formatHora12(cita.hora_inicio))}
                     </div>
@@ -1685,13 +1707,10 @@ function CreateModal({
   const isSmart = SMART_SLOT_TIPOS.has(tipo);
   const isSlot = SLOT_TIPOS.has(tipo);
 
-  // Compute deep work warning
+  // Compute selected hour for Bullet Journal time-block indicator
   const selectedHour = useCustomTime || isFree
     ? parseInt(customTime.split(':')[0], 10)
     : selectedSlot ? parseInt(selectedSlot.hora_inicio.split(':')[0], 10) : null;
-  const showDeepWorkWarning = selectedHour !== null
-    && selectedHour < DEEP_WORK_END_HOUR
-    && !FREE_TIPOS.has(tipo);
 
   // Set defaults when tipo changes
   useEffect(() => {
@@ -1710,6 +1729,16 @@ function CreateModal({
       setDuracion(15);
     }
   }, [tipo, isFree, isSmart]);
+
+  // Deep Work auto-defaults
+  useEffect(() => {
+    if (subcategoria === 'Deep Work') {
+      setDuracion(360);
+      setCustomTime('08:00');
+      if (!titulo.trim()) setTitulo('Deep Work');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subcategoria]);
 
   // Fetch disponibilidad
   useEffect(() => {
@@ -2018,12 +2047,46 @@ function CreateModal({
             </div>
           )}
 
-          {/* Deep work warning (advisory only) */}
-          {showDeepWorkWarning && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 flex items-center gap-2">
-              <span>⚠</span> Horario de trabajo profundo — puedes crear el evento de todas formas
-            </div>
-          )}
+          {/* Bullet Journal time-block indicator */}
+          {selectedHour !== null && (() => {
+            const isDeepBlock = selectedHour >= 8 && selectedHour < 14;
+            const isMeetingBlock = selectedHour >= 14 && selectedHour < 18;
+            const isOffHours = !isDeepBlock && !isMeetingBlock;
+            const isConsultaOrReunion = tipo === 'consulta_nueva' || tipo === 'reunion';
+            const isDeepWorkSub = subcategoria === 'Deep Work';
+
+            if (isDeepBlock) {
+              return (
+                <div className={`rounded-lg p-3 text-sm flex items-center gap-2 ${isConsultaOrReunion ? 'bg-yellow-50 border border-yellow-200 text-yellow-800' : 'bg-blue-50 border border-blue-200 text-blue-800'}`}>
+                  <span>{isConsultaOrReunion ? '\u26A0\uFE0F' : '\uD83D\uDFE1'}</span>
+                  <span>
+                    <strong>Bloque de trabajo profundo</strong> (8:00–14:00)
+                    {isConsultaOrReunion && <span className="block text-xs mt-0.5 opacity-80">Consultas y reuniones se recomiendan después de las 2 PM</span>}
+                  </span>
+                </div>
+              );
+            }
+            if (isMeetingBlock) {
+              return (
+                <div className={`rounded-lg p-3 text-sm flex items-center gap-2 ${isDeepWorkSub ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}`}>
+                  <span>{isDeepWorkSub ? '\uD83D\uDCA1' : '\uD83D\uDFE2'}</span>
+                  <span>
+                    <strong>Bloque de reuniones y seguimientos</strong> (14:00–18:00)
+                    {isDeepWorkSub && <span className="block text-xs mt-0.5 opacity-80">Deep Work rinde mejor en el bloque de la mañana</span>}
+                  </span>
+                </div>
+              );
+            }
+            if (isOffHours) {
+              return (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 flex items-center gap-2">
+                  <span>{'\uD83D\uDD34'}</span>
+                  <strong>Fuera de horario laboral</strong>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Título */}
           <div>

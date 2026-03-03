@@ -94,7 +94,8 @@ export default function TareasPage() {
     total: number;
   }>(`/api/admin/tareas?${params}`);
 
-  const { mutate } = useMutate();
+  const { mutate, loading: mutating } = useMutate();
+  const [quickError, setQuickError] = useState('');
 
   const allTareas = data?.data ?? [];
 
@@ -173,7 +174,8 @@ export default function TareasPage() {
   // ── Quick Input ─────────────────────────────────────────────────────────
 
   const handleQuickInput = useCallback(async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || !quickInput.trim()) return;
+    if (e.key !== 'Enter' || !quickInput.trim() || mutating) return;
+    setQuickError('');
     const text = quickInput.trim();
 
     // Parse bullet journal notation
@@ -222,10 +224,14 @@ export default function TareasPage() {
       body: { titulo, tipo, categoria, prioridad, fecha_limite: HOY },
       onSuccess: () => {
         setQuickInput('');
+        setQuickError('');
         refetch();
       },
+      onError: (msg) => {
+        setQuickError(msg);
+      },
     });
-  }, [quickInput, mutate, refetch]);
+  }, [quickInput, mutating, mutate, refetch]);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -259,19 +265,33 @@ export default function TareasPage() {
       </div>
 
       {/* Quick Input */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div className={`bg-white rounded-xl shadow-sm border p-4 transition-colors ${quickError ? 'border-red-300' : 'border-slate-200'}`}>
         <div className="flex items-center gap-3">
-          <span className="text-xl text-teal-500 font-bold">{'\u2022'}</span>
+          {mutating ? (
+            <div className="w-5 h-5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          ) : (
+            <span className="text-xl text-teal-500 font-bold">{'\u2022'}</span>
+          )}
           <input
             type="text"
             value={quickInput}
-            onChange={(e) => setQuickInput(e.target.value)}
+            onChange={(e) => { setQuickInput(e.target.value); if (quickError) setQuickError(''); }}
             onKeyDown={handleQuickInput}
+            disabled={mutating}
             placeholder="Escribe una tarea...  (\u2022 tarea, \u25CB evento, \u2014 nota, !!! urgente)"
-            className="flex-1 text-sm text-slate-700 placeholder:text-slate-400 outline-none bg-transparent"
+            className="flex-1 text-sm text-slate-700 placeholder:text-slate-400 outline-none bg-transparent disabled:opacity-50"
           />
-          <span className="text-xs text-slate-400">Enter para crear</span>
+          <span className="text-xs text-slate-400 shrink-0">
+            {mutating ? 'Creando...' : 'Enter para crear'}
+          </span>
         </div>
+        {quickError && (
+          <div className="mt-2 flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            <span className="shrink-0">Error:</span>
+            <span>{quickError}</span>
+            <button onClick={() => setQuickError('')} className="ml-auto text-red-400 hover:text-red-600 shrink-0">&times;</button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
