@@ -1056,8 +1056,9 @@ function DraftEmailCard({
 function parseDraftEmail(content: string): {
   before: string; de: string; para: string; cc: string; asunto: string; cuerpo: string; after: string;
 } | null {
-  // Support optional CC and BCC lines between Para and Asunto
-  const pattern = /(?:📧\s*)?\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n(?:\*\*CC:\*\*\s*(.+)\n)?(?:\*\*BCC:\*\*\s*(?:.+)\n)?\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
+  // Resilient regex: \n\s*\n? between fields handles Claude adding blank lines
+  // ¿? handles Claude sometimes omitting the inverted question mark
+  const pattern = /(?:📧\s*)?\*\*Borrador de email\*\*\s*\n\s*\n?\*\*De:\*\*\s*(.+)\n\s*\n?\*\*Para:\*\*\s*(.+)\n\s*\n?(?:\*\*CC:\*\*\s*(.+)\n\s*\n?)?(?:\*\*BCC:\*\*\s*(?:.+)\n\s*\n?)?\*\*Asunto:\*\*\s*(.+)\n\s*\n?\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿?Apruebas el envío\?/;
   const match = content.match(pattern);
   if (!match) return null;
 
