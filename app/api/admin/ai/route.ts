@@ -270,6 +270,9 @@ Puedes generar los siguientes documentos en formato Word (.docx) usando la herra
 
 ## ENVÍO DE EMAILS
 Puedes enviar emails a CUALQUIER persona usando la herramienta enviar_email — tanto a clientes registrados como a personas externas.
+Puedes enviar a múltiples destinatarios separando emails con coma en email_directo: "ricardo@gmail.com, gesa@gmail.com".
+Usa CC para copiar a Amanda cuando envíes desde asistente@ o contador@ (se agrega automáticamente).
+Usa BCC solo si Amanda lo pide explícitamente.
 
 ### 🚨 FLUJO OBLIGATORIO PARA TODO EMAIL (SIN EXCEPCIONES):
 1. **Recopilar información**: Busca el cliente, lee emails previos si es respuesta, obtén datos necesarios
@@ -278,12 +281,15 @@ Puedes enviar emails a CUALQUIER persona usando la herramienta enviar_email — 
 
 📧 **Borrador de email**
 **De:** [remitente]@papeleo.legal
-**Para:** [destinatario] ([email])
+**Para:** [destinatario1] ([email1]), [destinatario2] ([email2])
+**CC:** Amanda Santizo (amanda@papeleo.legal)
 **Asunto:** [asunto]
 **Cuerpo:**
 [contenido del email en texto legible]
 
 ¿Apruebas el envío?
+
+Nota: Si solo hay un destinatario, muestra solo uno en "Para:". Si no hay CC adicional al auto-CC de Amanda, puedes omitir la línea CC. Si hay BCC, agregar línea **BCC:** antes de Asunto.
 
 4. **ESPERAR** la respuesta de Amanda — NO llamar a enviar_email todavía
 5. **Solo cuando Amanda confirme** ("sí", "apruebo", "dale", "envía", "ok") → ejecutar enviar_email
@@ -879,6 +885,8 @@ async function handleEnviarEmail(
   datos: any,
   emailDirecto?: string,
   nombreDestinatario?: string,
+  cc?: string,
+  bcc?: string,
 ): Promise<string> {
   const db = createAdminClient();
 
@@ -1050,12 +1058,19 @@ async function handleEnviarEmail(
       throw new Error(`Tipo de email no reconocido: ${tipoEmail}`);
   }
 
-  // 3. Send
-  await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: 'amanda@papeleo.legal' });
+  // 3. Build CC list (auto-add amanda@ unless she IS the sender, merge with user-provided CC)
+  const autoCc = from !== 'amanda@papeleo.legal' ? ['amanda@papeleo.legal'] : [];
+  const userCc = cc ? cc.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+  const mergedCc = [...new Set([...autoCc, ...userCc])];
+
+  // 4. Send
+  await sendMail({ from, to: destinatarioEmail, subject, htmlBody: html, cc: mergedCc, bcc });
 
   const emailMask = destinatarioEmail.replace(/(.{2}).+(@.+)/, '$1***$2');
   console.log('[AI] Email enviado: tipo=', tipoEmail, ', from=', from, ', to=', emailMask, ', asunto=', subject);
-  return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}`;
+  const ccInfo = mergedCc.length ? ` — CC: ${mergedCc.join(', ')}` : '';
+  const bccInfo = bcc ? ` — BCC: ${bcc}` : '';
+  return `Email enviado a ${destinatarioNombre} (${destinatarioEmail}) desde ${from} — Asunto: ${subject}${ccInfo}${bccInfo}`;
 }
 
 // ── Envío de email con adjunto ────────────────────────────────────────────
@@ -2750,11 +2765,19 @@ export async function POST(req: Request) {
             },
             email_directo: {
               type: 'string',
-              description: 'Email del destinatario (para personas no registradas como clientes). Opcional si se usa cliente_id.',
+              description: 'Email(s) del destinatario. Puede ser uno o varios separados por coma: "ricardo@gmail.com, gesa@gmail.com". Opcional si se usa cliente_id.',
             },
             nombre_destinatario: {
               type: 'string',
               description: 'Nombre del destinatario (usado cuando se envía por email_directo). Opcional.',
+            },
+            cc: {
+              type: 'string',
+              description: 'Email(s) en copia (CC), separados por coma. Ejemplo: "amanda@papeleo.legal". Se agrega automáticamente amanda@ como CC cuando se envía desde asistente@ o contador@.',
+            },
+            bcc: {
+              type: 'string',
+              description: 'Email(s) en copia oculta (BCC), separados por coma. Solo usar si Amanda lo pide explícitamente.',
             },
             datos: {
               type: 'object',
@@ -3208,7 +3231,7 @@ export async function POST(req: Request) {
               }
             } else if (block.name === 'enviar_email') {
               const input = block.input as any;
-              result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos, input.email_directo, input.nombre_destinatario);
+              result = await handleEnviarEmail(input.tipo_email, input.cliente_id, input.datos, input.email_directo, input.nombre_destinatario, input.cc, input.bcc);
             } else if (block.name === 'enviar_email_con_adjunto') {
               const input = block.input as any;
               result = await handleEnviarEmailConAdjunto(input.cliente_id, input.email_directo, input.nombre_destinatario, input.asunto, input.contenido_html ?? '', input.archivo_url);

@@ -728,6 +728,7 @@ export default function AIAssistantPage() {
                             <DraftEmailCard
                               de={draft.de}
                               para={draft.para}
+                              cc={draft.cc}
                               asunto={draft.asunto}
                               cuerpo={draft.cuerpo}
                               isLoading={isLoading}
@@ -958,9 +959,9 @@ function BulletItem({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function DraftEmailCard({
-  de, para, asunto, cuerpo, onSend, onSendEdited, onCancel, isLoading,
+  de, para, cc, asunto, cuerpo, onSend, onSendEdited, onCancel, isLoading,
 }: {
-  de: string; para: string; asunto: string; cuerpo: string;
+  de: string; para: string; cc?: string; asunto: string; cuerpo: string;
   onSend: () => void; onSendEdited: (asunto: string, cuerpo: string) => void;
   onCancel: () => void; isLoading: boolean;
 }) {
@@ -989,6 +990,12 @@ function DraftEmailCard({
           <span className="font-semibold text-slate-500 shrink-0 w-12">Para:</span>
           <span className="text-slate-700">{para}</span>
         </div>
+        {cc && (
+          <div className="flex gap-2">
+            <span className="font-semibold text-slate-500 shrink-0 w-12">CC:</span>
+            <span className="text-slate-500 text-xs">{cc}</span>
+          </div>
+        )}
         <div className="flex gap-2 items-center">
           <span className="font-semibold text-slate-500 shrink-0 w-12">Asunto:</span>
           <input
@@ -1047,9 +1054,10 @@ function DraftEmailCard({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function parseDraftEmail(content: string): {
-  before: string; de: string; para: string; asunto: string; cuerpo: string; after: string;
+  before: string; de: string; para: string; cc: string; asunto: string; cuerpo: string; after: string;
 } | null {
-  const pattern = /(?:📧\s*)?\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
+  // Support optional CC and BCC lines between Para and Asunto
+  const pattern = /(?:📧\s*)?\*\*Borrador de email\*\*\s*\n\*\*De:\*\*\s*(.+)\n\*\*Para:\*\*\s*(.+)\n(?:\*\*CC:\*\*\s*(.+)\n)?(?:\*\*BCC:\*\*\s*(?:.+)\n)?\*\*Asunto:\*\*\s*(.+)\n\*\*Cuerpo:\*\*\s*\n([\s\S]*?)\n\s*¿Apruebas el envío\?/;
   const match = content.match(pattern);
   if (!match) return null;
 
@@ -1062,8 +1070,9 @@ function parseDraftEmail(content: string): {
     before,
     de: match[1].trim(),
     para: match[2].trim(),
-    asunto: match[3].trim(),
-    cuerpo: match[4].trim(),
+    cc: match[3]?.trim() ?? '',
+    asunto: match[4].trim(),
+    cuerpo: match[5].trim(),
     after,
   };
 }

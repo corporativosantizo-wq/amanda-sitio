@@ -586,18 +586,28 @@ export function invalidateAppToken(): void {
 
 export type MailboxAlias = 'asistente@papeleo.legal' | 'contador@papeleo.legal' | 'amanda@papeleo.legal';
 
+/** Parse comma-separated email string into trimmed array */
+function parseEmailList(input: string | string[] | undefined): string[] {
+  if (!input) return [];
+  if (Array.isArray(input)) return input.map((e) => e.trim()).filter(Boolean);
+  return input.split(',').map((e) => e.trim()).filter(Boolean);
+}
+
 export async function sendMail(params: {
   from: MailboxAlias;
   to: string;
   subject: string;
   htmlBody: string;
   cc?: string | string[];
+  bcc?: string | string[];
   attachments?: Array<{ name: string; contentType: string; contentBytes: string }>;
 }): Promise<void> {
-  const toMask = params.to.replace(/(.{2}).+(@.+)/, '$1***$2');
+  const toList = parseEmailList(params.to);
+  if (toList.length === 0) throw new OutlookError('No se especificó destinatario (to)', '');
+  const toMask = toList.map((e) => e.replace(/(.{2}).+(@.+)/, '$1***$2')).join(', ');
   console.log(`[sendMail] ── INICIO ──`);
   console.log('[sendMail] from:', params.from);
-  console.log('[sendMail] to:', toMask);
+  console.log('[sendMail] to:', toMask, `(${toList.length} destinatario${toList.length > 1 ? 's' : ''})`);
   console.log('[sendMail] subject:', params.subject);
   console.log('[sendMail] htmlBody length:', params.htmlBody.length, 'chars');
 
@@ -611,12 +621,19 @@ export async function sendMail(params: {
   const message: any = {
     subject: params.subject,
     body: { contentType: 'HTML', content: params.htmlBody },
-    toRecipients: [{ emailAddress: { address: params.to } }],
+    toRecipients: toList.map((addr) => ({ emailAddress: { address: addr } })),
   };
 
-  if (params.cc) {
-    const ccList = Array.isArray(params.cc) ? params.cc : [params.cc];
+  const ccList = parseEmailList(params.cc);
+  if (ccList.length > 0) {
     message.ccRecipients = ccList.map((addr) => ({ emailAddress: { address: addr } }));
+    console.log('[sendMail] cc:', ccList.join(', '));
+  }
+
+  const bccList = parseEmailList(params.bcc);
+  if (bccList.length > 0) {
+    message.bccRecipients = bccList.map((addr) => ({ emailAddress: { address: addr } }));
+    console.log('[sendMail] bcc:', bccList.join(', '));
   }
 
   if (params.attachments?.length) {
