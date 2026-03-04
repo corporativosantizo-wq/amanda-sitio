@@ -186,8 +186,8 @@ async function handleCallbackQuery(query: any): Promise<void> {
     switch (action) {
       case 'approve': {
         const draftId = data.split(':')[1];
+        await answerCallbackQuery(query.id, 'Enviando...');
         await approveDraft(draftId, 'telegram');
-        await answerCallbackQuery(query.id, 'Aprobado y enviado');
         await sendTelegramMessage(`\u2705 Borrador aprobado y enviado`);
         break;
       }

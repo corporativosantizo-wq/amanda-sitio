@@ -8,6 +8,9 @@
     },
     "app/api/admin/calendario/eventos/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/webhooks/telegram/route.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
