@@ -79,10 +79,16 @@ export async function GET(req: NextRequest) {
           const [eh, em] = horaFin.split(':').map(Number);
           const duracion = (eh * 60 + em) - (sh * 60 + sm);
 
-          // Determine tipo based on Outlook categories
+          // Determine tipo based on Outlook categories + title keywords
           let tipo = 'outlook';
           const cats = (ev.categories ?? []).map((c: string) => c.toLowerCase());
-          if (cats.includes('azul') || cats.includes('blue category')) tipo = 'consulta_nueva';
+          const titleLower = (ev.subject ?? '').toLowerCase();
+
+          // Title-based: audiencias judiciales always red (highest priority)
+          const isAudiencia = !(/auditor[ií]a/i.test(titleLower)) && /\baudiencia\b/i.test(titleLower);
+          if (isAudiencia) tipo = 'audiencia';
+          // Category-based classification
+          else if (cats.includes('azul') || cats.includes('blue category')) tipo = 'consulta_nueva';
           else if (cats.includes('verde') || cats.includes('green category')) tipo = 'seguimiento';
           else if (cats.includes('rojo') || cats.includes('red category')) tipo = 'audiencia';
           else if (cats.includes('amarillo') || cats.includes('yellow category')) tipo = 'reunion';

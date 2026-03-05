@@ -69,7 +69,7 @@ const TIPO_COLORS: Record<string, { bg: string; border: string; text: string; he
   seguimiento:          { bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-900', hex: '#10B981' },
   outlook:              { bg: 'bg-purple-100',  border: 'border-purple-500',  text: 'text-purple-900',  hex: '#8B5CF6' },
   audiencia_expediente: { bg: 'bg-amber-100',   border: 'border-amber-500',   text: 'text-amber-900',   hex: '#F59E0B' },
-  audiencia:            { bg: 'bg-red-100',     border: 'border-red-500',     text: 'text-red-900',     hex: '#EF4444' },
+  audiencia:            { bg: 'bg-red-100',     border: 'border-red-600',     text: 'text-red-900',     hex: '#DC2626' },
   reunion:              { bg: 'bg-yellow-100',  border: 'border-yellow-500',  text: 'text-yellow-900',  hex: '#EAB308' },
   bloqueo_personal:     { bg: 'bg-gray-200',    border: 'border-gray-500',    text: 'text-gray-800',    hex: '#6B7280' },
   evento_libre:         { bg: 'bg-violet-100',  border: 'border-violet-500',  text: 'text-violet-900',  hex: '#7C3AED' },
