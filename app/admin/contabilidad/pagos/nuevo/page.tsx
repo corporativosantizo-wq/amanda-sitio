@@ -1,7 +1,6 @@
 // ============================================================================
 // app/admin/contabilidad/pagos/nuevo/page.tsx
-// Registro rápido de pago — contra cotización
-// Flujo: Cotización → Pago → Factura (posterior)
+// Registro rápido de pago — con o sin cotización
 // ============================================================================
 
 'use client';
@@ -24,6 +23,12 @@ interface CotizacionOption {
   cliente: { id: string; nombre: string } | null;
 }
 
+interface ClienteOption {
+  id: string;
+  nombre: string;
+  codigo: string;
+}
+
 const METODOS_PAGO = [
   { value: 'transferencia', label: 'Transferencia bancaria', icon: '🏦' },
   { value: 'deposito', label: 'Depósito', icon: '💵' },
@@ -40,10 +45,21 @@ export default function NuevoPagoPage() {
 
   const { mutate, loading: guardando, error: errorGuardar } = useMutate();
 
-  // Form state
+  // Mode: 'cotizacion' or 'directo'
+  const [modo, setModo] = useState<'cotizacion' | 'directo'>('cotizacion');
+
+  // Cotización state
   const [cotizacionBusqueda, setCotizacionBusqueda] = useState('');
   const [cotizacionSeleccionada, setCotizacionSeleccionada] = useState<CotizacionOption | null>(null);
   const [showResultados, setShowResultados] = useState(false);
+
+  // Pago directo state
+  const [clienteBusqueda, setClienteBusqueda] = useState('');
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<ClienteOption | null>(null);
+  const [showClientes, setShowClientes] = useState(false);
+  const [concepto, setConcepto] = useState('');
+
+  // Common state
   const [monto, setMonto] = useState('');
   const [metodoPago, setMetodoPago] = useState('transferencia');
   const [referencia, setReferencia] = useState('');
@@ -52,27 +68,51 @@ export default function NuevoPagoPage() {
   const [notas, setNotas] = useState('');
 
   // Search cotizaciones
-  const cotizacionUrl = cotizacionBusqueda.length >= 2
+  const cotizacionUrl = modo === 'cotizacion' && cotizacionBusqueda.length >= 2
     ? `/api/admin/contabilidad/cotizaciones?q=${encodeURIComponent(cotizacionBusqueda)}&limit=5`
     : null;
   const { data: cotizacionesResult } = useFetch<{ data: CotizacionOption[] }>(cotizacionUrl);
+  const cotizacionesFiltradas = (cotizacionesResult?.data ?? []).filter(c => c.estado !== 'rechazada');
 
-  // Filter out rechazadas from results
-  const cotizacionesFiltradas = (cotizacionesResult?.data ?? []).filter(
-    c => c.estado !== 'rechazada'
-  );
+  // Search clientes
+  const clienteUrl = modo === 'directo' && clienteBusqueda.length >= 2
+    ? `/api/admin/clientes?q=${encodeURIComponent(clienteBusqueda)}&limit=5&activo=true`
+    : null;
+  const { data: clientesResult } = useFetch<{ data: ClienteOption[] }>(clienteUrl);
 
   // ── Calculations ────────────────────────────────────────────────────
 
   const montoNum = parseFloat(monto) || 0;
+  const anticipoPct = cotizacionSeleccionada?.anticipo_porcentaje || 60;
+
+  // Determine client ID for submit
+  const clienteId = modo === 'cotizacion'
+    ? cotizacionSeleccionada?.cliente?.id
+    : clienteSeleccionado?.id;
+  const clienteNombre = modo === 'cotizacion'
+    ? cotizacionSeleccionada?.cliente?.nombre
+    : clienteSeleccionado?.nombre;
+
+  // Can submit?
+  const canSubmit = montoNum > 0 && !!clienteId && !guardando;
 
   // ── Actions ─────────────────────────────────────────────────────────
+
+  const cambiarModo = useCallback((nuevoModo: 'cotizacion' | 'directo') => {
+    setModo(nuevoModo);
+    setCotizacionSeleccionada(null);
+    setCotizacionBusqueda('');
+    setClienteSeleccionado(null);
+    setClienteBusqueda('');
+    setConcepto('');
+    setMonto('');
+    setEsAnticipo(false);
+  }, []);
 
   const seleccionarCotizacion = useCallback((c: CotizacionOption) => {
     setCotizacionSeleccionada(c);
     setCotizacionBusqueda('');
     setShowResultados(false);
-    // Pre-fill monto: anticipo if required, otherwise total
     if (c.requiere_anticipo && c.anticipo_monto > 0) {
       setMonto(String(c.anticipo_monto));
       setEsAnticipo(true);
@@ -80,6 +120,12 @@ export default function NuevoPagoPage() {
       setMonto(String(c.total));
       setEsAnticipo(false);
     }
+  }, []);
+
+  const seleccionarCliente = useCallback((c: ClienteOption) => {
+    setClienteSeleccionado(c);
+    setClienteBusqueda('');
+    setShowClientes(false);
   }, []);
 
   const setMontoAnticipo = useCallback(() => {
@@ -97,20 +143,28 @@ export default function NuevoPagoPage() {
   }, [cotizacionSeleccionada]);
 
   const guardar = useCallback(async () => {
-    if (!cotizacionSeleccionada) return alert('Selecciona una cotización');
+    if (!clienteId) return alert(modo === 'cotizacion' ? 'Selecciona una cotización' : 'Selecciona un cliente');
     if (montoNum <= 0) return alert('El monto debe ser mayor a 0');
+    if (modo === 'directo' && !concepto.trim()) return alert('Ingresa el concepto del pago');
 
-    const body = {
-      cotizacion_id: cotizacionSeleccionada.id,
-      cliente_id: cotizacionSeleccionada.cliente?.id,
+    const body: Record<string, any> = {
+      cliente_id: clienteId,
       monto: montoNum,
       metodo_pago: metodoPago,
       referencia_pago: referencia || null,
       es_anticipo: esAnticipo,
-      porcentaje_anticipo: esAnticipo ? (cotizacionSeleccionada.anticipo_porcentaje || 60) : null,
       notas: notas || null,
       confirmar_inmediato: confirmarInmediato,
     };
+
+    if (modo === 'cotizacion' && cotizacionSeleccionada) {
+      body.cotizacion_id = cotizacionSeleccionada.id;
+      body.porcentaje_anticipo = esAnticipo ? (cotizacionSeleccionada.anticipo_porcentaje || 60) : null;
+    }
+
+    if (modo === 'directo' && concepto.trim()) {
+      body.notas = concepto.trim() + (notas ? `\n${notas}` : '');
+    }
 
     await mutate('/api/admin/contabilidad/pagos', {
       body,
@@ -119,9 +173,7 @@ export default function NuevoPagoPage() {
       },
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [cotizacionSeleccionada, montoNum, metodoPago, referencia, esAnticipo, notas, confirmarInmediato, mutate, router]);
-
-  const anticipoPct = cotizacionSeleccionada?.anticipo_porcentaje || 60;
+  }, [clienteId, montoNum, metodoPago, referencia, esAnticipo, notas, confirmarInmediato, modo, cotizacionSeleccionada, concepto, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -129,92 +181,192 @@ export default function NuevoPagoPage() {
     <div className="space-y-5 max-w-3xl">
       <PageHeader
         title="Registrar pago"
-        description="Registra un pago recibido contra una cotización"
+        description="Registra un pago recibido"
       />
 
-      {/* ══════════ 1. COTIZACIÓN ══════════ */}
+      {/* ══════════ 1. ORIGEN ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">1. Cotización</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">1. Origen del pago</h3>
 
-        {cotizacionSeleccionada ? (
-          <div className="space-y-4">
-            {/* Cotización card */}
-            <div className="bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-lg p-4 border border-slate-200">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-medium text-slate-900">{cotizacionSeleccionada.numero}</span>
-                    <Badge variant={cotizacionSeleccionada.estado as any}>{cotizacionSeleccionada.estado}</Badge>
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => cambiarModo('cotizacion')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              modo === 'cotizacion'
+                ? 'bg-[#1E40AF] text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Con cotización
+          </button>
+          <button
+            onClick={() => cambiarModo('directo')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              modo === 'directo'
+                ? 'bg-[#1E40AF] text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Pago directo
+          </button>
+        </div>
+
+        {/* ── Mode: Cotización ── */}
+        {modo === 'cotizacion' && (
+          <>
+            {cotizacionSeleccionada ? (
+              <div className="space-y-4">
+                <div className="bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-lg p-4 border border-slate-200">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium text-slate-900">{cotizacionSeleccionada.numero}</span>
+                        <Badge variant={cotizacionSeleccionada.estado as any}>{cotizacionSeleccionada.estado}</Badge>
+                      </div>
+                      <p className="text-sm text-slate-600 mt-1">{cotizacionSeleccionada.cliente?.nombre ?? '—'}</p>
+                    </div>
+                    <button
+                      onClick={() => { setCotizacionSeleccionada(null); setMonto(''); }}
+                      className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1 rounded-md hover:bg-red-50"
+                    >
+                      Cambiar
+                    </button>
                   </div>
-                  <p className="text-sm text-slate-600 mt-1">{cotizacionSeleccionada.cliente?.nombre ?? '—'}</p>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
+                      <p className="text-xs text-slate-500">Total cotización</p>
+                      <p className="text-lg font-bold text-slate-900">{Q(cotizacionSeleccionada.total)}</p>
+                    </div>
+                    {cotizacionSeleccionada.requiere_anticipo && (
+                      <div className="bg-white rounded-lg p-3 text-center border border-blue-200 bg-blue-50/50">
+                        <p className="text-xs text-blue-700">Anticipo {anticipoPct}%</p>
+                        <p className="text-lg font-bold text-blue-700">{Q(cotizacionSeleccionada.anticipo_monto)}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => { setCotizacionSeleccionada(null); setMonto(''); }}
-                  className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1 rounded-md hover:bg-red-50"
-                >
-                  Cambiar
-                </button>
               </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Buscar por número de cotización o nombre de cliente..."
+                  value={cotizacionBusqueda}
+                  onChange={e => { setCotizacionBusqueda(e.target.value); setShowResultados(true); }}
+                  onFocus={() => setShowResultados(true)}
+                  className="w-full px-4 py-3 pl-10 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                />
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
 
-              {/* Total and anticipo info */}
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                  <p className="text-xs text-slate-500">Total cotización</p>
-                  <p className="text-lg font-bold text-slate-900">{Q(cotizacionSeleccionada.total)}</p>
-                </div>
-                {cotizacionSeleccionada.requiere_anticipo && (
-                  <div className="bg-white rounded-lg p-3 text-center border border-blue-200 bg-blue-50/50">
-                    <p className="text-xs text-blue-700">Anticipo {anticipoPct}%</p>
-                    <p className="text-lg font-bold text-blue-700">{Q(cotizacionSeleccionada.anticipo_monto)}</p>
-                  </div>
+                {showResultados && cotizacionBusqueda.length >= 2 && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowResultados(false)} />
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
+                      {cotizacionesFiltradas.length > 0 ? (
+                        cotizacionesFiltradas.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => seleccionarCotizacion(c)}
+                            className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-mono font-medium text-slate-900">{c.numero}</span>
+                                <span className="text-slate-400 text-xs ml-2">{c.cliente?.nombre}</span>
+                                <Badge variant={c.estado as any} className="ml-2 text-[10px]">{c.estado}</Badge>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-medium text-slate-900">{Q(c.total)}</span>
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      ) : cotizacionesResult ? (
+                        <div className="p-4 text-center text-sm text-slate-500">
+                          No se encontraron cotizaciones
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
                 )}
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="relative">
-            <input
-              type="text"
-              autoFocus
-              placeholder="Buscar por número de cotización o nombre de cliente..."
-              value={cotizacionBusqueda}
-              onChange={e => { setCotizacionBusqueda(e.target.value); setShowResultados(true); }}
-              onFocus={() => setShowResultados(true)}
-              className="w-full px-4 py-3 pl-10 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
-            />
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
-
-            {showResultados && cotizacionBusqueda.length >= 2 && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowResultados(false)} />
-                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
-                  {cotizacionesFiltradas.length > 0 ? (
-                    cotizacionesFiltradas.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => seleccionarCotizacion(c)}
-                        className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-mono font-medium text-slate-900">{c.numero}</span>
-                            <span className="text-slate-400 text-xs ml-2">{c.cliente?.nombre}</span>
-                            <Badge variant={c.estado as any} className="ml-2 text-[10px]">{c.estado}</Badge>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm font-medium text-slate-900">{Q(c.total)}</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  ) : cotizacionesResult ? (
-                    <div className="p-4 text-center text-sm text-slate-500">
-                      No se encontraron cotizaciones
-                    </div>
-                  ) : null}
-                </div>
-              </>
             )}
+          </>
+        )}
+
+        {/* ── Mode: Pago directo ── */}
+        {modo === 'directo' && (
+          <div className="space-y-4">
+            {/* Cliente search */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Cliente</label>
+              {clienteSeleccionado ? (
+                <div className="flex items-center justify-between bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <div>
+                    <span className="font-medium text-slate-900">{clienteSeleccionado.nombre}</span>
+                    <span className="text-xs text-slate-400 ml-2 font-mono">{clienteSeleccionado.codigo}</span>
+                  </div>
+                  <button
+                    onClick={() => setClienteSeleccionado(null)}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1 rounded-md hover:bg-red-50"
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Buscar cliente por nombre..."
+                    value={clienteBusqueda}
+                    onChange={e => { setClienteBusqueda(e.target.value); setShowClientes(true); }}
+                    onFocus={() => setShowClientes(true)}
+                    className="w-full px-4 py-3 pl-10 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+                  />
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+
+                  {showClientes && clienteBusqueda.length >= 2 && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowClientes(false)} />
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
+                        {(clientesResult?.data ?? []).length > 0 ? (
+                          (clientesResult?.data ?? []).map(c => (
+                            <button
+                              key={c.id}
+                              onClick={() => seleccionarCliente(c)}
+                              className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0"
+                            >
+                              <span className="font-medium text-slate-900">{c.nombre}</span>
+                              <span className="text-xs text-slate-400 ml-2 font-mono">{c.codigo}</span>
+                            </button>
+                          ))
+                        ) : clientesResult ? (
+                          <div className="p-4 text-center text-sm text-slate-500">
+                            No se encontraron clientes
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Concepto */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Concepto del pago</label>
+              <input
+                type="text"
+                value={concepto}
+                onChange={e => setConcepto(e.target.value)}
+                placeholder="Ej: Consulta legal, Trámite notarial, Anticipo caso..."
+                className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+              />
+            </div>
           </div>
         )}
       </section>
@@ -240,7 +392,7 @@ export default function NuevoPagoPage() {
               />
             </div>
 
-            {/* Quick amount buttons */}
+            {/* Quick amount buttons — only when cotización selected */}
             {cotizacionSeleccionada && (
               <div className="flex gap-2 mt-2">
                 <button
@@ -340,14 +492,14 @@ export default function NuevoPagoPage() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           {/* Summary */}
           <div>
-            {cotizacionSeleccionada && montoNum > 0 && (
+            {clienteId && montoNum > 0 && (
               <div className="text-sm text-slate-600">
                 <span className="font-bold text-xl text-[#1E40AF]">{Q(montoNum)}</span>
                 <span className="mx-2">→</span>
-                <span>{cotizacionSeleccionada.numero}</span>
-                <span className="mx-1 text-slate-400">·</span>
-                <span>{cotizacionSeleccionada.cliente?.nombre}</span>
+                {cotizacionSeleccionada && <span>{cotizacionSeleccionada.numero}<span className="mx-1 text-slate-400">·</span></span>}
+                <span>{clienteNombre}</span>
                 {esAnticipo && <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Anticipo</span>}
+                {modo === 'directo' && <span className="ml-2 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Directo</span>}
               </div>
             )}
           </div>
@@ -361,7 +513,7 @@ export default function NuevoPagoPage() {
             </button>
             <button
               onClick={guardar}
-              disabled={guardando || !cotizacionSeleccionada || montoNum <= 0}
+              disabled={!canSubmit}
               className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             >
               {guardando ? 'Registrando...' : confirmarInmediato ? '✅ Registrar y confirmar' : '💾 Registrar pago'}
