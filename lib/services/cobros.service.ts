@@ -10,7 +10,7 @@ import {
   emailSolicitudPago,
   emailPagoRecibido,
 } from '@/lib/templates/emails';
-import { solicitarFacturaPorPagoId } from '@/lib/services/factura-re.service';
+import { notificarPagoParaFactura } from '@/lib/services/factura-re.service';
 
 const db = () => createAdminClient();
 
@@ -174,11 +174,11 @@ export async function registrarPagoCobro(params: {
   // Refetch cobro to get updated data.
   const cobroActualizado = await obtenerCobro(params.cobro_id);
 
-  // Solicitar factura a RE Contadores automáticamente
+  // Notificar a Amanda por Telegram para que apruebe solicitud de factura
   try {
-    await solicitarFacturaPorPagoId(pago.id);
+    await notificarPagoParaFactura(pago.id);
   } catch (err: any) {
-    console.error('[Cobros] Error solicitando factura a RE:', err.message);
+    console.error('[Cobros] Error notificando pago para factura:', err.message);
   }
 
   return { pago, cobro: cobroActualizado };

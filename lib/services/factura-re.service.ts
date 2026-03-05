@@ -1,6 +1,6 @@
 // ============================================================================
 // lib/services/factura-re.service.ts
-// Solicitud automática de factura a RE Contadores
+// Solicitud de factura a RE Contadores — con flujo de aprobación
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -16,7 +16,7 @@ const RE_DESTINATARIOS = [
   'joaquin.sandoval@re.com.gt',
 ];
 
-interface SolicitudFacturaParams {
+export interface SolicitudFacturaParams {
   pago_id: string;
   cliente_nombre: string;
   cliente_nit: string | null;
@@ -26,8 +26,36 @@ interface SolicitudFacturaParams {
   referencia_bancaria: string | null;
 }
 
+// ── Notificación (se llama automáticamente al confirmar pago) ───────────────
+
+/**
+ * Notifica a Amanda por Telegram que se registró un pago y hay solicitud
+ * de factura pendiente de aprobación. NO envía el email a RE.
+ */
+export async function notificarPagoParaFactura(pagoId: string): Promise<void> {
+  try {
+    const datos = await obtenerDatosPago(pagoId);
+    if (!datos) return;
+
+    const montoFmt = `Q${datos.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+
+    await sendTelegramMessage(
+      `📄 Pago registrado: ${datos.cliente_nombre} — ${montoFmt}\n` +
+      `Concepto: ${datos.concepto}\n` +
+      `NIT: ${datos.cliente_nit || 'CF'}\n\n` +
+      `Preparé solicitud de factura para RE. Aprueba desde el asistente contable.`,
+    );
+    console.log('[FacturaRE] Telegram de notificación enviado para pago', pagoId);
+  } catch (err: any) {
+    console.error('[FacturaRE] Error notificando pago:', err.message);
+  }
+}
+
+// ── Envío real (se llama desde el asistente contable tras aprobación) ────────
+
 /**
  * Envía solicitud de factura a RE Contadores, registra en BD y notifica por Telegram.
+ * SOLO llamar después de que Amanda apruebe el borrador.
  */
 export async function solicitarFacturaRE(params: SolicitudFacturaParams): Promise<void> {
   const {
@@ -42,9 +70,7 @@ export async function solicitarFacturaRE(params: SolicitudFacturaParams): Promis
 
   const nit = cliente_nit || 'CF';
   const montoFmt = `Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
-  const referenciaLinea = referencia_bancaria
-    ? `Referencia: ${referencia_bancaria}`
-    : 'Referencia: N/A';
+  const referenciaTexto = referencia_bancaria || 'N/A';
 
   const asunto = `Solicitud de factura — ${cliente_nombre} — ${concepto}`;
 
@@ -57,7 +83,7 @@ export async function solicitarFacturaRE(params: SolicitudFacturaParams): Promis
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Concepto:</td><td>${escapeHtml(concepto)}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Monto:</td><td>${montoFmt}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Fecha de pago:</td><td>${fecha_pago}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">${referenciaLinea.split(':')[0]}:</td><td>${escapeHtml(referenciaLinea.split(':').slice(1).join(':').trim())}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Referencia:</td><td>${escapeHtml(referenciaTexto)}</td></tr>
 </table>
 <p>Agradezco su pronta gestión.</p>
 <br>
@@ -68,18 +94,13 @@ Tel. 2335-3613</p>
 `.trim();
 
   // 1. Enviar email a RE Contadores
-  try {
-    await sendMail({
-      from: 'contador@papeleo.legal',
-      to: RE_DESTINATARIOS.join(', '),
-      subject: asunto,
-      htmlBody,
-    });
-    console.log('[FacturaRE] Email enviado a RE Contadores para pago', pago_id);
-  } catch (err: any) {
-    console.error('[FacturaRE] Error enviando email:', err.message);
-    // No lanzar — registrar que falló pero no bloquear el flujo de pago
-  }
+  await sendMail({
+    from: 'contador@papeleo.legal',
+    to: RE_DESTINATARIOS.join(', '),
+    subject: asunto,
+    htmlBody,
+  });
+  console.log('[FacturaRE] Email enviado a RE Contadores para pago', pago_id);
 
   // 2. Registrar en BD
   try {
@@ -96,59 +117,48 @@ Tel. 2335-3613</p>
     console.error('[FacturaRE] Error actualizando BD:', err.message);
   }
 
-  // 3. Notificar a Amanda por Telegram
+  // 3. Confirmar a Amanda por Telegram
   try {
     await sendTelegramMessage(
-      `📄 Factura solicitada a RE por pago de ${cliente_nombre} — ${montoFmt}`,
+      `✅ Factura solicitada a RE por pago de ${cliente_nombre} — ${montoFmt}`,
     );
-    console.log('[FacturaRE] Telegram enviado');
   } catch (err: any) {
     console.error('[FacturaRE] Error enviando Telegram:', err.message);
   }
 }
 
-/**
- * Solicita factura dado un pago_id — busca los datos del pago y cliente.
- */
-export async function solicitarFacturaPorPagoId(pagoId: string): Promise<string> {
+// ── Helper: obtener datos de pago para borrador ─────────────────────────────
+
+export async function obtenerDatosPago(pagoId: string): Promise<SolicitudFacturaParams | null> {
   const { data: pago, error } = await db()
     .from('pagos')
     .select(`
-      id, monto, fecha_pago, referencia_bancaria, notas,
+      id, monto, fecha_pago, referencia_bancaria, notas, cobro_id,
       cliente:clientes!cliente_id (id, nombre, nit)
     `)
     .eq('id', pagoId)
     .single();
 
   if (error || !pago) {
-    throw new Error(`Pago no encontrado: ${pagoId}`);
+    console.error('[FacturaRE] Pago no encontrado:', pagoId);
+    return null;
   }
 
   const cliente = pago.cliente as any;
-  if (!cliente) {
-    throw new Error('El pago no tiene cliente asociado');
-  }
+  if (!cliente) return null;
 
-  // Determinar concepto del pago
+  // Determinar concepto
   let concepto = pago.notas || 'Servicios legales';
-
-  // Si tiene cobro asociado, usar concepto del cobro
-  const { data: pagoCompleto } = await db()
-    .from('pagos')
-    .select('cobro_id')
-    .eq('id', pagoId)
-    .single();
-
-  if (pagoCompleto?.cobro_id) {
+  if (pago.cobro_id) {
     const { data: cobro } = await db()
       .from('cobros')
       .select('concepto')
-      .eq('id', pagoCompleto.cobro_id)
+      .eq('id', pago.cobro_id)
       .single();
     if (cobro?.concepto) concepto = cobro.concepto;
   }
 
-  await solicitarFacturaRE({
+  return {
     pago_id: pagoId,
     cliente_nombre: cliente.nombre,
     cliente_nit: cliente.nit,
@@ -156,9 +166,7 @@ export async function solicitarFacturaPorPagoId(pagoId: string): Promise<string>
     monto: pago.monto,
     fecha_pago: pago.fecha_pago,
     referencia_bancaria: pago.referencia_bancaria,
-  });
-
-  return `Factura solicitada a RE Contadores para ${cliente.nombre} — Q${pago.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  };
 }
 
 function escapeHtml(text: string): string {

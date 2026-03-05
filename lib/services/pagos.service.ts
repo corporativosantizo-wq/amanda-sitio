@@ -11,7 +11,7 @@ import type {
   PagoConRelaciones,
 } from '@/lib/types';
 import { EstadoPago, TipoPago } from '@/lib/types';
-import { solicitarFacturaPorPagoId } from '@/lib/services/factura-re.service';
+import { notificarPagoParaFactura } from '@/lib/services/factura-re.service';
 
 const db = () => createAdminClient();
 
@@ -188,11 +188,11 @@ export async function confirmarPago(id: string): Promise<Pago> {
 
   if (error) throw new PagoError('Error al confirmar pago', error);
 
-  // Solicitar factura a RE Contadores automáticamente
+  // Notificar a Amanda por Telegram para que apruebe solicitud de factura
   try {
-    await solicitarFacturaPorPagoId(data.id);
+    await notificarPagoParaFactura(data.id);
   } catch (err: any) {
-    console.error('[Pagos] Error solicitando factura a RE:', err.message);
+    console.error('[Pagos] Error notificando pago para factura:', err.message);
     // No bloquear el flujo de confirmación de pago
   }
 
