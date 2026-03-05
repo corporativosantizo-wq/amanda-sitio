@@ -184,7 +184,7 @@ export interface Pago {
   factura_id: string | null;
   cotizacion_id: string | null;
   cobro_id: string | null;
-  cliente_id: string;
+  cliente_id: string | null;
 
   fecha_pago: string;
   monto: number;
@@ -209,7 +209,7 @@ export interface PagoInsert {
   factura_id?: string | null;
   cotizacion_id?: string | null;
   cobro_id?: string | null;
-  cliente_id: string;
+  cliente_id?: string | null;
   fecha_pago?: string;
   monto: number;
   tipo?: TipoPago;

@@ -61,9 +61,6 @@ export async function POST(request: NextRequest) {
       factura_id: body.factura_id ?? null,
     };
 
-    if (!input.cliente_id) {
-      return NextResponse.json({ error: 'cliente_id es requerido' }, { status: 400 });
-    }
     if (!input.monto || input.monto <= 0) {
       return NextResponse.json({ error: 'monto debe ser mayor a 0' }, { status: 400 });
     }

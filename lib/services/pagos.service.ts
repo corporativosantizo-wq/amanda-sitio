@@ -156,7 +156,7 @@ export async function registrarPago(input: PagoInsert): Promise<Pago> {
       numero,
       factura_id: input.factura_id ?? null,
       cotizacion_id: input.cotizacion_id ?? null,
-      cliente_id: input.cliente_id,
+      cliente_id: input.cliente_id ?? null,
       fecha_pago: input.fecha_pago ?? new Date().toISOString().split('T')[0],
       monto: input.monto,
       tipo,
