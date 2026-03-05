@@ -182,7 +182,7 @@ function ArturiaButton({
   label,
   hasChevron,
   expanded,
-  onClick,
+  onToggle,
   onNavigate,
 }: {
   href: string
@@ -192,7 +192,7 @@ function ArturiaButton({
   label: string
   hasChevron?: boolean
   expanded?: boolean
-  onClick?: () => void
+  onToggle?: () => void
   onNavigate?: () => void
 }) {
   const [pressed, setPressed] = useState(false)
@@ -216,11 +216,8 @@ function ArturiaButton({
     <Link
       href={href}
       title={label}
-      onClick={(e) => {
-        if (onClick) {
-          e.preventDefault()
-          onClick()
-        }
+      onClick={() => {
+        onToggle?.()
         onNavigate?.()
       }}
       onMouseDown={() => setPressed(true)}
@@ -294,7 +291,7 @@ function MobileNavRow({
   label,
   hasChevron,
   expanded,
-  onClick,
+  onToggle,
   onNavigate,
 }: {
   href: string
@@ -304,17 +301,14 @@ function MobileNavRow({
   label: string
   hasChevron?: boolean
   expanded?: boolean
-  onClick?: () => void
+  onToggle?: () => void
   onNavigate?: () => void
 }) {
   return (
     <Link
       href={href}
-      onClick={(e) => {
-        if (onClick) {
-          e.preventDefault()
-          onClick()
-        }
+      onClick={() => {
+        onToggle?.()
         onNavigate?.()
       }}
       className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150"
@@ -763,8 +757,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                       label={item.name}
                       hasChevron={hasKids}
                       expanded={isExpanded}
-                      onNavigate={hasKids ? undefined : closeMobile}
-                      onClick={hasKids ? () => {
+                      onNavigate={closeMobile}
+                      onToggle={hasKids ? () => {
                         setExpandedGroup(isExpanded ? null : item.href)
                       } : undefined}
                     />
@@ -809,8 +803,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                         label={item.name}
                         hasChevron={hasKids}
                         expanded={isExpanded}
-                        onNavigate={hasKids ? undefined : closeMobile}
-                        onClick={hasKids ? () => {
+                        onNavigate={closeMobile}
+                        onToggle={hasKids ? () => {
                           setExpandedGroup(isExpanded ? null : item.href)
                         } : undefined}
                       />
