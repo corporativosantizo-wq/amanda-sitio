@@ -36,6 +36,7 @@ export interface Compareciente {
   dpi: string | null;
   calidad: string;          // vendedor, comprador, mandante, mandatario, otorgante, etc.
   representacion: string | null; // "en representación de EMPRESA S.A."
+  cliente_id: string | null; // FK a legal.clientes para vincular al expediente
 }
 
 // --- Impuestos Aplicables (JSONB) ---

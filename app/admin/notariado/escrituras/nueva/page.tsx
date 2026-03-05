@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { TipoInstrumento, TIPO_INSTRUMENTO_LABEL } from '@/lib/types/enums'
@@ -26,7 +26,148 @@ interface Compareciente {
   nombre: string
   dpi: string
   calidad: string
+  cliente_id: string | null
 }
+
+interface ClienteSugerencia {
+  id: string
+  nombre: string
+  dpi: string | null
+  email: string | null
+  nit: string | null
+}
+
+// ── Client Autocomplete ─────────────────────────────────────────────────
+
+function ClienteAutocomplete({
+  value,
+  onSelect,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onSelect: (cliente: ClienteSugerencia) => void
+  onChange: (val: string) => void
+  placeholder?: string
+}) {
+  const [query, setQuery] = useState(value)
+  const [sugerencias, setSugerencias] = useState<ClienteSugerencia[]>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Sync external value changes
+  useEffect(() => { setQuery(value) }, [value])
+
+  const buscar = useCallback(async (q: string) => {
+    if (q.length < 2) { setSugerencias([]); return }
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8`)
+      if (res.ok) {
+        const data = await res.json()
+        const items: ClienteSugerencia[] = (data.data ?? []).map((c: any) => ({
+          id: c.id,
+          nombre: c.nombre,
+          dpi: c.dpi ?? null,
+          email: c.email ?? null,
+          nit: c.nit ?? null,
+        }))
+        setSugerencias(items)
+        setShowDropdown(items.length > 0)
+        setSelectedIndex(-1)
+      }
+    } catch { /* ignore */ }
+    setLoading(false)
+  }, [])
+
+  const handleInputChange = (val: string) => {
+    setQuery(val)
+    onChange(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => buscar(val), 300)
+  }
+
+  const handleSelect = (cliente: ClienteSugerencia) => {
+    setQuery(cliente.nombre)
+    setShowDropdown(false)
+    setSugerencias([])
+    onSelect(cliente)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showDropdown || sugerencias.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex(i => Math.min(i + 1, sugerencias.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+      e.preventDefault()
+      handleSelect(sugerencias[selectedIndex])
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false)
+    }
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => handleInputChange(e.target.value)}
+        onFocus={() => { if (sugerencias.length > 0) setShowDropdown(true) }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#2d6bcf]/30 focus:border-[#2d6bcf] outline-none text-sm"
+        autoComplete="off"
+      />
+      {loading && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          <svg className="animate-spin h-4 w-4 text-slate-400" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+        </div>
+      )}
+      {showDropdown && sugerencias.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {sugerencias.map((c, i) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleSelect(c)}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${
+                i === selectedIndex ? 'bg-blue-50' : ''
+              }`}
+            >
+              <p className="font-medium text-slate-900">{c.nombre}</p>
+              <p className="text-xs text-slate-500">
+                {c.dpi && <span>DPI: {c.dpi}</span>}
+                {c.dpi && c.email && <span> · </span>}
+                {c.email && <span>{c.email}</span>}
+                {!c.dpi && !c.email && c.nit && <span>NIT: {c.nit}</span>}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main Page ───────────────────────────────────────────────────────────
 
 export default function NuevaEscrituraPage() {
   const router = useRouter()
@@ -42,11 +183,11 @@ export default function NuevaEscrituraPage() {
     notas: '',
   })
   const [comparecientes, setComparecientes] = useState<Compareciente[]>([
-    { nombre: '', dpi: '', calidad: 'otorgante' },
+    { nombre: '', dpi: '', calidad: 'otorgante', cliente_id: null },
   ])
 
   const addCompareciente = () => {
-    setComparecientes([...comparecientes, { nombre: '', dpi: '', calidad: 'otorgante' }])
+    setComparecientes([...comparecientes, { nombre: '', dpi: '', calidad: 'otorgante', cliente_id: null }])
   }
 
   const removeCompareciente = (idx: number) => {
@@ -54,9 +195,20 @@ export default function NuevaEscrituraPage() {
     setComparecientes(comparecientes.filter((_: Compareciente, i: number) => i !== idx))
   }
 
-  const updateCompareciente = (idx: number, field: keyof Compareciente, value: string) => {
+  const updateCompareciente = (idx: number, field: keyof Compareciente, value: string | null) => {
     setComparecientes(comparecientes.map((c: Compareciente, i: number) =>
       i === idx ? { ...c, [field]: value } : c
+    ))
+  }
+
+  const handleClienteSelect = (idx: number, cliente: ClienteSugerencia) => {
+    setComparecientes(comparecientes.map((c: Compareciente, i: number) =>
+      i === idx ? {
+        ...c,
+        nombre: cliente.nombre,
+        dpi: cliente.dpi ?? '',
+        cliente_id: cliente.id,
+      } : c
     ))
   }
 
@@ -207,14 +359,23 @@ export default function NuevaEscrituraPage() {
             {comparecientes.map((c: Compareciente, i: number) => (
               <div key={i} className="flex gap-2 items-start">
                 <div className="flex-1 space-y-2">
-                  <input
-                    type="text"
-                    value={c.nombre}
-                    onChange={(e) => updateCompareciente(i, 'nombre', e.target.value)}
-                    placeholder="Nombre completo"
-                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#2d6bcf]/30 focus:border-[#2d6bcf] outline-none text-sm"
-                    required
-                  />
+                  <div className="relative">
+                    <ClienteAutocomplete
+                      value={c.nombre}
+                      onChange={(val) => {
+                        updateCompareciente(i, 'nombre', val)
+                        // Clear cliente_id when typing manually
+                        if (c.cliente_id) updateCompareciente(i, 'cliente_id', null)
+                      }}
+                      onSelect={(cliente) => handleClienteSelect(i, cliente)}
+                      placeholder="Nombre completo (buscar cliente...)"
+                    />
+                    {c.cliente_id && (
+                      <span className="absolute right-8 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-medium rounded">
+                        Vinculado
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       type="text"
@@ -251,6 +412,7 @@ export default function NuevaEscrituraPage() {
               </div>
             ))}
           </div>
+          <p className="text-xs text-slate-400 mt-2">Escribe para buscar clientes del despacho. También puedes escribir un nombre manual.</p>
         </div>
 
         {/* Fecha y lugar */}

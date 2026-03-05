@@ -85,6 +85,7 @@ export default function EscrituraDetallePage() {
   const [uploading, setUploading] = useState(false);
   const [showAvisoModal, setShowAvisoModal] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [accionLoading, setAccionLoading] = useState(false);
 
   // Archivos de la Escritura (PDF firmado + DOCX editable)
   const [archivoPdf, setArchivoPdf] = useState<Documento | null>(null);
@@ -302,6 +303,38 @@ export default function EscrituraDetallePage() {
 
   const carpetaActiva = CARPETAS.find((c) => c.key === tabActiva)!;
 
+  // Cambiar estado (autorizar / cancelar)
+  const handleAccion = async (accion: 'autorizar' | 'cancelar', motivo?: string) => {
+    const confirmMsg = accion === 'autorizar'
+      ? '¿Marcar esta escritura como autorizada?'
+      : '¿Cancelar esta escritura?';
+    if (!confirm(confirmMsg)) return;
+
+    setAccionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/notariado/escrituras/${id}/acciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion, motivo }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        try {
+          const err = JSON.parse(text);
+          alert(err.error || 'Error al cambiar estado');
+        } catch {
+          alert('Error al cambiar estado');
+        }
+        return;
+      }
+      const { data } = await res.json();
+      setEscritura(prev => prev ? { ...prev, estado: data.estado } : prev);
+    } catch {
+      alert('Error al cambiar estado');
+    }
+    setAccionLoading(false);
+  };
+
   // ── Render ──────────────────────────────────────────────────────────
 
   if (loading) return (
@@ -337,10 +370,47 @@ export default function EscrituraDetallePage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{escritura.tipo_instrumento_texto}</p>
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${ESTADO_BADGES[escritura.estado] ?? 'bg-slate-100'}`}>
-          {escritura.estado}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${ESTADO_BADGES[escritura.estado] ?? 'bg-slate-100'}`}>
+            {escritura.estado}
+          </span>
+          {escritura.estado === 'borrador' && (
+            <button
+              onClick={() => handleAccion('autorizar')}
+              disabled={accionLoading}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              {accionLoading ? 'Procesando...' : 'Marcar como autorizada'}
+            </button>
+          )}
+          {escritura.estado !== 'cancelada' && (
+            <button
+              onClick={() => handleAccion('cancelar')}
+              disabled={accionLoading}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+            >
+              Cancelar escritura
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Suggestion banner: PDF exists but still borrador */}
+      {escritura.estado === 'borrador' && archivoPdf && (
+        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <svg className="w-5 h-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="flex-1">Esta escritura tiene PDF adjunto pero sigue en estado <strong>borrador</strong>.</p>
+          <button
+            onClick={() => handleAccion('autorizar')}
+            disabled={accionLoading}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            Marcar como autorizada
+          </button>
+        </div>
+      )}
 
       {/* Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -361,7 +431,14 @@ export default function EscrituraDetallePage() {
           <div className="space-y-1.5">
             {escritura.comparecientes.map((c: any, i: number) => (
               <div key={i} className="text-sm">
-                <p className="font-medium text-slate-900">{c.nombre}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-medium text-slate-900">{c.nombre}</p>
+                  {c.cliente_id && (
+                    <Link href={`/admin/clientes/${c.cliente_id}`} className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-medium rounded hover:bg-green-200 transition-colors">
+                      Ver cliente
+                    </Link>
+                  )}
+                </div>
                 {(c.calidad || c.dpi) && (
                   <p className="text-xs text-slate-500">
                     {c.calidad && <span>{c.calidad}</span>}

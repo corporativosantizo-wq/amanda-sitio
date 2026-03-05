@@ -13,7 +13,9 @@ import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 const TABS = [
   { key: '', label: 'Todas' },
+  { key: 'borrador', label: 'Borrador' },
   { key: 'autorizada', label: 'Autorizadas' },
+  { key: 'escaneada', label: 'Escaneadas' },
   { key: 'cancelada', label: 'Canceladas' },
 ];
 
