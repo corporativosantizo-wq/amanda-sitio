@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900;
+  }
+}
+
+@layer utilities {
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slideUp {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, rgba(34, 211, 238, 0.1) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(34, 211, 238, 0.1) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .shadow-glow-azure {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 0 6px rgba(59, 130, 246, 0.2);
+  }
+
+  .shadow-glow-cyan {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.3), 0 0 6px rgba(34, 211, 238, 0.2);
+  }
+
+  .bg-gradient-progress {
+    background: linear-gradient(90deg, #3B82F6, #22D3EE);
+  }
+
+  .animate-slideIn {
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}
+
+/* Arturia sidebar button hover */
+.arturia-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F3F5F9 100%) !important;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9) !important;
+}

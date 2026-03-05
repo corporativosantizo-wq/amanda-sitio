@@ -1,0 +1,50 @@
+{
+  "name": "amanda-sitio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "check-secrets": "bash scripts/check-secrets.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.73.0",
+    "@azure/msal-node": "^5.0.3",
+    "@clerk/localizations": "^3.35.3",
+    "@clerk/nextjs": "^6.37.3",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.95.3",
+    "@vercel/analytics": "^1.6.1",
+    "docx": "^9.5.2",
+    "dompurify": "^3.3.1",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
+    "lucide-react": "^0.564.0",
+    "mammoth": "^1.11.0",
+    "next": "16.1.6",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "stripe": "^20.3.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "^10.4.23",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5"
+  }
+}
