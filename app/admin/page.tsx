@@ -165,10 +165,55 @@ interface CumplimientoStats {
   vencidos: { id: string; categoria: string; fecha_vencimiento?: string; fecha_fin?: string; cliente: { id: string; nombre: string } }[];
 }
 
+interface Audiencia {
+  id: string;
+  titulo: string;
+  fecha: string;
+  fecha_fin: string;
+  todo_dia: boolean;
+  tipo: string;
+  tribunal: string;
+  cliente: string;
+  descripcion: string;
+}
+
+interface AudienciasData {
+  audiencias: Audiencia[];
+  total: number;
+  mes: string;
+}
+
+function getUrgencia(fecha: string): 'red' | 'yellow' | 'green' {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const d = new Date(fecha);
+  d.setHours(0, 0, 0, 0);
+  const diff = Math.floor((d.getTime() - hoy.getTime()) / 86400000);
+  if (diff <= 1) return 'red';      // hoy o mañana
+  if (diff <= 7) return 'yellow';   // esta semana
+  return 'green';                    // resto del mes
+}
+
+const URGENCIA_STYLES = {
+  red: { dot: 'bg-red-500', badge: 'text-red-600 bg-red-100', label: 'Urgente' },
+  yellow: { dot: 'bg-amber-500', badge: 'text-amber-600 bg-amber-100', label: 'Esta semana' },
+  green: { dot: 'bg-green-500', badge: 'text-green-600 bg-green-100', label: '' },
+};
+
+const TIPO_COLOR: Record<string, string> = {
+  Civil: 'bg-blue-100 text-blue-700',
+  Penal: 'bg-red-100 text-red-700',
+  Laboral: 'bg-amber-100 text-amber-700',
+  Familia: 'bg-pink-100 text-pink-700',
+  Mercantil: 'bg-teal-100 text-teal-700',
+  General: 'bg-gray-100 text-gray-600',
+};
+
 export default function AdminDashboard() {
   const { data } = useFetch<ExpedientesStats>('/api/admin/expedientes/stats?dias=7');
   const { data: mercData } = useFetch<CumplimientoStats>('/api/admin/mercantil/stats?dias=30');
   const { data: labData } = useFetch<CumplimientoStats>('/api/admin/laboral/stats?dias=30');
+  const { data: audData } = useFetch<AudienciasData>('/api/admin/audiencias');
 
   const stats = data?.stats;
   const plazosProximos = data?.plazos_proximos ?? [];
@@ -339,6 +384,59 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Audiencias Judiciales */}
+      {audData && audData.audiencias.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🏛️</span>
+              <h3 className="font-semibold text-slate-900 text-sm">
+                Audiencias Judiciales — {audData.mes.charAt(0).toUpperCase() + audData.mes.slice(1)}
+              </h3>
+              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
+                {audData.total}
+              </span>
+            </div>
+            <Link href="/admin/calendario" className="text-xs text-[#0891B2] hover:text-[#1E40AF] font-medium">
+              Ver calendario →
+            </Link>
+          </div>
+          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            {audData.audiencias.map((aud) => {
+              const urgencia = getUrgencia(aud.fecha);
+              const styles = URGENCIA_STYLES[urgencia];
+              const fechaObj = new Date(aud.fecha);
+              const dia = fechaObj.toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric', month: 'short' });
+              const hora = aud.todo_dia ? 'Todo el día' : fechaObj.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+
+              return (
+                <div key={aud.id} className={`flex items-center gap-3 px-5 py-3 ${urgencia === 'red' ? 'bg-red-50/40' : 'hover:bg-slate-50'} transition-colors`}>
+                  <span className={`w-2 h-2 rounded-full ${styles.dot} shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-slate-900 truncate font-medium">{aud.titulo}</p>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TIPO_COLOR[aud.tipo] ?? TIPO_COLOR.General}`}>
+                        {aud.tipo}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {dia} · {hora}
+                      {aud.tribunal && <> · {aud.tribunal}</>}
+                      {aud.cliente && <> · {aud.cliente}</>}
+                    </p>
+                  </div>
+                  {styles.label && (
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${styles.badge}`}>
+                      {styles.label}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
