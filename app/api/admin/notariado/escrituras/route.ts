@@ -47,7 +47,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as EscrituraInsert;
+    let body: EscrituraInsert;
+    try {
+      body = await request.json() as EscrituraInsert;
+    } catch {
+      return NextResponse.json(
+        { error: 'El cuerpo de la solicitud no es JSON válido' },
+        { status: 400 }
+      );
+    }
 
     // Validaciones básicas
     if (!body.fecha_autorizacion) {
@@ -108,10 +116,16 @@ function manejarError(error: unknown) {
   if (error instanceof EscrituraError) {
     const status = error.message.includes('no encontrad') ? 404 : 400;
     return NextResponse.json(
-      { error: error.message },
+      {
+        error: error.message,
+        details: error.details
+          ? String((error.details as any).message ?? error.details)
+          : undefined,
+      },
       { status }
     );
   }
+  const message = error instanceof Error ? error.message : 'Error interno del servidor';
   console.error('Error inesperado en escrituras:', error);
-  return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+  return NextResponse.json({ error: message }, { status: 500 });
 }

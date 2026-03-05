@@ -103,8 +103,15 @@ export default function NuevaEscrituraPage() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Error al crear escritura')
+        let errorMessage = `Error del servidor (${res.status})`
+        try {
+          const text = await res.text()
+          const parsed = JSON.parse(text)
+          errorMessage = parsed.error || errorMessage
+        } catch {
+          // Response body was empty or not JSON
+        }
+        throw new Error(errorMessage)
       }
 
       router.push('/admin/notariado/escrituras')
