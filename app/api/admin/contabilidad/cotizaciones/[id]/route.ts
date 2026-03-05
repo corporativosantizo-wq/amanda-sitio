@@ -12,6 +12,7 @@ import {
   eliminarCotizacion,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { CotizacionUpdate } from '@/lib/types';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -20,7 +21,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const cotizacion = await obtenerCotizacion(id);
-    return NextResponse.json(cotizacion);
+
+    // Fetch pagos linked to this cotización
+    const { data: pagos } = await createAdminClient()
+      .from('pagos')
+      .select('id, numero, monto, estado, tipo, metodo, fecha_pago, es_anticipo, confirmado_at')
+      .eq('cotizacion_id', id)
+      .order('fecha_pago', { ascending: false });
+
+    return NextResponse.json({ ...cotizacion, pagos: pagos ?? [] });
   } catch (error) {
     return manejarError(error);
   }

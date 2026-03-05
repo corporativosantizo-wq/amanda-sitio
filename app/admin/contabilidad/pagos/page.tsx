@@ -26,6 +26,7 @@ const METODO_ICON: Record<string, string> = {
 
 interface Pago {
   id: string;
+  cotizacion_id: string | null;
   monto: number;
   metodo: string;
   referencia_bancaria: string | null;
@@ -33,7 +34,7 @@ interface Pago {
   es_anticipo: boolean;
   fecha_pago: string;
   factura: { numero: string } | null;
-  cotizacion: { numero: string } | null;
+  cotizacion: { id: string; numero: string } | null;
   cliente: { nombre: string } | null;
 }
 
@@ -129,7 +130,15 @@ export default function PagosListPage() {
                     <td className="py-3 px-4 pl-5 text-sm text-slate-600">
                       {new Date(p.fecha_pago).toLocaleDateString('es-GT', { day: '2-digit', month: 'short' })}
                     </td>
-                    <td className="py-3 px-4 text-sm font-mono text-slate-900">{p.cotizacion?.numero ?? p.factura?.numero ?? '—'}</td>
+                    <td className="py-3 px-4 text-sm font-mono text-slate-900" onClick={e => {
+                      if (p.cotizacion) { e.stopPropagation(); router.push(`/admin/contabilidad/cotizaciones/${p.cotizacion.id}`); }
+                    }}>
+                      {p.cotizacion ? (
+                        <span className="text-[#0891B2] hover:underline cursor-pointer">{p.cotizacion.numero}</span>
+                      ) : p.factura ? (
+                        <span>{p.factura.numero}</span>
+                      ) : '—'}
+                    </td>
                     <td className="py-3 px-4 text-sm text-slate-700">{p.cliente?.nombre ?? '—'}</td>
                     <td className="py-3 px-4">
                       <span className="text-sm font-bold text-[#1E40AF]">{Q(p.monto)}</span>

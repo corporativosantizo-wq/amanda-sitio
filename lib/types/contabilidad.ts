@@ -82,6 +82,11 @@ export interface CotizacionInsert {
   envio_programado?: boolean;
   envio_programado_fecha?: string | null;
   items: CotizacionItemInsert[];
+  // Retroactive registration
+  retroactiva?: boolean;
+  retroactiva_estado?: 'enviada' | 'aceptada' | 'rechazada';
+  retroactiva_fecha_envio?: string;
+  retroactiva_fecha_aceptacion?: string;
 }
 
 export interface CotizacionUpdate {

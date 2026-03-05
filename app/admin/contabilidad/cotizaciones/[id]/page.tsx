@@ -12,9 +12,20 @@ import {
   PageHeader, Badge, Section, KPICard,
   EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
-import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────
+
+interface PagoAsociado {
+  id: string;
+  numero: string;
+  monto: number;
+  estado: string;
+  tipo: string;
+  metodo: string;
+  fecha_pago: string;
+  es_anticipo: boolean;
+  confirmado_at: string | null;
+}
 
 interface CotizacionDetalle {
   id: string;
@@ -48,6 +59,7 @@ interface CotizacionDetalle {
   } | null;
   pdf_url: string | null;
   factura_generada: boolean;
+  pagos: PagoAsociado[];
 }
 
 // ── Status config ───────────────────────────────────────────────────────
@@ -123,9 +135,17 @@ export default function CotizacionDetallePage() {
     setDescargando(true);
     try {
       const res = await fetch(`/api/admin/contabilidad/cotizaciones/${id}/pdf`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Error al obtener PDF');
-      safeWindowOpen(data.url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Error al generar PDF');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cotizacion-${id.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -155,6 +175,16 @@ export default function CotizacionDetallePage() {
   const estado = ESTADO_CONFIG[cot.estado] ?? ESTADO_CONFIG.borrador;
   const anticipo = Math.round(cot.total * 0.6 * 100) / 100;
   const saldo = Math.round(cot.total * 0.4 * 100) / 100;
+
+  // Pagos summary
+  const pagosConfirmados = (cot.pagos ?? []).filter(p => p.estado === 'confirmado');
+  const totalPagado = pagosConfirmados.reduce((s, p) => s + p.monto, 0);
+  const porcentajePagado = cot.total > 0 ? Math.min(100, Math.round((totalPagado / cot.total) * 100)) : 0;
+  const estadoPago = totalPagado === 0
+    ? 'pendiente'
+    : totalPagado >= cot.total
+      ? 'completo'
+      : 'parcial';
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -258,15 +288,13 @@ export default function CotizacionDetallePage() {
           >
             📋 Duplicar
           </button>
-          {cot.pdf_url && (
-            <button
-              onClick={descargarPdf}
-              disabled={descargando}
-              className="px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              {descargando ? '⏳ Descargando...' : '📄 Descargar PDF'}
-            </button>
-          )}
+          <button
+            onClick={descargarPdf}
+            disabled={descargando}
+            className="px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {descargando ? '⏳ Descargando...' : '📄 Descargar PDF'}
+          </button>
         </div>
       </div>
 
@@ -346,6 +374,72 @@ export default function CotizacionDetallePage() {
               <p className="text-sm text-amber-700">{cot.notas}</p>
             </div>
           )}
+
+          {/* Pagos asociados */}
+          <Section title="Pagos asociados">
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className={`text-sm font-medium ${
+                  estadoPago === 'completo' ? 'text-emerald-700' :
+                  estadoPago === 'parcial' ? 'text-blue-700' : 'text-slate-500'
+                }`}>
+                  {estadoPago === 'completo' ? '✅ Pagado en su totalidad' :
+                   estadoPago === 'parcial' ? `Anticipo recibido (${Q(totalPagado)} de ${Q(cot.total)})` :
+                   'Pendiente de pago'}
+                </span>
+                <span className="text-sm font-bold text-slate-900">{porcentajePagado}%</span>
+              </div>
+              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    estadoPago === 'completo' ? 'bg-emerald-500' :
+                    estadoPago === 'parcial' ? 'bg-blue-500' : 'bg-slate-200'
+                  }`}
+                  style={{ width: `${porcentajePagado}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-slate-400 mt-1">
+                <span>{Q(totalPagado)} pagado</span>
+                <span>{Q(cot.total)} total</span>
+              </div>
+            </div>
+
+            {/* Pagos list */}
+            {cot.pagos && cot.pagos.length > 0 ? (
+              <div className="space-y-2 mb-4">
+                {cot.pagos.map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <span className="text-base">{p.es_anticipo ? '🔹' : '💰'}</span>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {Q(p.monto)}
+                          {p.es_anticipo && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Anticipo</span>}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {p.numero} · {p.metodo} · {new Date(p.fecha_pago).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', timeZone: 'America/Guatemala' })}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant={p.estado as any}>{p.estado}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 mb-4">No hay pagos registrados</p>
+            )}
+
+            {/* Registrar pago button */}
+            {estadoPago !== 'completo' && (
+              <button
+                onClick={() => router.push(`/admin/contabilidad/pagos/nuevo?cotizacion_id=${id}`)}
+                className="w-full px-4 py-2.5 text-sm font-medium text-[#1E40AF] bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                + Registrar pago
+              </button>
+            )}
+          </Section>
         </div>
 
         {/* Right sidebar (1/3) */}

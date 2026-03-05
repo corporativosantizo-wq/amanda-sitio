@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { PageHeader, Badge, Q } from '@/components/admin/ui';
 
@@ -40,6 +40,7 @@ const METODOS = [
 
 export default function NuevoPagoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { mutate, loading: guardando, error: errorGuardar } = useMutate();
 
   // State
@@ -60,6 +61,27 @@ export default function NuevoPagoPage() {
   const [cotBusqueda, setCotBusqueda] = useState('');
   const [cotSeleccionada, setCotSeleccionada] = useState<CotizacionOption | null>(null);
   const [showCot, setShowCot] = useState(false);
+
+  // Preload cotización from query param
+  const preloadCotId = searchParams.get('cotizacion_id');
+  const { data: preloadCot } = useFetch<CotizacionOption & { cliente: { id: string; nombre: string } | null }>(
+    preloadCotId && !cotSeleccionada ? `/api/admin/contabilidad/cotizaciones/${preloadCotId}` : null
+  );
+  useEffect(() => {
+    if (preloadCot && !cotSeleccionada) {
+      setCotSeleccionada(preloadCot);
+      if (!concepto.trim()) setConcepto(preloadCot.numero);
+      if (preloadCot.requiere_anticipo && preloadCot.anticipo_monto > 0) {
+        setMonto(String(preloadCot.anticipo_monto));
+        setEsAnticipo(true);
+      } else {
+        setMonto(String(preloadCot.total));
+      }
+      if (preloadCot.cliente) {
+        setClienteSeleccionado({ id: preloadCot.cliente.id, nombre: preloadCot.cliente.nombre, codigo: '' });
+      }
+    }
+  }, [preloadCot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search
   const { data: clientesRes } = useFetch<{ data: ClienteOption[] }>(

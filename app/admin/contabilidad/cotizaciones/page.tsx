@@ -138,6 +138,7 @@ export default function CotizacionesPage() {
                     <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Número</th>
                     <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Cliente</th>
                     <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Total</th>
+                    <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Pagado</th>
                     <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Estado</th>
                     <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Fecha</th>
                     <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Acciones</th>
@@ -158,6 +159,15 @@ export default function CotizacionesPage() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className="text-sm font-medium text-slate-900">{Q(cot.total)}</span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {(cot as any).monto_pagado >= cot.total && cot.total > 0 ? (
+                          <span className="text-emerald-600 text-sm font-medium">✅</span>
+                        ) : (cot as any).monto_pagado > 0 ? (
+                          <span className="text-sm font-medium text-emerald-600">{Q((cot as any).monto_pagado)}</span>
+                        ) : (
+                          <span className="text-sm text-slate-300">Q0</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge variant={cot.estado}>{cot.estado}</Badge>

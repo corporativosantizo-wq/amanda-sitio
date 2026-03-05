@@ -78,6 +78,12 @@ export default function NuevaCotizacionPage() {
   const [envioFecha, setEnvioFecha] = useState('');
   const [envioHora, setEnvioHora] = useState('08:00');
 
+  // Retroactive
+  const [retroactiva, setRetroactiva] = useState(false);
+  const [retroEstado, setRetroEstado] = useState<'enviada' | 'aceptada' | 'rechazada'>('aceptada');
+  const [retroFechaEnvio, setRetroFechaEnvio] = useState('');
+  const [retroFechaAceptacion, setRetroFechaAceptacion] = useState('');
+
   // Client search
   const clienteUrl = clienteBusqueda.length >= 2
     ? `/api/admin/clientes?q=${encodeURIComponent(clienteBusqueda)}&limit=5`
@@ -187,7 +193,7 @@ export default function NuevaCotizacionPage() {
         orden: i.orden,
       })),
       condiciones,
-      notas: notas || null,
+      notas_internas: notas || null,
     };
 
     if (modo === 'programar') {
@@ -195,10 +201,17 @@ export default function NuevaCotizacionPage() {
       body.envio_programado_fecha = new Date(`${envioFecha}T${envioHora}:00`).toISOString();
     }
 
+    if (retroactiva) {
+      body.retroactiva = true;
+      body.retroactiva_estado = retroEstado;
+      if (retroFechaEnvio) body.retroactiva_fecha_envio = retroFechaEnvio;
+      if (retroFechaAceptacion) body.retroactiva_fecha_aceptacion = retroFechaAceptacion;
+    }
+
     await mutate('/api/admin/contabilidad/cotizaciones', {
       body,
       onSuccess: async (data: any) => {
-        if (modo === 'enviar' && data?.id) {
+        if (modo === 'enviar' && !retroactiva && data?.id) {
           await mutate(`/api/admin/contabilidad/cotizaciones/${data.id}/acciones`, {
             body: { accion: 'enviar' },
           });
@@ -207,7 +220,7 @@ export default function NuevaCotizacionPage() {
       },
       onError: (err: any) => setFormError(String(err)),
     });
-  }, [clienteId, items, condiciones, notas, envioFecha, envioHora, mutate, router]);
+  }, [clienteId, items, condiciones, notas, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -614,6 +627,80 @@ export default function NuevaCotizacionPage() {
         )}
       </section>
 
+      {/* ══════════ 6. REGISTRO RETROACTIVO ══════════ */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">6. Registro retroactivo</h3>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={retroactiva}
+              onChange={e => { setRetroactiva(e.target.checked); if (e.target.checked) setProgramarEnvio(false); }}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0891B2]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0891B2]" />
+            <span className="ml-2 text-sm text-slate-600">Cotización ya enviada</span>
+          </label>
+        </div>
+
+        {retroactiva && (
+          <div className="space-y-4 mt-3 p-4 bg-cyan-50 rounded-lg border border-cyan-200">
+            <p className="text-xs text-cyan-700">
+              Registra una cotización que ya fue enviada previamente. Se creará directamente con el estado que selecciones.
+            </p>
+
+            {/* Estado */}
+            <div>
+              <label className="block text-xs font-medium text-cyan-800 mb-1.5">Estado actual</label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'enviada', label: 'Enviada', icon: '📤' },
+                  { value: 'aceptada', label: 'Aceptada', icon: '✅' },
+                  { value: 'rechazada', label: 'Rechazada', icon: '❌' },
+                ] as const).map(e => (
+                  <button
+                    key={e.value}
+                    type="button"
+                    onClick={() => setRetroEstado(e.value)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-all ${
+                      retroEstado === e.value
+                        ? 'bg-white border-cyan-400 text-cyan-800 shadow-sm'
+                        : 'border-transparent text-cyan-600 hover:bg-cyan-100/50'
+                    }`}
+                  >
+                    <span>{e.icon}</span> {e.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-cyan-800 mb-1">Fecha de envío</label>
+                <input
+                  type="date"
+                  value={retroFechaEnvio}
+                  onChange={e => setRetroFechaEnvio(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-cyan-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
+                />
+              </div>
+              {(retroEstado === 'aceptada') && (
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-cyan-800 mb-1">Fecha de aceptación</label>
+                  <input
+                    type="date"
+                    value={retroFechaAceptacion}
+                    onChange={e => setRetroFechaAceptacion(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-cyan-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* ══════════ ACTIONS ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -637,29 +724,41 @@ export default function NuevaCotizacionPage() {
             >
               Cancelar
             </button>
-            <button
-              onClick={() => guardar('borrador')}
-              disabled={guardando || items.length === 0}
-              className="px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-30"
-            >
-              {guardando ? 'Guardando...' : '💾 Guardar borrador'}
-            </button>
-            {programarEnvio ? (
+            {retroactiva ? (
               <button
-                onClick={() => guardar('programar')}
+                onClick={() => guardar('borrador')}
                 disabled={guardando || !clienteId || items.length === 0}
-                className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg hover:shadow-lg hover:shadow-amber-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#0891B2] to-teal-600 rounded-lg hover:shadow-lg hover:shadow-teal-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {guardando ? 'Guardando...' : '🕐 Guardar y programar envío'}
+                {guardando ? 'Guardando...' : `Guardar como ${retroEstado}`}
               </button>
             ) : (
-              <button
-                onClick={() => guardar('enviar')}
-                disabled={guardando || !clienteId || items.length === 0}
-                className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {guardando ? 'Enviando...' : '📤 Guardar y enviar'}
-              </button>
+              <>
+                <button
+                  onClick={() => guardar('borrador')}
+                  disabled={guardando || items.length === 0}
+                  className="px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-30"
+                >
+                  {guardando ? 'Guardando...' : '💾 Guardar borrador'}
+                </button>
+                {programarEnvio ? (
+                  <button
+                    onClick={() => guardar('programar')}
+                    disabled={guardando || !clienteId || items.length === 0}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg hover:shadow-lg hover:shadow-amber-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {guardando ? 'Guardando...' : '🕐 Guardar y programar envío'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => guardar('enviar')}
+                    disabled={guardando || !clienteId || items.length === 0}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {guardando ? 'Enviando...' : '📤 Guardar y enviar'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

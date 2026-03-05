@@ -83,8 +83,27 @@ export async function listarCotizaciones(params: ListParams = {}) {
 
   if (error) throw new CotizacionError('Error al listar cotizaciones', error);
 
+  // Fetch confirmed payment totals for these cotizaciones
+  const ids = (data ?? []).map((c: any) => c.id);
+  let pagosPorCot: Record<string, number> = {};
+  if (ids.length > 0) {
+    const { data: pagos } = await db()
+      .from('pagos')
+      .select('cotizacion_id, monto')
+      .in('cotizacion_id', ids)
+      .eq('estado', 'confirmado');
+    for (const p of (pagos ?? [])) {
+      pagosPorCot[p.cotizacion_id] = (pagosPorCot[p.cotizacion_id] ?? 0) + p.monto;
+    }
+  }
+
+  const dataConPagos = (data ?? []).map((c: any) => ({
+    ...c,
+    monto_pagado: pagosPorCot[c.id] ?? 0,
+  }));
+
   return {
-    data: data as CotizacionConCliente[],
+    data: dataConPagos as (CotizacionConCliente & { monto_pagado: number })[],
     total: count ?? 0,
     page,
     limit,
@@ -152,7 +171,35 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
   // 6. Condiciones default
   const condiciones = input.condiciones ?? generarCondicionesDefault(config);
 
-  // 7. Insertar cotización
+  // 7. Determine estado and dates for retroactive registrations
+  let estadoInicial = EstadoCotizacion.BORRADOR;
+  let enviadaAt: string | null = null;
+  let aceptadaAt: string | null = null;
+
+  if (input.retroactiva) {
+    const retroEstado = input.retroactiva_estado ?? 'enviada';
+    if (retroEstado === 'enviada') {
+      estadoInicial = EstadoCotizacion.ENVIADA;
+      enviadaAt = input.retroactiva_fecha_envio
+        ? new Date(input.retroactiva_fecha_envio + 'T12:00:00').toISOString()
+        : new Date().toISOString();
+    } else if (retroEstado === 'aceptada') {
+      estadoInicial = EstadoCotizacion.ACEPTADA;
+      enviadaAt = input.retroactiva_fecha_envio
+        ? new Date(input.retroactiva_fecha_envio + 'T12:00:00').toISOString()
+        : new Date().toISOString();
+      aceptadaAt = input.retroactiva_fecha_aceptacion
+        ? new Date(input.retroactiva_fecha_aceptacion + 'T12:00:00').toISOString()
+        : new Date().toISOString();
+    } else if (retroEstado === 'rechazada') {
+      estadoInicial = EstadoCotizacion.RECHAZADA;
+      enviadaAt = input.retroactiva_fecha_envio
+        ? new Date(input.retroactiva_fecha_envio + 'T12:00:00').toISOString()
+        : new Date().toISOString();
+    }
+  }
+
+  // 8. Insertar cotización
   const { data: cotizacion, error: cotError } = await db()
     .from('cotizaciones')
     .insert({
@@ -161,7 +208,7 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       expediente_id: input.expediente_id ?? null,
       fecha_emision: fechaEmision,
       fecha_vencimiento: fechaVencimiento,
-      estado: EstadoCotizacion.BORRADOR,
+      estado: estadoInicial,
       subtotal,
       iva_monto: iva,
       total,
@@ -174,6 +221,8 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       anticipo_monto: anticipo,
       envio_programado: input.envio_programado ?? false,
       envio_programado_fecha: input.envio_programado_fecha ?? null,
+      enviada_at: enviadaAt,
+      aceptada_at: aceptadaAt,
     })
     .select()
     .single();
