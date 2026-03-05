@@ -1,7 +1,7 @@
 // ============================================================================
 // GET /api/admin/audiencias
 // Audiencias judiciales del mes desde Outlook Calendar
-// Filtra eventos con "[AUD" o "audiencia" en el título
+// Filtra eventos con "audiencia" (palabra completa), excluye auditorías
 // ============================================================================
 
 import { NextResponse } from 'next/server';
@@ -20,20 +20,23 @@ export async function GET() {
 
     const events = await getCalendarEvents(startDate, endDate);
 
-    // Filtrar audiencias: título contiene "[AUD" o "audiencia" (case-insensitive)
+    // Filtrar audiencias judiciales (excluir auditorías)
     const audiencias = events
       .filter((ev) => {
-        const title = (ev.subject ?? '').toLowerCase();
-        return title.includes('[aud') || title.includes('audiencia');
+        const title = (ev.subject ?? '');
+        // Excluir auditorías explícitamente
+        if (/auditor[ií]a/i.test(title)) return false;
+        // Matchear: "[AUDIENCIA]" tag, o palabra "audiencia" (completa)
+        return /\[audiencia\]/i.test(title) || /\baudiencia\b/i.test(title);
       })
       .map((ev) => {
         const title = ev.subject ?? '';
 
         // Intentar extraer tipo de proceso del título
-        // Patrones comunes: [AUD-Civil], [AUD-Penal], "audiencia civil", etc.
+        // Patrones: [AUDIENCIA Civil], "Audiencia civil", "Audiencia 01077-2025", etc.
         let tipo = 'General';
-        const tipoMatch = title.match(/\[AUD[- ]?(Civil|Penal|Laboral|Familia|Mercantil)\]/i)
-          || title.match(/audiencia\s+(civil|penal|laboral|familia|mercantil)/i);
+        const tipoMatch = title.match(/\[AUDIENCIA[- ]?(Civil|Penal|Laboral|Familia|Mercantil)\]/i)
+          || title.match(/\baudiencia\s+(civil|penal|laboral|familia|mercantil)\b/i);
         if (tipoMatch) tipo = tipoMatch[1].charAt(0).toUpperCase() + tipoMatch[1].slice(1).toLowerCase();
 
         // Extraer tribunal del bodyPreview o título
