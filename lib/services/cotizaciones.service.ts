@@ -64,7 +64,19 @@ export async function listarCotizaciones(params: ListParams = {}) {
     query = query.eq('cliente_id', cliente_id);
   }
   if (busqueda) {
-    query = query.or(`numero.ilike.%${busqueda}%`);
+    // Search by cotizacion number or client name
+    const { data: matchClientes } = await db()
+      .from('clientes')
+      .select('id')
+      .ilike('nombre', `%${busqueda}%`)
+      .limit(10);
+    const clientIds = (matchClientes ?? []).map((c: any) => c.id);
+
+    if (clientIds.length > 0) {
+      query = query.or(`numero.ilike.%${busqueda}%,cliente_id.in.(${clientIds.join(',')})`);
+    } else {
+      query = query.ilike('numero', `%${busqueda}%`);
+    }
   }
 
   const { data, error, count } = await query;

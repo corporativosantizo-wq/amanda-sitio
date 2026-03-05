@@ -27,12 +27,13 @@ const METODO_ICON: Record<string, string> = {
 interface Pago {
   id: string;
   monto: number;
-  metodo_pago: string;
-  referencia_pago: string | null;
+  metodo: string;
+  referencia_bancaria: string | null;
   estado: string;
   es_anticipo: boolean;
   fecha_pago: string;
   factura: { numero: string } | null;
+  cotizacion: { numero: string } | null;
   cliente: { nombre: string } | null;
 }
 
@@ -99,7 +100,7 @@ export default function PagosListPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  {['Fecha', 'Factura', 'Cliente', 'Monto', 'Método', 'Referencia', 'Estado', ''].map(h => (
+                  {['Fecha', 'Documento', 'Cliente', 'Monto', 'Método', 'Referencia', 'Estado', ''].map(h => (
                     <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
                   ))}
                 </tr>
@@ -111,17 +112,17 @@ export default function PagosListPage() {
                     <td className="py-3 px-4 pl-5 text-sm text-slate-600">
                       {new Date(p.fecha_pago).toLocaleDateString('es-GT', { day: '2-digit', month: 'short' })}
                     </td>
-                    <td className="py-3 px-4 text-sm font-mono text-slate-900">{p.factura?.numero ?? '—'}</td>
+                    <td className="py-3 px-4 text-sm font-mono text-slate-900">{p.cotizacion?.numero ?? p.factura?.numero ?? '—'}</td>
                     <td className="py-3 px-4 text-sm text-slate-700">{p.cliente?.nombre ?? '—'}</td>
                     <td className="py-3 px-4">
                       <span className="text-sm font-bold text-[#1E40AF]">{Q(p.monto)}</span>
                       {p.es_anticipo && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded">60%</span>}
                     </td>
                     <td className="py-3 px-4 text-sm">
-                      <span>{METODO_ICON[p.metodo_pago] ?? '📋'}</span>
-                      <span className="ml-1 text-slate-600 capitalize">{p.metodo_pago}</span>
+                      <span>{METODO_ICON[p.metodo] ?? '📋'}</span>
+                      <span className="ml-1 text-slate-600 capitalize">{p.metodo}</span>
                     </td>
-                    <td className="py-3 px-4 text-sm text-slate-500 font-mono">{p.referencia_pago ?? '—'}</td>
+                    <td className="py-3 px-4 text-sm text-slate-500 font-mono">{p.referencia_bancaria ?? '—'}</td>
                     <td className="py-3 px-4"><Badge variant={p.estado as any}>{p.estado}</Badge></td>
                     <td className="py-3 px-4 pr-5">
                       {p.estado === 'registrado' && (

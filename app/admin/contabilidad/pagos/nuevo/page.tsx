@@ -1,25 +1,26 @@
 // ============================================================================
 // app/admin/contabilidad/pagos/nuevo/page.tsx
-// Registro rápido de pago
+// Registro rápido de pago — contra cotización
+// Flujo: Cotización → Pago → Factura (posterior)
 // ============================================================================
 
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { PageHeader, Badge, Q } from '@/components/admin/ui';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-interface FacturaPendiente {
+interface CotizacionOption {
   id: string;
   numero: string;
   total: number;
-  monto_pagado: number;
-  monto_pendiente: number;
   estado: string;
-  fecha_vencimiento: string;
+  requiere_anticipo: boolean;
+  anticipo_porcentaje: number;
+  anticipo_monto: number;
   cliente: { id: string; nombre: string } | null;
 }
 
@@ -36,16 +37,13 @@ const METODOS_PAGO = [
 
 export default function NuevoPagoPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const facturaIdParam = searchParams.get('factura_id');
 
   const { mutate, loading: guardando, error: errorGuardar } = useMutate();
 
   // Form state
-  const [facturaId, setFacturaId] = useState(facturaIdParam ?? '');
-  const [facturaBusqueda, setFacturaBusqueda] = useState('');
-  const [facturaSeleccionada, setFacturaSeleccionada] = useState<FacturaPendiente | null>(null);
-  const [showFacturas, setShowFacturas] = useState(false);
+  const [cotizacionBusqueda, setCotizacionBusqueda] = useState('');
+  const [cotizacionSeleccionada, setCotizacionSeleccionada] = useState<CotizacionOption | null>(null);
+  const [showResultados, setShowResultados] = useState(false);
   const [monto, setMonto] = useState('');
   const [metodoPago, setMetodoPago] = useState('transferencia');
   const [referencia, setReferencia] = useState('');
@@ -53,71 +51,63 @@ export default function NuevoPagoPage() {
   const [confirmarInmediato, setConfirmarInmediato] = useState(true);
   const [notas, setNotas] = useState('');
 
-  // Search invoices
-  const facturaUrl = facturaBusqueda.length >= 2
-    ? `/api/admin/contabilidad/facturas?q=${encodeURIComponent(facturaBusqueda)}&estado=pendiente,parcial&limit=5`
+  // Search cotizaciones
+  const cotizacionUrl = cotizacionBusqueda.length >= 2
+    ? `/api/admin/contabilidad/cotizaciones?q=${encodeURIComponent(cotizacionBusqueda)}&limit=5`
     : null;
-  const { data: facturasResult } = useFetch<{ data: FacturaPendiente[] }>(facturaUrl);
+  const { data: cotizacionesResult } = useFetch<{ data: CotizacionOption[] }>(cotizacionUrl);
 
-  // Auto-load if factura_id in URL
-  const { data: facturaPreloaded } = useFetch<FacturaPendiente>(
-    facturaIdParam && !facturaSeleccionada
-      ? `/api/admin/contabilidad/facturas/${facturaIdParam}`
-      : null
+  // Filter out rechazadas from results
+  const cotizacionesFiltradas = (cotizacionesResult?.data ?? []).filter(
+    c => c.estado !== 'rechazada'
   );
-  if (facturaPreloaded && !facturaSeleccionada) {
-    setFacturaSeleccionada(facturaPreloaded);
-    setFacturaId(facturaPreloaded.id);
-  }
 
   // ── Calculations ────────────────────────────────────────────────────
 
   const montoNum = parseFloat(monto) || 0;
-  const esPagoTotal = facturaSeleccionada
-    ? Math.abs(montoNum - facturaSeleccionada.monto_pendiente) < 0.01
-    : false;
-  const esPagoParcial = facturaSeleccionada
-    ? montoNum > 0 && montoNum < facturaSeleccionada.monto_pendiente
-    : false;
-  const excedeDeuda = facturaSeleccionada
-    ? montoNum > facturaSeleccionada.monto_pendiente + 0.01
-    : false;
 
   // ── Actions ─────────────────────────────────────────────────────────
 
-  const seleccionarFactura = useCallback((f: FacturaPendiente) => {
-    setFacturaId(f.id);
-    setFacturaSeleccionada(f);
-    setFacturaBusqueda('');
-    setShowFacturas(false);
-    // Auto-set monto al pendiente
-    setMonto(String(f.monto_pendiente));
+  const seleccionarCotizacion = useCallback((c: CotizacionOption) => {
+    setCotizacionSeleccionada(c);
+    setCotizacionBusqueda('');
+    setShowResultados(false);
+    // Pre-fill monto: anticipo if required, otherwise total
+    if (c.requiere_anticipo && c.anticipo_monto > 0) {
+      setMonto(String(c.anticipo_monto));
+      setEsAnticipo(true);
+    } else {
+      setMonto(String(c.total));
+      setEsAnticipo(false);
+    }
   }, []);
 
-  const setMonto60 = useCallback(() => {
-    if (!facturaSeleccionada) return;
-    const anticipo = Math.round(facturaSeleccionada.total * 0.6 * 100) / 100;
+  const setMontoAnticipo = useCallback(() => {
+    if (!cotizacionSeleccionada) return;
+    const pct = cotizacionSeleccionada.anticipo_porcentaje || 60;
+    const anticipo = Math.round(cotizacionSeleccionada.total * (pct / 100) * 100) / 100;
     setMonto(String(anticipo));
     setEsAnticipo(true);
-  }, [facturaSeleccionada]);
+  }, [cotizacionSeleccionada]);
 
-  const setMonto40 = useCallback(() => {
-    if (!facturaSeleccionada) return;
-    setMonto(String(facturaSeleccionada.monto_pendiente));
+  const setMontoTotal = useCallback(() => {
+    if (!cotizacionSeleccionada) return;
+    setMonto(String(cotizacionSeleccionada.total));
     setEsAnticipo(false);
-  }, [facturaSeleccionada]);
+  }, [cotizacionSeleccionada]);
 
   const guardar = useCallback(async () => {
-    if (!facturaId) return alert('Selecciona una factura');
+    if (!cotizacionSeleccionada) return alert('Selecciona una cotización');
     if (montoNum <= 0) return alert('El monto debe ser mayor a 0');
-    if (excedeDeuda) return alert('El monto excede la deuda pendiente');
 
     const body = {
-      factura_id: facturaId,
+      cotizacion_id: cotizacionSeleccionada.id,
+      cliente_id: cotizacionSeleccionada.cliente?.id,
       monto: montoNum,
       metodo_pago: metodoPago,
       referencia_pago: referencia || null,
       es_anticipo: esAnticipo,
+      porcentaje_anticipo: esAnticipo ? (cotizacionSeleccionada.anticipo_porcentaje || 60) : null,
       notas: notas || null,
       confirmar_inmediato: confirmarInmediato,
     };
@@ -129,7 +119,9 @@ export default function NuevoPagoPage() {
       },
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [facturaId, montoNum, metodoPago, referencia, esAnticipo, notas, confirmarInmediato, excedeDeuda, mutate, router]);
+  }, [cotizacionSeleccionada, montoNum, metodoPago, referencia, esAnticipo, notas, confirmarInmediato, mutate, router]);
+
+  const anticipoPct = cotizacionSeleccionada?.anticipo_porcentaje || 60;
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -137,47 +129,45 @@ export default function NuevoPagoPage() {
     <div className="space-y-5 max-w-3xl">
       <PageHeader
         title="Registrar pago"
-        description="Registra un pago recibido contra una factura"
+        description="Registra un pago recibido contra una cotización"
       />
 
-      {/* ══════════ 1. FACTURA ══════════ */}
+      {/* ══════════ 1. COTIZACIÓN ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">1. Factura</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">1. Cotización</h3>
 
-        {facturaSeleccionada ? (
+        {cotizacionSeleccionada ? (
           <div className="space-y-4">
-            {/* Factura card */}
+            {/* Cotización card */}
             <div className="bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-lg p-4 border border-slate-200">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-medium text-slate-900">{facturaSeleccionada.numero}</span>
-                    <Badge variant={facturaSeleccionada.estado as any}>{facturaSeleccionada.estado}</Badge>
+                    <span className="font-mono font-medium text-slate-900">{cotizacionSeleccionada.numero}</span>
+                    <Badge variant={cotizacionSeleccionada.estado as any}>{cotizacionSeleccionada.estado}</Badge>
                   </div>
-                  <p className="text-sm text-slate-600 mt-1">{facturaSeleccionada.cliente?.nombre ?? '—'}</p>
+                  <p className="text-sm text-slate-600 mt-1">{cotizacionSeleccionada.cliente?.nombre ?? '—'}</p>
                 </div>
                 <button
-                  onClick={() => { setFacturaSeleccionada(null); setFacturaId(''); setMonto(''); }}
+                  onClick={() => { setCotizacionSeleccionada(null); setMonto(''); }}
                   className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1 rounded-md hover:bg-red-50"
                 >
                   Cambiar
                 </button>
               </div>
 
-              {/* Balance breakdown */}
-              <div className="mt-4 grid grid-cols-3 gap-3">
+              {/* Total and anticipo info */}
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                  <p className="text-xs text-slate-500">Total factura</p>
-                  <p className="text-lg font-bold text-slate-900">{Q(facturaSeleccionada.total)}</p>
+                  <p className="text-xs text-slate-500">Total cotización</p>
+                  <p className="text-lg font-bold text-slate-900">{Q(cotizacionSeleccionada.total)}</p>
                 </div>
-                <div className="bg-white rounded-lg p-3 text-center border border-slate-200">
-                  <p className="text-xs text-slate-500">Ya pagado</p>
-                  <p className="text-lg font-bold text-emerald-600">{Q(facturaSeleccionada.monto_pagado)}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 text-center border border-amber-200 bg-amber-50/50">
-                  <p className="text-xs text-amber-700">Pendiente</p>
-                  <p className="text-lg font-bold text-amber-700">{Q(facturaSeleccionada.monto_pendiente)}</p>
-                </div>
+                {cotizacionSeleccionada.requiere_anticipo && (
+                  <div className="bg-white rounded-lg p-3 text-center border border-blue-200 bg-blue-50/50">
+                    <p className="text-xs text-blue-700">Anticipo {anticipoPct}%</p>
+                    <p className="text-lg font-bold text-blue-700">{Q(cotizacionSeleccionada.anticipo_monto)}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -186,40 +176,40 @@ export default function NuevoPagoPage() {
             <input
               type="text"
               autoFocus
-              placeholder="Buscar por número de factura o nombre de cliente..."
-              value={facturaBusqueda}
-              onChange={e => { setFacturaBusqueda(e.target.value); setShowFacturas(true); }}
-              onFocus={() => setShowFacturas(true)}
+              placeholder="Buscar por número de cotización o nombre de cliente..."
+              value={cotizacionBusqueda}
+              onChange={e => { setCotizacionBusqueda(e.target.value); setShowResultados(true); }}
+              onFocus={() => setShowResultados(true)}
               className="w-full px-4 py-3 pl-10 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
             />
             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
 
-            {showFacturas && facturaBusqueda.length >= 2 && (
+            {showResultados && cotizacionBusqueda.length >= 2 && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowFacturas(false)} />
+                <div className="fixed inset-0 z-10" onClick={() => setShowResultados(false)} />
                 <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
-                  {facturasResult && facturasResult.data.length > 0 ? (
-                    facturasResult.data.map(f => (
+                  {cotizacionesFiltradas.length > 0 ? (
+                    cotizacionesFiltradas.map(c => (
                       <button
-                        key={f.id}
-                        onClick={() => seleccionarFactura(f)}
+                        key={c.id}
+                        onClick={() => seleccionarCotizacion(c)}
                         className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-0"
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-mono font-medium text-slate-900">{f.numero}</span>
-                            <span className="text-slate-400 text-xs ml-2">{f.cliente?.nombre}</span>
+                            <span className="font-mono font-medium text-slate-900">{c.numero}</span>
+                            <span className="text-slate-400 text-xs ml-2">{c.cliente?.nombre}</span>
+                            <Badge variant={c.estado as any} className="ml-2 text-[10px]">{c.estado}</Badge>
                           </div>
                           <div className="text-right">
-                            <span className="text-sm font-medium text-amber-700">{Q(f.monto_pendiente)}</span>
-                            <span className="text-xs text-slate-400 ml-1">pendiente</span>
+                            <span className="text-sm font-medium text-slate-900">{Q(c.total)}</span>
                           </div>
                         </div>
                       </button>
                     ))
-                  ) : facturasResult ? (
+                  ) : cotizacionesResult ? (
                     <div className="p-4 text-center text-sm text-slate-500">
-                      No se encontraron facturas pendientes
+                      No se encontraron cotizaciones
                     </div>
                   ) : null}
                 </div>
@@ -246,42 +236,25 @@ export default function NuevoPagoPage() {
                 value={monto}
                 onChange={e => setMonto(e.target.value)}
                 placeholder="0.00"
-                className={`w-full pl-10 pr-4 py-4 text-2xl font-bold border rounded-xl focus:outline-none focus:ring-2 transition-all ${
-                  excedeDeuda
-                    ? 'border-red-300 text-red-600 focus:ring-red-200 focus:border-red-400'
-                    : esPagoTotal
-                    ? 'border-emerald-300 text-emerald-700 focus:ring-emerald-200 focus:border-emerald-400'
-                    : 'border-slate-200 text-slate-900 focus:ring-[#0891B2]/20 focus:border-[#0891B2]'
-                }`}
+                className="w-full pl-10 pr-4 py-4 text-2xl font-bold border rounded-xl focus:outline-none focus:ring-2 transition-all border-slate-200 text-slate-900 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
               />
             </div>
 
             {/* Quick amount buttons */}
-            {facturaSeleccionada && (
+            {cotizacionSeleccionada && (
               <div className="flex gap-2 mt-2">
                 <button
-                  onClick={setMonto60}
+                  onClick={setMontoAnticipo}
                   className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                 >
-                  Anticipo 60% ({Q(Math.round(facturaSeleccionada.total * 0.6 * 100) / 100)})
+                  Anticipo {anticipoPct}% ({Q(Math.round(cotizacionSeleccionada.total * (anticipoPct / 100) * 100) / 100)})
                 </button>
                 <button
-                  onClick={setMonto40}
+                  onClick={setMontoTotal}
                   className="px-3 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
                 >
-                  Pago total ({Q(facturaSeleccionada.monto_pendiente)})
+                  Pago total ({Q(cotizacionSeleccionada.total)})
                 </button>
-              </div>
-            )}
-
-            {/* Status indicator */}
-            {facturaSeleccionada && montoNum > 0 && (
-              <div className={`mt-2 text-sm font-medium ${
-                excedeDeuda ? 'text-red-600' : esPagoTotal ? 'text-emerald-600' : 'text-amber-600'
-              }`}>
-                {excedeDeuda && '⚠️ El monto excede la deuda pendiente'}
-                {esPagoTotal && '✅ Pago total — factura quedará como pagada'}
-                {esPagoParcial && `ℹ️ Pago parcial — quedarán ${Q(facturaSeleccionada.monto_pendiente - montoNum)} pendientes`}
               </div>
             )}
           </div>
@@ -367,13 +340,14 @@ export default function NuevoPagoPage() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           {/* Summary */}
           <div>
-            {facturaSeleccionada && montoNum > 0 && (
+            {cotizacionSeleccionada && montoNum > 0 && (
               <div className="text-sm text-slate-600">
                 <span className="font-bold text-xl text-[#1E40AF]">{Q(montoNum)}</span>
                 <span className="mx-2">→</span>
-                <span>{facturaSeleccionada.numero}</span>
+                <span>{cotizacionSeleccionada.numero}</span>
                 <span className="mx-1 text-slate-400">·</span>
-                <span>{facturaSeleccionada.cliente?.nombre}</span>
+                <span>{cotizacionSeleccionada.cliente?.nombre}</span>
+                {esAnticipo && <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Anticipo</span>}
               </div>
             )}
           </div>
@@ -387,7 +361,7 @@ export default function NuevoPagoPage() {
             </button>
             <button
               onClick={guardar}
-              disabled={guardando || !facturaId || montoNum <= 0 || excedeDeuda}
+              disabled={guardando || !cotizacionSeleccionada || montoNum <= 0}
               className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             >
               {guardando ? 'Registrando...' : confirmarInmediato ? '✅ Registrar y confirmar' : '💾 Registrar pago'}

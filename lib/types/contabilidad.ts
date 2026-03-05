@@ -224,6 +224,7 @@ export interface PagoInsert {
 export interface PagoConRelaciones extends Pago {
   cliente: Pick<Cliente, 'id' | 'codigo' | 'nombre'>;
   factura: Pick<Factura, 'id' | 'numero' | 'total'> | null;
+  cotizacion: Pick<Cotizacion, 'id' | 'numero' | 'total'> | null;
 }
 
 // --- Gastos ---

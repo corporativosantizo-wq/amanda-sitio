@@ -45,7 +45,8 @@ export async function listarPagos(params: ListParams = {}) {
     .select(`
       *,
       cliente:clientes!cliente_id (id, codigo, nombre),
-      factura:facturas!factura_id (id, numero, total)
+      factura:facturas!factura_id (id, numero, total),
+      cotizacion:cotizaciones!cotizacion_id (id, numero, total)
     `, { count: 'exact' })
     .order('fecha_pago', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -77,7 +78,8 @@ export async function obtenerPago(id: string): Promise<PagoConRelaciones> {
     .select(`
       *,
       cliente:clientes!cliente_id (id, codigo, nombre),
-      factura:facturas!factura_id (id, numero, total, estado, monto_a_recibir)
+      factura:facturas!factura_id (id, numero, total, estado, monto_a_recibir),
+      cotizacion:cotizaciones!cotizacion_id (id, numero, total)
     `)
     .eq('id', id)
     .single();
@@ -106,7 +108,23 @@ export async function registrarPago(input: PagoInsert): Promise<Pago> {
     throw new PagoError('El monto del pago debe ser mayor a 0');
   }
 
-  // 3. Si es pago de factura, validar que la factura exista y no esté pagada
+  // 3a. Si es pago de cotización, validar que exista y no esté rechazada
+  if (input.cotizacion_id) {
+    const { data: cotizacion, error: cotError } = await db()
+      .from('cotizaciones')
+      .select('id, estado, total')
+      .eq('id', input.cotizacion_id)
+      .single();
+
+    if (cotError || !cotizacion) {
+      throw new PagoError('Cotización no encontrada');
+    }
+    if (cotizacion.estado === 'rechazada') {
+      throw new PagoError('No se puede registrar pago de una cotización rechazada');
+    }
+  }
+
+  // 3b. Si es pago de factura, validar que la factura exista y no esté pagada
   if (input.factura_id) {
     const { data: factura, error: facError } = await db()
       .from('facturas')

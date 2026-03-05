@@ -51,7 +51,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const input = body as PagoInsert & { confirmar_inmediato?: boolean };
+
+    // Map frontend field names to service field names
+    const input: PagoInsert & { confirmar_inmediato?: boolean } = {
+      ...body,
+      metodo: body.metodo_pago ?? body.metodo ?? 'transferencia',
+      referencia_bancaria: body.referencia_pago ?? body.referencia_bancaria ?? null,
+      cotizacion_id: body.cotizacion_id ?? null,
+      factura_id: body.factura_id ?? null,
+    };
 
     if (!input.cliente_id) {
       return NextResponse.json({ error: 'cliente_id es requerido' }, { status: 400 });
