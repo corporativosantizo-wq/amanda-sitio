@@ -11,6 +11,7 @@ import type {
   PagoConRelaciones,
 } from '@/lib/types';
 import { EstadoPago, TipoPago } from '@/lib/types';
+import { solicitarFacturaPorPagoId } from '@/lib/services/factura-re.service';
 
 const db = () => createAdminClient();
 
@@ -187,14 +188,13 @@ export async function confirmarPago(id: string): Promise<Pago> {
 
   if (error) throw new PagoError('Error al confirmar pago', error);
 
-  // TODO: Disparar generación de factura FEL y envío de email
-  // if (data.factura_id) {
-  //   const factura = await obtenerFactura(data.factura_id);
-  //   if (factura.estado === 'pagada' && !factura.fel_uuid) {
-  //     await emitirFEL(factura.id);
-  //     await enviarFactura(factura.id);
-  //   }
-  // }
+  // Solicitar factura a RE Contadores automáticamente
+  try {
+    await solicitarFacturaPorPagoId(data.id);
+  } catch (err: any) {
+    console.error('[Pagos] Error solicitando factura a RE:', err.message);
+    // No bloquear el flujo de confirmación de pago
+  }
 
   return data as Pago;
 }

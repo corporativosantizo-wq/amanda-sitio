@@ -10,6 +10,7 @@ import {
   emailSolicitudPago,
   emailPagoRecibido,
 } from '@/lib/templates/emails';
+import { solicitarFacturaPorPagoId } from '@/lib/services/factura-re.service';
 
 const db = () => createAdminClient();
 
@@ -172,6 +173,13 @@ export async function registrarPagoCobro(params: {
   // Trigger will auto-update cobro monto_pagado and estado.
   // Refetch cobro to get updated data.
   const cobroActualizado = await obtenerCobro(params.cobro_id);
+
+  // Solicitar factura a RE Contadores automáticamente
+  try {
+    await solicitarFacturaPorPagoId(pago.id);
+  } catch (err: any) {
+    console.error('[Cobros] Error solicitando factura a RE:', err.message);
+  }
 
   return { pago, cobro: cobroActualizado };
 }
