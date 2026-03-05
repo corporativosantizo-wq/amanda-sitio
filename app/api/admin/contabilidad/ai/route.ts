@@ -174,6 +174,17 @@ const CONTABLE_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
+    name: 'consultar_cliente',
+    description: 'Busca datos de un cliente por nombre, código o email. Retorna nombre completo, NIT y correo.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        busqueda: { type: 'string', description: 'Nombre, código o email del cliente' },
+      },
+      required: ['busqueda'],
+    },
+  },
+  {
     name: 'enviar_email',
     description: 'Envía un email desde contador@papeleo.legal. SIEMPRE muestra borrador a Amanda antes de enviar. Para solicitudes de factura a RE, usa solicitar_factura en su lugar.',
     input_schema: {
@@ -201,6 +212,8 @@ async function handleTool(name: string, input: any): Promise<string> {
       return handleConsultarCobros(input);
     case 'consultar_cotizaciones':
       return handleConsultarCotizaciones(input);
+    case 'consultar_cliente':
+      return handleConsultarCliente(input);
     case 'enviar_email':
       return handleEnviarEmail(input);
     default:
@@ -364,6 +377,32 @@ async function handleEnviarEmail(input: any): Promise<string> {
       cc: input.cc,
     });
     return JSON.stringify({ exito: true, mensaje: `Email enviado a ${input.to}` });
+  } catch (err: any) {
+    return JSON.stringify({ error: err.message });
+  }
+}
+
+async function handleConsultarCliente(input: any): Promise<string> {
+  try {
+    const b = input.busqueda?.trim();
+    if (!b) return JSON.stringify({ error: 'Búsqueda vacía' });
+
+    const { data, error } = await db()
+      .from('clientes')
+      .select('nombre, nit, email')
+      .or(`nombre.ilike.%${b}%,codigo.ilike.%${b}%,email.ilike.%${b}%`)
+      .limit(5);
+
+    if (error) return JSON.stringify({ error: error.message });
+    if (!data || data.length === 0) return JSON.stringify({ resultado: 'No se encontró ningún cliente con esa búsqueda' });
+
+    return JSON.stringify({
+      clientes: data.map((c: any) => ({
+        nombre: c.nombre,
+        nit: c.nit || 'CF',
+        email: c.email || null,
+      })),
+    });
   } catch (err: any) {
     return JSON.stringify({ error: err.message });
   }
