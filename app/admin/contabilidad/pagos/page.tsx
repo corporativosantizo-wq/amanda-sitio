@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
@@ -43,6 +43,17 @@ export default function PagosListPage() {
   const [tab, setTab] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [toast, setToast] = useState('');
+
+  // Check for toast from nuevo page
+  useEffect(() => {
+    const msg = sessionStorage.getItem('pago_toast');
+    if (msg) {
+      setToast(msg);
+      sessionStorage.removeItem('pago_toast');
+      setTimeout(() => setToast(''), 4000);
+    }
+  }, []);
 
   const params = new URLSearchParams();
   if (tab) params.set('estado', tab);
@@ -67,6 +78,12 @@ export default function PagosListPage() {
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium animate-in slide-in-from-top-2">
+          {toast}
+        </div>
+      )}
+
       <PageHeader
         title="Pagos"
         description={`${data?.total ?? 0} pagos`}
