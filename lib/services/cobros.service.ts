@@ -278,6 +278,7 @@ export async function resumenCobros() {
     count_pendientes: 0,
     count_vencidos: 0,
     count_por_vencer: 0,
+    count_cobrado_mes: 0,
   };
 
   const en7dias = new Date();
@@ -311,15 +312,15 @@ export async function resumenCobros() {
     result.count_pendientes++;
   }
 
-  // Also sum payments confirmed this month
+  // Sum ALL confirmed payments this month (not just cobro-linked)
   const { data: pagos } = await db()
     .from('pagos')
     .select('monto')
-    .not('cobro_id', 'is', null)
     .eq('estado', 'confirmado')
     .gte('fecha_pago', inicioMesStr);
 
   result.cobrado_mes = (pagos ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
+  result.count_cobrado_mes = (pagos ?? []).length;
 
   return result;
 }

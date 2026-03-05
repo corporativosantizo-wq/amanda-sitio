@@ -15,6 +15,7 @@ interface Resumen {
   count_pendientes: number
   count_vencidos: number
   count_por_vencer: number
+  count_cobrado_mes: number
 }
 
 const ESTADO_BADGE: Record<string, string> = {
@@ -99,7 +100,7 @@ export default function ContabilidadPage() {
           <SummaryCard icon="💰" label="Total pendiente" value={Q(resumen.total_pendiente)} sub={`${resumen.count_pendientes} cobros`} color="text-slate-800" bg="bg-white" />
           <SummaryCard icon="🔴" label="Vencidos" value={Q(resumen.total_vencido)} sub={`${resumen.count_vencidos} cobros`} color="text-red-700" bg="bg-red-50" />
           <SummaryCard icon="🟡" label="Por vencer (7 días)" value={Q(resumen.por_vencer_7d)} sub={`${resumen.count_por_vencer} cobros`} color="text-amber-700" bg="bg-amber-50" />
-          <SummaryCard icon="🟢" label="Cobrado este mes" value={Q(resumen.cobrado_mes)} sub="Pagos confirmados" color="text-green-700" bg="bg-green-50" />
+          <SummaryCard icon="🟢" label="Cobrado este mes" value={Q(resumen.cobrado_mes)} sub={`${resumen.count_cobrado_mes} pagos confirmados`} color="text-green-700" bg="bg-green-50" />
         </div>
       )}
 
