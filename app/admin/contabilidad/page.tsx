@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch'
 import type { CobroConCliente, Pago, RecordatorioCobro } from '@/lib/types'
@@ -142,6 +142,13 @@ export default function ContabilidadPage() {
           </button>
         ))}
       </div>
+
+      {/* Quick add */}
+      <CobroRapido
+        onCreated={refetchAll}
+        onOpenForm={() => setShowNuevo(true)}
+        mutate={mutate}
+      />
 
       {/* Table */}
       <div className="bg-white border rounded-xl overflow-hidden">
@@ -285,6 +292,225 @@ function SummaryCard({ icon, label, value, sub, color, bg }: {
       </div>
       <p className={`text-xl font-bold ${color}`}>{value}</p>
       <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>
+    </div>
+  )
+}
+
+// ── Cobro Rápido ────────────────────────────────────────────────────────────
+
+interface ParsedCobro {
+  clienteNombre: string | null
+  clienteId: string | null
+  monto: number
+  concepto: string
+  fechaVence: string
+}
+
+function parsearCobroRapido(input: string): ParsedCobro | null {
+  // Extract monto: Q3,000 or Q3000 or Q3,000.50 or Q 3000
+  const montoMatch = input.match(/Q\s?([\d,]+(?:\.\d{1,2})?)/i)
+  if (!montoMatch) return null
+
+  const montoStr = montoMatch[1].replace(/,/g, '')
+  const monto = parseFloat(montoStr)
+  if (isNaN(monto) || monto <= 0) return null
+
+  // Remove the monto from input to parse the rest
+  const sinMonto = input.replace(montoMatch[0], '').trim()
+
+  // Split by common separators: " - ", " – ", " — "
+  const partes = sinMonto.split(/\s*[-–—]\s*/).map((p: string) => p.trim()).filter(Boolean)
+
+  let clienteNombre: string | null = null
+  let concepto = ''
+
+  if (partes.length >= 2) {
+    // First part is likely client, rest is concepto
+    clienteNombre = partes[0]
+    concepto = partes.slice(1).join(' - ')
+  } else if (partes.length === 1) {
+    const parte = partes[0]
+    // Heuristic: if it looks like a name (2+ capitalized words), treat as client
+    const words = parte.split(/\s+/)
+    const looksLikeName = words.length >= 2 && words.every((w: string) => /^[A-ZÁÉÍÓÚÑ]/.test(w))
+    if (looksLikeName) {
+      clienteNombre = parte
+    } else {
+      concepto = parte
+    }
+  }
+
+  // Calculate vencimiento (30 days from today)
+  const vence = new Date()
+  vence.setDate(vence.getDate() + 30)
+  const fechaVence = vence.toISOString().split('T')[0]
+
+  return { clienteNombre, clienteId: null, monto, concepto, fechaVence }
+}
+
+function CobroRapido({ onCreated, onOpenForm, mutate }: {
+  onCreated: () => void
+  onOpenForm: () => void
+  mutate: any
+}) {
+  const [input, setInput] = useState('')
+  const [preview, setPreview] = useState<ParsedCobro | null>(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [matchedCliente, setMatchedCliente] = useState<{ id: string; nombre: string } | null>(null)
+  const [searchingCliente, setSearchingCliente] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const buscarCliente = useCallback(async (nombre: string): Promise<{ id: string; nombre: string } | null> => {
+    if (!nombre || nombre.length < 2) return null
+    try {
+      const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`)
+      if (!res.ok) return null
+      const json = await res.json()
+      if (json.data && json.data.length > 0) {
+        return { id: json.data[0].id, nombre: json.data[0].nombre }
+      }
+    } catch {}
+    return null
+  }, [])
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' || !input.trim()) return
+    e.preventDefault()
+    setError('')
+
+    const parsed = parsearCobroRapido(input.trim())
+    if (!parsed) {
+      setError('Incluye el monto con Q (ej: Q3,000)')
+      return
+    }
+
+    // Try to match client
+    if (parsed.clienteNombre) {
+      setSearchingCliente(true)
+      const match = await buscarCliente(parsed.clienteNombre)
+      setSearchingCliente(false)
+      if (match) {
+        parsed.clienteId = match.id
+        setMatchedCliente(match)
+      } else {
+        setMatchedCliente(null)
+      }
+    }
+
+    setPreview(parsed)
+  }
+
+  const handleCrear = async () => {
+    if (!preview) return
+    setSaving(true)
+    await mutate('/api/admin/cobros', {
+      method: 'POST',
+      body: {
+        cliente_id: preview.clienteId || null,
+        concepto: preview.concepto || (preview.clienteNombre ? `Cobro - ${preview.clienteNombre}` : 'Cobro pendiente'),
+        monto: preview.monto,
+        dias_credito: 30,
+        notas: null,
+      },
+      onSuccess: () => {
+        setInput('')
+        setPreview(null)
+        setMatchedCliente(null)
+        onCreated()
+      },
+    })
+    setSaving(false)
+  }
+
+  const handleCancelar = () => {
+    setPreview(null)
+    setMatchedCliente(null)
+    setError('')
+    inputRef.current?.focus()
+  }
+
+  const fechaVenceLabel = preview
+    ? new Date(preview.fechaVence + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })
+    : ''
+
+  return (
+    <div className="mb-4">
+      {/* Input row */}
+      {!preview && (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Cobro rápido: Roberto Salazar - Contrato arrendamiento - Q3,000"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); setError('') }}
+              onKeyDown={handleKeyDown}
+              className={`w-full px-4 py-2.5 border rounded-xl text-sm outline-none transition ${
+                error ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-teal-500 bg-white'
+              }`}
+            />
+            {searchingCliente && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Buscando...</span>
+            )}
+          </div>
+          <button
+            onClick={onOpenForm}
+            title="Formulario completo"
+            className="px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 hover:text-teal-600 transition text-sm font-bold"
+          >
+            +
+          </button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && !preview && (
+        <p className="text-xs text-red-500 mt-1.5 ml-1">{error}</p>
+      )}
+
+      {/* Preview */}
+      {preview && (
+        <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-teal-900">
+              <span className="font-medium">Cobro:</span>{' '}
+              {matchedCliente ? (
+                <span className="font-semibold">{matchedCliente.nombre}</span>
+              ) : preview.clienteNombre ? (
+                <span>{preview.clienteNombre} <span className="text-teal-600 text-xs">(no encontrado en BD)</span></span>
+              ) : null}
+              {(matchedCliente || preview.clienteNombre) && ' — '}
+              <span className="font-bold">{Q(preview.monto)}</span>
+              {preview.concepto && ` — ${preview.concepto}`}
+              {' — '}
+              <span className="text-teal-700">Vence {fechaVenceLabel}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={handleCrear}
+              disabled={saving}
+              className="px-3 py-1.5 bg-teal-600 text-white text-xs font-semibold rounded-lg hover:bg-teal-700 disabled:opacity-50"
+            >
+              {saving ? '...' : 'Crear'}
+            </button>
+            <button
+              onClick={onOpenForm}
+              className="px-3 py-1.5 bg-white text-teal-700 text-xs font-semibold rounded-lg border border-teal-300 hover:bg-teal-100"
+            >
+              Editar
+            </button>
+            <button
+              onClick={handleCancelar}
+              className="px-3 py-1.5 text-teal-600 text-xs font-semibold rounded-lg hover:bg-teal-100"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
