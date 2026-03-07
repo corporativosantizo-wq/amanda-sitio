@@ -1,11 +1,11 @@
 // ============================================================================
 // app/admin/contabilidad/cotizaciones/page.tsx
-// Lista de cotizaciones con filtros, paginación y acciones rápidas
+// Lista de cotizaciones con filtros, paginación, selección múltiple y acciones
 // ============================================================================
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
@@ -52,6 +52,11 @@ export default function CotizacionesPage() {
   const [page, setPage] = useState(1);
   const [reenviarCot, setReenviarCot] = useState<any>(null);
 
+  // ── Selección múltiple ──────────────────────────────────────────────
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+  const [showEnvioMasivo, setShowEnvioMasivo] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+
   // Build URL
   const params = new URLSearchParams();
   if (estado) params.set('estado', estado);
@@ -62,6 +67,64 @@ export default function CotizacionesPage() {
   const url = `/api/admin/contabilidad/cotizaciones?${params.toString()}`;
   const { data: res, loading, error, refetch } = useFetch<ListResponse>(url);
   const { mutate, loading: mutating } = useMutate();
+
+  // Clear selection on page/filter change
+  useEffect(() => {
+    setSeleccionados(new Set());
+  }, [estado, busqueda, page]);
+
+  // Auto-hide toast
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  // ── Selection helpers ─────────────────────────────────────────────
+  const toggleSeleccion = (id: string) => {
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleTodas = () => {
+    if (!res) return;
+    if (seleccionados.size === res.data.length) {
+      setSeleccionados(new Set());
+    } else {
+      setSeleccionados(new Set(res.data.map((c: any) => c.id)));
+    }
+  };
+
+  const cotizacionesSeleccionadas = res?.data.filter((c: any) => seleccionados.has(c.id)) ?? [];
+
+  // ── Bulk accept ───────────────────────────────────────────────────
+  const handleAceptarMasivo = async () => {
+    const ids = cotizacionesSeleccionadas
+      .filter((c: any) => c.estado === 'enviada')
+      .map((c: any) => c.id);
+    if (ids.length === 0) {
+      setToast({ type: 'warning', message: 'Solo se pueden aceptar cotizaciones en estado "enviada"' });
+      return;
+    }
+    const result = await mutate('/api/admin/contabilidad/cotizaciones/masivo', {
+      body: { accion: 'aceptar_masivo', ids },
+    });
+    if (result?.data) {
+      const { aceptadas, errores } = result.data;
+      if (errores.length > 0) {
+        setToast({ type: 'warning', message: `${aceptadas} aceptadas, ${errores.length} con error` });
+      } else {
+        setToast({ type: 'success', message: `${aceptadas} cotizaciones marcadas como aceptadas` });
+      }
+    }
+    setSeleccionados(new Set());
+    refetch();
+  };
 
   // ── Actions ─────────────────────────────────────────────────────────
 
@@ -142,6 +205,17 @@ export default function CotizacionesPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/50">
+                    <th className="py-3 px-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={res.data.length > 0 && seleccionados.size === res.data.length}
+                        ref={(el) => {
+                          if (el) el.indeterminate = seleccionados.size > 0 && seleccionados.size < res.data.length;
+                        }}
+                        onChange={toggleTodas}
+                        className="w-4 h-4 rounded border-slate-300 text-[#1E40AF] focus:ring-[#1E40AF]/20 cursor-pointer"
+                      />
+                    </th>
                     <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Número</th>
                     <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Cliente</th>
                     <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Total</th>
@@ -152,48 +226,63 @@ export default function CotizacionesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {res.data.map((cot: any) => (
-                    <tr
-                      key={cot.id}
-                      className="hover:bg-slate-50 transition-colors cursor-pointer"
-                      onClick={() => router.push(`/admin/contabilidad/cotizaciones/${cot.id}`)}
-                    >
-                      <td className="py-3 px-4">
-                        <span className="text-sm font-mono font-medium text-slate-900">{cot.numero}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-sm text-slate-700">{cot.cliente?.nombre ?? '—'}</span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm font-medium text-slate-900">{Q(cot.total)}</span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {(cot as any).monto_pagado >= cot.total && cot.total > 0 ? (
-                          <span className="text-emerald-600 text-sm font-medium">✅</span>
-                        ) : (cot as any).monto_pagado > 0 ? (
-                          <span className="text-sm font-medium text-emerald-600">{Q((cot as any).monto_pagado)}</span>
-                        ) : (
-                          <span className="text-sm text-slate-300">Q0</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge variant={cot.estado}>{cot.estado}</Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm text-slate-500">{cot.created_at ? new Date(cot.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' }) : '—'}</span>
-                      </td>
-                      <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
-                        <RowActions
-                          estado={cot.estado}
-                          cotId={cot.id}
-                          onAccion={(accion) => ejecutarAccion(cot.id, accion)}
-                          onDuplicar={() => ejecutarAccion(cot.id, 'duplicar')}
-                          onReenviar={() => setReenviarCot(cot)}
-                          disabled={mutating}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {res.data.map((cot: any) => {
+                    const clienteEmail = cot.cliente?.email;
+                    const sinEmail = !clienteEmail;
+                    return (
+                      <tr
+                        key={cot.id}
+                        className={`hover:bg-slate-50 transition-colors cursor-pointer ${seleccionados.has(cot.id) ? 'bg-blue-50/50' : ''}`}
+                        onClick={() => router.push(`/admin/contabilidad/cotizaciones/${cot.id}`)}
+                      >
+                        <td className="py-3 px-3" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={seleccionados.has(cot.id)}
+                            onChange={() => toggleSeleccion(cot.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-[#1E40AF] focus:ring-[#1E40AF]/20 cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-mono font-medium text-slate-900">{cot.numero}</span>
+                            {sinEmail && <span title="Cliente sin email" className="text-amber-500 text-xs">⚠️</span>}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="text-sm text-slate-700">{cot.cliente?.nombre ?? '—'}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm font-medium text-slate-900">{Q(cot.total)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {(cot as any).monto_pagado >= cot.total && cot.total > 0 ? (
+                            <span className="text-emerald-600 text-sm font-medium">✅</span>
+                          ) : (cot as any).monto_pagado > 0 ? (
+                            <span className="text-sm font-medium text-emerald-600">{Q((cot as any).monto_pagado)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">Q0</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <Badge variant={cot.estado}>{cot.estado}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm text-slate-500">{cot.created_at ? new Date(cot.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' }) : '—'}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
+                          <RowActions
+                            estado={cot.estado}
+                            cotId={cot.id}
+                            onAccion={(accion) => ejecutarAccion(cot.id, accion)}
+                            onDuplicar={() => ejecutarAccion(cot.id, 'duplicar')}
+                            onReenviar={() => setReenviarCot(cot)}
+                            disabled={mutating}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -225,13 +314,72 @@ export default function CotizacionesPage() {
           </>
         )}
       </div>
-      {/* Modal: Reenviar cotización */}
+
+      {/* ── Floating action bar ─────────────────────────────────────────── */}
+      {seleccionados.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-medium">
+            {seleccionados.size} cotización{seleccionados.size > 1 ? 'es' : ''} seleccionada{seleccionados.size > 1 ? 's' : ''}
+          </span>
+          <div className="w-px h-5 bg-slate-600" />
+          <button
+            onClick={() => setShowEnvioMasivo(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+          >
+            <span>📧</span> Enviar por correo
+          </button>
+          <button
+            onClick={handleAceptarMasivo}
+            disabled={mutating}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <span>✅</span> Marcar aceptadas
+          </button>
+          <button
+            onClick={() => setSeleccionados(new Set())}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors"
+          >
+            <span>❌</span> Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* ── Modal: Envío masivo ─────────────────────────────────────────── */}
+      {showEnvioMasivo && (
+        <EnvioMasivoModal
+          cotizaciones={cotizacionesSeleccionadas}
+          onClose={() => setShowEnvioMasivo(false)}
+          onSent={(msg) => {
+            setShowEnvioMasivo(false);
+            setSeleccionados(new Set());
+            setToast({ type: 'success', message: msg });
+            refetch();
+          }}
+          onError={(msg) => {
+            setToast({ type: 'warning', message: msg });
+          }}
+        />
+      )}
+
+      {/* ── Modal: Reenviar cotización ──────────────────────────────────── */}
       {reenviarCot && (
         <ReenviarModal
           cotizacion={reenviarCot}
           onClose={() => setReenviarCot(null)}
           onSent={() => { setReenviarCot(null); refetch(); }}
         />
+      )}
+
+      {/* ── Toast ───────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-in slide-in-from-right-4 ${
+          toast.type === 'success' ? 'bg-emerald-600 text-white' :
+          toast.type === 'warning' ? 'bg-amber-500 text-white' :
+          'bg-red-600 text-white'
+        }`}>
+          <span>{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 hover:opacity-70">✕</button>
+        </div>
       )}
     </div>
   );
@@ -315,6 +463,198 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled 
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Modal: Envío masivo ─────────────────────────────────────────────────
+
+function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
+  cotizaciones: any[];
+  onClose: () => void;
+  onSent: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [from, setFrom] = useState('amanda@papeleo.legal');
+  const [mensaje, setMensaje] = useState(
+    `Estimado/a {nombre},\n\nAdjunto encontrará la cotización {numero} por un monto de Q{total} correspondiente a los servicios profesionales solicitados.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLcda. Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`
+  );
+  const [sending, setSending] = useState(false);
+  const [progreso, setProgreso] = useState<string | null>(null);
+
+  const sinEmail = cotizaciones.filter((c: any) => !c.cliente?.email);
+  const yaEnviadas = cotizaciones.filter((c: any) => c.estado === 'enviada');
+  const enviables = cotizaciones.filter((c: any) => c.cliente?.email);
+
+  const handleEnviar = async () => {
+    if (enviables.length === 0) return;
+    setSending(true);
+    setProgreso(`Enviando 0/${enviables.length}...`);
+
+    try {
+      const res = await fetch('/api/admin/contabilidad/cotizaciones/masivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accion: 'enviar_masivo',
+          ids: enviables.map((c: any) => c.id),
+          from,
+          subject_template: 'Cotización {numero} — Despacho Jurídico Amanda Santizo',
+          mensaje_template: mensaje,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        onError(result.error || 'Error al enviar');
+        setSending(false);
+        setProgreso(null);
+        return;
+      }
+
+      const { enviadas, errores } = result.data;
+
+      if (errores && errores.length > 0) {
+        const fallidas = errores.map((e: any) => e.numero).join(', ');
+        onError(`${enviadas} enviadas, ${errores.length} fallaron: ${fallidas}`);
+      }
+
+      onSent(`${enviadas} cotización${enviadas > 1 ? 'es' : ''} enviada${enviadas > 1 ? 's' : ''} exitosamente`);
+    } catch (err: any) {
+      onError(err.message || 'Error de conexión');
+    }
+
+    setSending(false);
+    setProgreso(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-slate-900 mb-1">Envío masivo de cotizaciones</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Se enviarán {enviables.length} correo{enviables.length !== 1 ? 's' : ''} individual{enviables.length !== 1 ? 'es' : ''} (uno por cliente)
+        </p>
+
+        {/* Lista de cotizaciones */}
+        <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left py-2 px-3 font-medium text-slate-500">Número</th>
+                <th className="text-left py-2 px-3 font-medium text-slate-500">Cliente</th>
+                <th className="text-right py-2 px-3 font-medium text-slate-500">Monto</th>
+                <th className="text-left py-2 px-3 font-medium text-slate-500">Email</th>
+                <th className="text-center py-2 px-3 font-medium text-slate-500">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cotizaciones.map((cot: any) => {
+                const email = cot.cliente?.email;
+                return (
+                  <tr key={cot.id} className={!email ? 'bg-amber-50' : ''}>
+                    <td className="py-2 px-3 font-mono text-slate-700">{cot.numero}</td>
+                    <td className="py-2 px-3 text-slate-700">{cot.cliente?.nombre ?? '—'}</td>
+                    <td className="py-2 px-3 text-right text-slate-700">{Q(cot.total)}</td>
+                    <td className="py-2 px-3">
+                      {email ? (
+                        <span className="text-slate-600">{email}</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">⚠️ Sin email</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {cot.estado === 'enviada' ? (
+                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Ya enviada</span>
+                      ) : (
+                        <Badge variant={cot.estado}>{cot.estado}</Badge>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Warnings */}
+        {sinEmail.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-sm text-amber-800">
+            ⚠️ {sinEmail.length} cotización{sinEmail.length > 1 ? 'es' : ''} sin email del cliente — no se enviarán
+          </div>
+        )}
+        {yaEnviadas.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-3 text-sm text-blue-800">
+            ℹ️ {yaEnviadas.length} cotización{yaEnviadas.length > 1 ? 'es' : ''} ya está{yaEnviadas.length > 1 ? 'n' : ''} marcada{yaEnviadas.length > 1 ? 's' : ''} como "enviada" — se reenviarán
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {/* From */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Cuenta de envío</label>
+            <select
+              value={from}
+              onChange={e => setFrom(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500"
+            >
+              {CUENTAS_ENVIO.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Subject preview */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Asunto (por cada correo)</label>
+            <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
+              Cotización [COT-XXXXXX] — Despacho Jurídico Amanda Santizo
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Se personaliza automáticamente con el número de cada cotización</p>
+          </div>
+
+          {/* Mensaje */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">
+              Mensaje (se usa para todas, se personaliza con {'{'}<code className="text-xs">nombre</code>{'}'}, {'{'}<code className="text-xs">numero</code>{'}'}, {'{'}<code className="text-xs">total</code>{'}'})
+            </label>
+            <textarea
+              value={mensaje}
+              onChange={e => setMensaje(e.target.value)}
+              rows={8}
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500 resize-none font-mono leading-relaxed"
+            />
+          </div>
+        </div>
+
+        {/* Progress */}
+        {progreso && (
+          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium">
+            {progreso}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            disabled={sending}
+            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleEnviar}
+            disabled={sending || enviables.length === 0}
+            className="px-5 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sending ? progreso ?? 'Enviando...' : `Enviar ${enviables.length > 1 ? 'todas' : ''} (${enviables.length})`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -550,6 +550,117 @@ export async function duplicarCotizacion(id: string, nuevoClienteId?: string): P
   });
 }
 
+// --- Envío masivo ---
+
+/**
+ * Envía múltiples cotizaciones por correo, cada una personalizada.
+ * No detiene el proceso si una falla.
+ */
+export async function enviarCotizacionMasivo(params: {
+  ids: string[];
+  from: string;
+  subjectTemplate: string;
+  mensajeTemplate: string;
+}): Promise<{
+  enviadas: number;
+  errores: Array<{ id: string; numero: string; error: string }>;
+}> {
+  const { ids, from, subjectTemplate, mensajeTemplate } = params;
+  const enviadas: string[] = [];
+  const errores: Array<{ id: string; numero: string; error: string }> = [];
+
+  for (const id of ids) {
+    try {
+      const cot = await obtenerCotizacion(id);
+      const cliente = cot.cliente as any;
+
+      if (!cliente?.email) {
+        errores.push({ id, numero: cot.numero, error: 'Cliente sin email' });
+        continue;
+      }
+
+      // Personalizar mensaje
+      const subject = subjectTemplate
+        .replace(/\{numero\}/g, cot.numero)
+        .replace(/\{cliente\}/g, cliente.nombre ?? '')
+        .replace(/\{total\}/g, cot.total?.toLocaleString('es-GT', { minimumFractionDigits: 2 }) ?? '0');
+
+      const mensajePersonalizado = mensajeTemplate
+        .replace(/\{nombre\}/g, cliente.nombre ?? 'Estimado/a')
+        .replace(/\{numero\}/g, cot.numero)
+        .replace(/\{total\}/g, cot.total?.toLocaleString('es-GT', { minimumFractionDigits: 2 }) ?? '0');
+
+      const htmlBody = mensajePersonalizado
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
+        .replace(/$/, '</div>');
+
+      await sendMail({
+        from: from as any,
+        to: cliente.email,
+        subject,
+        htmlBody,
+      });
+
+      // Actualizar estado a enviada si es borrador
+      if (cot.estado === EstadoCotizacion.BORRADOR) {
+        await db()
+          .from('cotizaciones')
+          .update({
+            estado: EstadoCotizacion.ENVIADA,
+            enviada_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+      } else {
+        // Si ya estaba enviada, solo actualizar timestamp
+        await db()
+          .from('cotizaciones')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', id);
+      }
+
+      enviadas.push(id);
+    } catch (err: any) {
+      const cot = await db().from('cotizaciones').select('numero').eq('id', id).single();
+      errores.push({
+        id,
+        numero: cot.data?.numero ?? id.slice(0, 8),
+        error: err.message ?? 'Error desconocido',
+      });
+    }
+  }
+
+  return { enviadas: enviadas.length, errores };
+}
+
+/**
+ * Marca múltiples cotizaciones como aceptadas.
+ */
+export async function aceptarCotizacionesMasivo(ids: string[]): Promise<{
+  aceptadas: number;
+  errores: Array<{ id: string; numero: string; error: string }>;
+}> {
+  const aceptadas: string[] = [];
+  const errores: Array<{ id: string; numero: string; error: string }> = [];
+
+  for (const id of ids) {
+    try {
+      await aceptarCotizacion(id);
+      aceptadas.push(id);
+    } catch (err: any) {
+      const cot = await db().from('cotizaciones').select('numero').eq('id', id).single();
+      errores.push({
+        id,
+        numero: cot.data?.numero ?? id.slice(0, 8),
+        error: err.message ?? 'Error desconocido',
+      });
+    }
+  }
+
+  return { aceptadas: aceptadas.length, errores };
+}
+
 // --- Envío programado ---
 
 /**
