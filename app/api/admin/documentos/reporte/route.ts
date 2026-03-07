@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   try {
     const s = req.nextUrl.searchParams;
     const tipo = s.get('tipo') || null;
+    const usuario = s.get('usuario') || null;
 
     // Default: last 30 days
     const ahora = new Date();
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
       p_desde: desde,
       p_hasta: hasta,
       p_tipo: tipo,
+      p_usuario: usuario,
     });
 
     if (error) throw new Error(`RPC error: ${error.message}`);
@@ -34,7 +36,9 @@ export async function GET(req: NextRequest) {
 
     const porDiaData: any[] = data.por_dia ?? [];
     const porTipoData: any[] = data.por_tipo ?? [];
+    const porUsuarioData: any[] = data.por_usuario ?? [];
     const totalGlobal: number = data.total_global ?? 0;
+    const usuarios: string[] = data.usuarios ?? [];
 
     // Fill in missing days (days with 0 documents)
     const porDiaMap = new Map(porDiaData.map((d: any) => [d.fecha, d]));
@@ -95,6 +99,8 @@ export async function GET(req: NextRequest) {
       },
       por_dia: diasArray,
       por_tipo: porTipoData,
+      por_usuario: porUsuarioData,
+      usuarios,
       desde,
       hasta,
     });

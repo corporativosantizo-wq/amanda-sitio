@@ -4,10 +4,14 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { currentUser } from '@clerk/nextjs/server';
 import { crearDocumento, extraerYGuardarTexto, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await currentUser();
+    const userEmail = user?.emailAddresses?.[0]?.emailAddress ?? null;
+
     const body = await req.json();
     const files: { storage_path: string; filename: string; filesize: number; cliente_id?: string }[] = body.files;
 
@@ -41,6 +45,7 @@ export async function POST(req: NextRequest) {
           archivo_tamano: f.filesize ?? 0,
           cliente_id: f.cliente_id ?? null,
           nombre_original: f.filename,
+          created_by: userEmail,
         });
         documentos.push(doc);
 

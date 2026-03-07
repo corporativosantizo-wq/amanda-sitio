@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useFetch } from '@/lib/hooks/use-fetch'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell,
-  PieChart, Pie, Legend,
+  PieChart, Pie,
 } from 'recharts'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -23,6 +23,11 @@ interface TipoData {
   cantidad: number
 }
 
+interface UsuarioData {
+  usuario: string
+  cantidad: number
+}
+
 interface ReporteResponse {
   metricas: {
     total_global: number
@@ -34,6 +39,8 @@ interface ReporteResponse {
   }
   por_dia: DiaData[]
   por_tipo: TipoData[]
+  por_usuario: UsuarioData[]
+  usuarios: string[]
   desde: string
   hasta: string
 }
@@ -49,6 +56,18 @@ const TIPO_LABELS: Record<string, string> = {
   resolucion_judicial: 'Resolución Judicial',
   otro: 'Otro',
   sin_tipo: 'Sin tipo',
+}
+
+const USUARIO_LABELS: Record<string, string> = {
+  'contador@papeleo.legal': 'Asistente (Contador)',
+  'info@amandasantizo.com': 'Amanda Santizo',
+  'amanda@papeleo.legal': 'Amanda (Papeleo)',
+  'corporativosantizo@gmail.com': 'Corporativo',
+  'desconocido': 'Sin asignar',
+}
+
+function labelUsuario(email: string): string {
+  return USUARIO_LABELS[email] ?? email
 }
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#6B7280']
@@ -70,6 +89,7 @@ function fechaLabel(fecha: string): string {
 export default function DocumentosReportePage() {
   const [rangoDias, setRangoDias] = useState('30')
   const [tipoFiltro, setTipoFiltro] = useState('')
+  const [usuarioFiltro, setUsuarioFiltro] = useState('')
 
   const desde = useMemo(() => {
     const d = new Date()
@@ -80,18 +100,21 @@ export default function DocumentosReportePage() {
 
   const params = new URLSearchParams({ desde, hasta })
   if (tipoFiltro) params.set('tipo', tipoFiltro)
+  if (usuarioFiltro) params.set('usuario', usuarioFiltro)
 
   const { data, loading } = useFetch<ReporteResponse>(`/api/admin/documentos/reporte?${params}`)
 
   const m = data?.metricas
   const porDia = data?.por_dia ?? []
   const porTipo = data?.por_tipo ?? []
+  const porUsuario = data?.por_usuario ?? []
+  const usuarios = data?.usuarios ?? []
   const promedio = m?.promedio_diario ?? 0
 
   // Last 14 days for detailed table
   const ultimos14 = porDia.slice(-14)
   const totales14 = ultimos14.reduce(
-    (acc, d) => ({
+    (acc: any, d: DiaData) => ({
       documentos: acc.documentos + d.documentos,
       paginas: acc.paginas + d.paginas,
       clientes: acc.clientes + d.clientes_distintos,
@@ -100,12 +123,19 @@ export default function DocumentosReportePage() {
     { documentos: 0, paginas: 0, clientes: 0, clasificados: 0 }
   )
 
+  // Scorecard: find best day
+  const mejorDia = porDia.reduce(
+    (best: DiaData | null, d: DiaData) => (!best || d.documentos > best.documentos ? d : best),
+    null
+  )
+
   const descargarReporte = () => {
     if (!data) return
     const desdeLabel = new Date(data.desde + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
     const hastaLabel = new Date(data.hasta + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
 
     let texto = `Reporte de escaneo — ${desdeLabel} al ${hastaLabel}\n`
+    if (usuarioFiltro) texto += `Usuario: ${labelUsuario(usuarioFiltro)}\n`
     texto += `${'='.repeat(60)}\n\n`
     texto += `Total: ${m!.total_rango} documentos | Promedio: ${m!.promedio_diario}/día | Páginas: ${m!.total_paginas}\n`
     texto += `Escaneados hoy: ${m!.escaneados_hoy} | Esta semana: ${m!.esta_semana}\n`
@@ -121,6 +151,13 @@ export default function DocumentosReportePage() {
     texto += `\nPor tipo de documento:\n${'-'.repeat(40)}\n`
     for (const t of porTipo) {
       texto += `${(TIPO_LABELS[t.tipo] ?? t.tipo).padEnd(28)}${String(t.cantidad).padStart(6)}\n`
+    }
+
+    if (porUsuario.length > 0) {
+      texto += `\nPor usuario:\n${'-'.repeat(40)}\n`
+      for (const u of porUsuario) {
+        texto += `${labelUsuario(u.usuario).padEnd(28)}${String(u.cantidad).padStart(6)}\n`
+      }
     }
 
     const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' })
@@ -154,7 +191,7 @@ export default function DocumentosReportePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="flex bg-white rounded-lg border p-1">
           {RANGOS.map(r => (
             <button
@@ -178,6 +215,16 @@ export default function DocumentosReportePage() {
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
+        <select
+          value={usuarioFiltro}
+          onChange={e => setUsuarioFiltro(e.target.value)}
+          className="px-3 py-2 border rounded-lg text-sm bg-white outline-none"
+        >
+          <option value="">Todos los usuarios</option>
+          {usuarios.map(u => (
+            <option key={u} value={u}>{labelUsuario(u)}</option>
+          ))}
+        </select>
       </div>
 
       {loading ? (
@@ -186,17 +233,62 @@ export default function DocumentosReportePage() {
         <div className="py-20 text-center text-red-500">Error al cargar datos</div>
       ) : (
         <>
+          {/* Scorecard — when a user is selected */}
+          {usuarioFiltro && m && mejorDia && (
+            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-5">
+              <h2 className="text-sm font-bold text-blue-900 mb-2">
+                Productividad de {labelUsuario(usuarioFiltro)}
+              </h2>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-blue-800">
+                <span><strong>Total:</strong> {m.total_global.toLocaleString('es-GT')} docs</span>
+                <span><strong>Promedio:</strong> {m.promedio_diario}/día</span>
+                <span>
+                  <strong>Mejor día:</strong>{' '}
+                  {new Date(mejorDia.fecha + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })}
+                  {' '}({mejorDia.documentos.toLocaleString('es-GT')})
+                </span>
+                <span><strong>Esta semana:</strong> {m.esta_semana} docs</span>
+                <span><strong>Hoy:</strong> {m.escaneados_hoy} docs</span>
+              </div>
+            </div>
+          )}
+
           {/* Summary cards */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card label="Total escaneados" value={m!.total_global.toLocaleString('es-GT')} icon="📚" />
             <Card label="Escaneados hoy" value={String(m!.escaneados_hoy)} icon="📄" highlight={m!.escaneados_hoy >= promedio} />
             <Card label={`Promedio diario (${rangoDias}d)`} value={String(m!.promedio_diario)} icon="📊" />
             <Card label="Esta semana" value={String(m!.esta_semana)} icon="📅" />
           </div>
 
+          {/* Per-user breakdown (only when "Todos" is selected) */}
+          {!usuarioFiltro && porUsuario.length > 0 && (
+            <div className="bg-white border rounded-xl p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-3">Documentos por usuario</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {porUsuario.map((u: UsuarioData, i: number) => (
+                  <button
+                    key={u.usuario}
+                    onClick={() => setUsuarioFiltro(u.usuario)}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <span className="text-sm font-medium text-slate-700">{labelUsuario(u.usuario)}</span>
+                    </div>
+                    <span className="text-lg font-bold text-slate-900">{u.cantidad.toLocaleString('es-GT')}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Bar chart */}
           <div className="bg-white border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4">Documentos por día</h2>
+            <h2 className="text-sm font-semibold text-slate-700 mb-4">
+              Documentos por día
+              {usuarioFiltro && <span className="text-slate-400 font-normal"> — {labelUsuario(usuarioFiltro)}</span>}
+            </h2>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={porDia} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 <XAxis
@@ -213,7 +305,7 @@ export default function DocumentosReportePage() {
                 />
                 <ReferenceLine y={promedio} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Prom: ${promedio}`, position: 'right', fontSize: 11, fill: '#64748b' }} />
                 <Bar dataKey="documentos" radius={[3, 3, 0, 0]} maxBarSize={24}>
-                  {porDia.map((d, i) => (
+                  {porDia.map((d: DiaData, i: number) => (
                     <Cell key={i} fill={d.documentos >= promedio ? '#3B82F6' : '#EF4444'} opacity={d.documentos === 0 ? 0.15 : 0.85} />
                   ))}
                 </Bar>
@@ -239,7 +331,7 @@ export default function DocumentosReportePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {ultimos14.map(d => {
+                  {ultimos14.map((d: DiaData) => {
                     const icono = d.documentos > 20 ? '🟢' : d.documentos >= 10 ? '🟡' : d.documentos > 0 ? '🔴' : '⚪'
                     return (
                       <tr key={d.fecha} className="hover:bg-slate-50">
@@ -274,7 +366,7 @@ export default function DocumentosReportePage() {
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie
-                        data={porTipo.map(t => ({ name: TIPO_LABELS[t.tipo] ?? t.tipo, value: t.cantidad }))}
+                        data={porTipo.map((t: TipoData) => ({ name: TIPO_LABELS[t.tipo] ?? t.tipo, value: t.cantidad }))}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
@@ -283,7 +375,7 @@ export default function DocumentosReportePage() {
                         outerRadius={80}
                         paddingAngle={2}
                       >
-                        {porTipo.map((_, i) => (
+                        {porTipo.map((_: TipoData, i: number) => (
                           <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                         ))}
                       </Pie>
@@ -291,7 +383,7 @@ export default function DocumentosReportePage() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-1.5 mt-2">
-                    {porTipo.map((t, i) => (
+                    {porTipo.map((t: TipoData, i: number) => (
                       <div key={t.tipo} className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
