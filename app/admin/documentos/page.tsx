@@ -319,6 +319,21 @@ export default function DocumentosPage() {
     } catch { /* ignore */ }
   };
 
+  const descargarDoc = async (id: string, nombre?: string) => {
+    try {
+      const res = await fetch(`/api/admin/documentos/${id}`);
+      const data = await res.json();
+      if (data.signed_url) {
+        const a = document.createElement('a');
+        a.href = data.signed_url;
+        a.download = nombre || 'documento';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.click();
+      }
+    } catch { /* ignore */ }
+  };
+
   const cambiarCliente = async (docId: string, clienteId: string) => {
     await fetch(`/api/admin/documentos/${docId}`, {
       method: 'PATCH',
@@ -751,14 +766,12 @@ export default function DocumentosPage() {
                                 Abrir
                               </button>
                               {doc.archivo_url && (
-                                <a
-                                  href={doc.archivo_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  onClick={() => descargarDoc(doc.id, doc.nombre_archivo ?? doc.titulo)}
                                   className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
                                 >
                                   Descargar
-                                </a>
+                                </button>
                               )}
                               <button
                                 onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
