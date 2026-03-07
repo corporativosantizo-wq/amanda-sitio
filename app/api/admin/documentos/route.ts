@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
       cliente_id: s.get('cliente_id') ?? undefined,
       sin_cliente: s.get('sin_cliente') === 'true',
       busqueda: s.get('q') ?? undefined,
+      fecha_desde: s.get('fecha_desde') ?? undefined,
+      fecha_hasta: s.get('fecha_hasta') ?? undefined,
       page: parseInt(s.get('page') ?? '1'),
       limit: parseInt(s.get('limit') ?? '20'),
     });

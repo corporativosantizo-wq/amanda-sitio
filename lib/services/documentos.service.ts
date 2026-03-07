@@ -57,6 +57,8 @@ interface ListParams {
   cliente_id?: string;
   sin_cliente?: boolean;
   busqueda?: string;
+  fecha_desde?: string;
+  fecha_hasta?: string;
   page?: number;
   limit?: number;
 }
@@ -205,7 +207,7 @@ export async function rechazarDocumento(id: string, notas?: string) {
 }
 
 export async function listarDocumentos(params: ListParams = {}) {
-  const { estado, tipo, cliente_id, sin_cliente, busqueda, page = 1, limit = 20 } = params;
+  const { estado, tipo, cliente_id, sin_cliente, busqueda, fecha_desde, fecha_hasta, page = 1, limit = 20 } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
@@ -218,9 +220,11 @@ export async function listarDocumentos(params: ListParams = {}) {
   if (tipo) query = query.eq('tipo', tipo);
   if (sin_cliente) query = query.is('cliente_id', null);
   else if (cliente_id) query = query.eq('cliente_id', cliente_id);
+  if (fecha_desde) query = query.gte('created_at', fecha_desde + 'T00:00:00');
+  if (fecha_hasta) query = query.lte('created_at', fecha_hasta + 'T23:59:59');
   if (busqueda) {
     query = query.or(
-      `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,cliente_nombre_detectado.ilike.%${busqueda}%`
+      `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,cliente_nombre_detectado.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%,texto_extraido.ilike.%${busqueda}%`
     );
   }
 
