@@ -294,6 +294,7 @@ export interface Cobro {
   numero_cobro: number;
   cliente_id: string;
   expediente_id: string | null;
+  cotizacion_id: string | null;
   concepto: string;
   descripcion: string | null;
   monto: number;
@@ -305,6 +306,10 @@ export interface Cobro {
   fecha_vencimiento: string | null;
   dias_credito: number;
   notas: string | null;
+  factura_solicitada: boolean;
+  factura_solicitada_at: string | null;
+  factura_numero: string | null;
+  factura_serie: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -316,6 +321,7 @@ export interface CobroConCliente extends Cobro {
 export interface CobroInsert {
   cliente_id: string;
   expediente_id?: string | null;
+  cotizacion_id?: string | null;
   concepto: string;
   descripcion?: string | null;
   monto: number;

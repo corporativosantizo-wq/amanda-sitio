@@ -11,6 +11,7 @@ import {
   emailPagoRecibido,
 } from '@/lib/templates/emails';
 import { notificarPagoParaFactura } from '@/lib/services/factura-re.service';
+import { sendTelegramMessage } from '@/lib/molly/telegram';
 
 const db = () => createAdminClient();
 
@@ -89,6 +90,7 @@ export async function crearCobro(input: CobroInsert): Promise<Cobro> {
   const payload = {
     cliente_id: input.cliente_id,
     expediente_id: input.expediente_id ?? null,
+    cotizacion_id: input.cotizacion_id ?? null,
     concepto: input.concepto.trim(),
     descripcion: input.descripcion ?? null,
     monto: input.monto,
@@ -120,6 +122,10 @@ export async function actualizarCobro(id: string, updates: Partial<Cobro>): Prom
   if (updates.fecha_vencimiento !== undefined) payload.fecha_vencimiento = updates.fecha_vencimiento;
   if (updates.dias_credito !== undefined) payload.dias_credito = updates.dias_credito;
   if (updates.notas !== undefined) payload.notas = updates.notas;
+  if ((updates as any).factura_solicitada !== undefined) {
+    payload.factura_solicitada = (updates as any).factura_solicitada;
+    payload.factura_solicitada_at = (updates as any).factura_solicitada_at ?? new Date().toISOString();
+  }
 
   const { data, error } = await db()
     .from('cobros')
@@ -179,6 +185,21 @@ export async function registrarPagoCobro(params: {
     await notificarPagoParaFactura(pago.id);
   } catch (err: any) {
     console.error('[Cobros] Error notificando pago para factura:', err.message);
+  }
+
+  // Telegram notification
+  const Q = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  try {
+    await sendTelegramMessage(
+      `💰 <b>Pago recibido</b>\n\n` +
+      `<b>Cobro:</b> #${cobroActualizado.numero_cobro}\n` +
+      `<b>Cliente:</b> ${cobroActualizado.cliente?.nombre ?? 'N/A'}\n` +
+      `<b>Monto pagado:</b> ${Q(params.monto)}\n` +
+      `<b>Saldo pendiente:</b> ${Q(cobroActualizado.saldo_pendiente)}\n` +
+      `<b>Estado:</b> ${cobroActualizado.estado.toUpperCase()}`
+    );
+  } catch (e: any) {
+    console.error('[Cobros] Error notificando Telegram:', e.message);
   }
 
   return { pago, cobro: cobroActualizado };
@@ -323,6 +344,65 @@ export async function resumenCobros() {
   result.count_cobrado_mes = (pagos ?? []).length;
 
   return result;
+}
+
+// --- Crear cobro automático desde cotización aceptada ---
+
+export async function crearCobroDesdeCotizacion(cotizacionId: string): Promise<Cobro> {
+  const { data: cot, error: cotErr } = await db()
+    .from('cotizaciones')
+    .select(`
+      id, numero, cliente_id, expediente_id, total,
+      cliente:clientes!cliente_id (id, nombre)
+    `)
+    .eq('id', cotizacionId)
+    .single();
+
+  if (cotErr || !cot) throw new CobroError('Cotización no encontrada para generar cobro', cotErr);
+
+  // Check if cobro already exists for this cotización
+  const { data: existing } = await db()
+    .from('cobros')
+    .select('id')
+    .eq('cotizacion_id', cotizacionId)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    // Already has a cobro — return it
+    return await db()
+      .from('cobros')
+      .select('*')
+      .eq('id', existing[0].id)
+      .single()
+      .then(({ data }: any) => data as Cobro);
+  }
+
+  const cobro = await crearCobro({
+    cliente_id: cot.cliente_id,
+    expediente_id: cot.expediente_id,
+    cotizacion_id: cotizacionId,
+    concepto: `Cotización ${cot.numero}`,
+    monto: cot.total,
+    dias_credito: 30,
+    notas: `Cobro generado automáticamente al aceptar cotización ${cot.numero}`,
+  });
+
+  // Telegram notification
+  const clienteNombre = (cot.cliente as any)?.nombre ?? 'N/A';
+  const Q = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  try {
+    await sendTelegramMessage(
+      `📋 <b>Cobro generado automáticamente</b>\n\n` +
+      `<b>Cotización:</b> ${cot.numero} aceptada\n` +
+      `<b>Cliente:</b> ${clienteNombre}\n` +
+      `<b>Monto:</b> ${Q(cot.total)}\n` +
+      `<b>Crédito:</b> 30 días`
+    );
+  } catch (e: any) {
+    console.error('[Cobros] Error notificando Telegram:', e.message);
+  }
+
+  return cobro;
 }
 
 // --- Error ---

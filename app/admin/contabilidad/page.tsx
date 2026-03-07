@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch'
-import type { CobroConCliente } from '@/lib/types'
+import type { CobroConCliente, Pago, RecordatorioCobro } from '@/lib/types'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,6 +16,11 @@ interface Resumen {
   count_vencidos: number
   count_por_vencer: number
   count_cobrado_mes: number
+}
+
+interface CobroDetalle extends CobroConCliente {
+  pagos: Pago[]
+  recordatorios: RecordatorioCobro[]
 }
 
 const ESTADO_BADGE: Record<string, string> = {
@@ -38,6 +43,24 @@ const METODOS = [
 
 const Q = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`
 
+function diasVencido(fechaVencimiento: string | null): number {
+  if (!fechaVencimiento) return 0
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  const venc = new Date(fechaVencimiento + 'T12:00:00')
+  const diff = Math.floor((hoy.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24))
+  return diff
+}
+
+function estadoVisual(c: CobroConCliente): { icon: string; color: string } {
+  if (c.estado === 'pagado') return { icon: '✅', color: 'text-green-600' }
+  if (c.estado === 'cancelado') return { icon: '⚪', color: 'text-gray-400' }
+  const dias = diasVencido(c.fecha_vencimiento)
+  if (dias > 0) return { icon: '🔴', color: 'text-red-600' }
+  if (dias >= -7) return { icon: '🟡', color: 'text-amber-600' }
+  return { icon: '🟢', color: 'text-green-600' }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════════════
@@ -46,7 +69,8 @@ export default function ContabilidadPage() {
   const [filtro, setFiltro] = useState('pendientes')
   const [showNuevo, setShowNuevo] = useState(false)
   const [showPago, setShowPago] = useState<CobroConCliente | null>(null)
-  const [clienteSearch, setClienteSearch] = useState('')
+  const [showDetalle, setShowDetalle] = useState<string | null>(null)
+
   // API params based on filter
   const apiParams = filtro === 'todos' ? '' :
     filtro === 'pendientes' ? '&estado=pendiente' :
@@ -124,6 +148,7 @@ export default function ContabilidadPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 w-8"></th>
               <th className="px-4 py-3">#</th>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Concepto</th>
@@ -132,25 +157,32 @@ export default function ContabilidadPage() {
               <th className="px-4 py-3 text-right">Saldo</th>
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3">Vencimiento</th>
+              <th className="px-4 py-3 text-right">Días</th>
               <th className="px-4 py-3">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cobros.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                   No hay cobros para mostrar
                 </td>
               </tr>
             ) : (
               cobros.map((c: CobroConCliente) => {
-                const hoy = new Date().toISOString().split('T')[0]
-                const esVencido = c.fecha_vencimiento && c.fecha_vencimiento < hoy && c.estado !== 'pagado' && c.estado !== 'cancelado'
+                const vis = estadoVisual(c)
+                const dias = diasVencido(c.fecha_vencimiento)
+                const esVencido = dias > 0 && c.estado !== 'pagado' && c.estado !== 'cancelado'
                 return (
-                  <tr key={c.id} className={`hover:bg-gray-50 ${esVencido ? 'bg-red-50/40' : ''}`}>
+                  <tr
+                    key={c.id}
+                    className={`hover:bg-gray-50 cursor-pointer ${esVencido ? 'bg-red-50/40' : ''}`}
+                    onClick={() => setShowDetalle(c.id)}
+                  >
+                    <td className="px-4 py-3 text-center">{vis.icon}</td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">COB-{String(c.numero_cobro).padStart(3, '0')}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{c.cliente?.nombre ?? '—'}</td>
-                    <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">{c.concepto}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">{c.concepto}</td>
                     <td className="px-4 py-3 text-right font-medium">{Q(c.monto)}</td>
                     <td className="px-4 py-3 text-right text-green-600">{c.monto_pagado > 0 ? Q(c.monto_pagado) : '—'}</td>
                     <td className="px-4 py-3 text-right font-semibold">{Q(c.saldo_pendiente)}</td>
@@ -164,7 +196,10 @@ export default function ContabilidadPage() {
                         ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
                         : '—'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={`px-4 py-3 text-right text-xs font-mono ${esVencido ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
+                      {c.estado === 'pagado' || c.estado === 'cancelado' ? '—' : dias > 0 ? `+${dias}` : dias === 0 ? 'Hoy' : `${dias}`}
+                    </td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {c.estado !== 'pagado' && c.estado !== 'cancelado' && (
                           <>
@@ -188,6 +223,12 @@ export default function ContabilidadPage() {
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={() => setShowDetalle(c.id)}
+                          className="px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 font-medium"
+                        >
+                          Ver
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -217,6 +258,16 @@ export default function ContabilidadPage() {
         />
       )}
 
+      {/* Modal: Detalle de Cobro */}
+      {showDetalle && (
+        <CobroDetalleModal
+          cobroId={showDetalle}
+          onClose={() => setShowDetalle(null)}
+          onPago={(cobro) => { setShowDetalle(null); setShowPago(cobro) }}
+          onUpdated={refetchAll}
+          mutate={mutate}
+        />
+      )}
     </div>
   )
 }
@@ -238,6 +289,229 @@ function SummaryCard({ icon, label, value, sub, color, bg }: {
   )
 }
 
+// ── Modal: Detalle de Cobro ────────────────────────────────────────────────
+
+function CobroDetalleModal({ cobroId, onClose, onPago, onUpdated, mutate }: {
+  cobroId: string
+  onClose: () => void
+  onPago: (cobro: CobroConCliente) => void
+  onUpdated: () => void
+  mutate: any
+}) {
+  const { data: cobro, refetch } = useFetch<CobroDetalle>(`/api/admin/cobros/${cobroId}`)
+  const [sending, setSending] = useState(false)
+
+  if (!cobro) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-8 text-center" onClick={(e) => e.stopPropagation()}>
+          <p className="text-gray-400">Cargando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const porcentaje = cobro.monto > 0 ? Math.min((cobro.monto_pagado / cobro.monto) * 100, 100) : 0
+  const vis = estadoVisual(cobro)
+  const dias = diasVencido(cobro.fecha_vencimiento)
+  const esVencido = dias > 0 && cobro.estado !== 'pagado' && cobro.estado !== 'cancelado'
+  const esPagado = cobro.estado === 'pagado'
+
+  const handleRecordatorio = async () => {
+    setSending(true)
+    await mutate(`/api/admin/cobros/${cobroId}`, {
+      method: 'POST',
+      body: { accion: 'enviar_recordatorio' },
+      onSuccess: () => { refetch(); onUpdated() },
+    })
+    setSending(false)
+  }
+
+  const handleMarcarPagado = async () => {
+    await mutate(`/api/admin/cobros/${cobroId}`, {
+      method: 'PATCH',
+      body: { estado: 'pagado' },
+      onSuccess: () => { refetch(); onUpdated() },
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="p-6 border-b">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{vis.icon}</span>
+                <h2 className="text-lg font-bold text-gray-900">
+                  COB-{String(cobro.numero_cobro).padStart(3, '0')}
+                </h2>
+                <span className={`px-2 py-1 text-[10px] font-semibold rounded-full ${ESTADO_BADGE[cobro.estado]}`}>
+                  {cobro.estado.toUpperCase()}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">{cobro.concepto}</p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Client & dates */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-gray-500 font-medium mb-1">Cliente</p>
+              <p className="text-sm font-semibold text-gray-900">{cobro.cliente?.nombre ?? '—'}</p>
+              {cobro.cliente?.email && <p className="text-xs text-gray-400">{cobro.cliente.email}</p>}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-medium mb-1">Vencimiento</p>
+              <p className={`text-sm font-semibold ${esVencido ? 'text-red-600' : 'text-gray-900'}`}>
+                {cobro.fecha_vencimiento
+                  ? new Date(cobro.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
+                  : 'Sin fecha'}
+                {esVencido && <span className="text-xs ml-2 text-red-500">({dias} días vencido)</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div>
+            <div className="flex justify-between items-baseline mb-2">
+              <p className="text-xs text-gray-500 font-medium">Progreso de pago</p>
+              <p className="text-xs text-gray-500">
+                <span className="font-semibold text-green-600">{Q(cobro.monto_pagado)}</span>
+                <span className="mx-1">/</span>
+                <span className="font-semibold text-gray-700">{Q(cobro.monto)}</span>
+              </p>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div
+                className={`h-3 rounded-full transition-all ${esPagado ? 'bg-green-500' : porcentaje > 0 ? 'bg-blue-500' : 'bg-gray-300'}`}
+                style={{ width: `${porcentaje}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1">
+              <p className="text-[10px] text-gray-400">{porcentaje.toFixed(0)}% pagado</p>
+              <p className="text-[10px] text-gray-400">Saldo: {Q(cobro.saldo_pendiente)}</p>
+            </div>
+          </div>
+
+          {/* Pagos list */}
+          <div>
+            <p className="text-xs text-gray-500 font-medium mb-2">Pagos registrados ({cobro.pagos?.length ?? 0})</p>
+            {cobro.pagos && cobro.pagos.length > 0 ? (
+              <div className="border rounded-lg divide-y">
+                {cobro.pagos.map((p: Pago) => (
+                  <div key={p.id} className="px-4 py-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{Q(p.monto)}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {p.metodo && <span className="ml-2">{p.metodo.replace(/_/g, ' ')}</span>}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
+                        p.estado === 'confirmado' ? 'bg-green-100 text-green-700' :
+                        p.estado === 'rechazado' ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {p.estado}
+                      </span>
+                      {p.referencia_bancaria && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">Ref: {p.referencia_bancaria}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">Sin pagos registrados</p>
+            )}
+          </div>
+
+          {/* Recordatorios history */}
+          {cobro.recordatorios && cobro.recordatorios.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 font-medium mb-2">Historial de recordatorios</p>
+              <div className="space-y-1">
+                {cobro.recordatorios.map((r: RecordatorioCobro) => (
+                  <div key={r.id} className="flex items-center gap-2 text-xs text-gray-500">
+                    <span>{r.email_enviado ? '📧' : '⚠️'}</span>
+                    <span className="capitalize">{r.tipo.replace(/_/g, ' ')}</span>
+                    <span className="text-gray-300">·</span>
+                    <span>{new Date(r.created_at).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })}</span>
+                    {r.resultado && <span className="text-gray-300">· {r.resultado}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {cobro.notas && (
+            <div>
+              <p className="text-xs text-gray-500 font-medium mb-1">Notas</p>
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{cobro.notas}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        {cobro.estado !== 'cancelado' && (
+          <div className="p-6 border-t bg-gray-50 rounded-b-2xl flex items-center gap-2 flex-wrap">
+            {!esPagado && (
+              <>
+                <button
+                  onClick={() => onPago(cobro)}
+                  className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700"
+                >
+                  Registrar pago
+                </button>
+                <button
+                  onClick={handleRecordatorio}
+                  disabled={sending}
+                  className="px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {sending ? 'Enviando...' : 'Enviar recordatorio'}
+                </button>
+                <button
+                  onClick={handleMarcarPagado}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"
+                >
+                  Marcar como pagado
+                </button>
+              </>
+            )}
+            {esPagado && !cobro.factura_solicitada && (
+              <button
+                onClick={async () => {
+                  await mutate(`/api/admin/cobros/${cobroId}`, {
+                    method: 'PATCH',
+                    body: { factura_solicitada: true, factura_solicitada_at: new Date().toISOString() },
+                    onSuccess: () => { refetch(); onUpdated() },
+                  })
+                }}
+                className="px-4 py-2 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700"
+              >
+                Solicitar factura a RE
+              </button>
+            )}
+            {esPagado && cobro.factura_solicitada && (
+              <span className="px-4 py-2 bg-purple-100 text-purple-700 text-sm font-semibold rounded-lg">
+                Factura solicitada ✓
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Modal: Nuevo Cobro ──────────────────────────────────────────────────────
 
 function NuevoCobroModal({ onClose, onCreated, mutate }: {
@@ -247,7 +521,7 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
 }) {
   const [concepto, setConcepto] = useState('')
   const [monto, setMonto] = useState('')
-  const [diasCredito, setDiasCredito] = useState('15')
+  const [diasCredito, setDiasCredito] = useState('30')
   const [notas, setNotas] = useState('')
   const [clienteId, setClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
@@ -258,15 +532,15 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
   )
 
   const handleSubmit = async () => {
-    if (!clienteId || !concepto || !monto) return
+    if (!concepto || !monto) return
     setSaving(true)
     await mutate('/api/admin/cobros', {
       method: 'POST',
       body: {
-        cliente_id: clienteId,
+        cliente_id: clienteId || null,
         concepto,
         monto: parseFloat(monto),
-        dias_credito: parseInt(diasCredito) || 15,
+        dias_credito: parseInt(diasCredito) || 30,
         notas: notas || null,
       },
       onSuccess: onCreated,
@@ -281,7 +555,7 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
 
         {/* Cliente search */}
         <div className="mb-3">
-          <label className="text-xs text-gray-500 font-medium">Cliente</label>
+          <label className="text-xs text-gray-500 font-medium">Cliente (opcional)</label>
           <input
             type="text"
             placeholder="Buscar cliente..."
@@ -306,7 +580,7 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
         </div>
 
         <div className="mb-3">
-          <label className="text-xs text-gray-500 font-medium">Concepto</label>
+          <label className="text-xs text-gray-500 font-medium">Concepto *</label>
           <input
             type="text"
             placeholder="Ej: Constitución de sociedad"
@@ -318,7 +592,7 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="text-xs text-gray-500 font-medium">Monto (Q)</label>
+            <label className="text-xs text-gray-500 font-medium">Monto (Q) *</label>
             <input
               type="number"
               step="0.01"
@@ -330,12 +604,17 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
           </div>
           <div>
             <label className="text-xs text-gray-500 font-medium">Días de crédito</label>
-            <input
-              type="number"
+            <select
               value={diasCredito}
               onChange={(e) => setDiasCredito(e.target.value)}
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm outline-none focus:border-teal-500"
-            />
+            >
+              <option value="15">15 días</option>
+              <option value="30">30 días</option>
+              <option value="45">45 días</option>
+              <option value="60">60 días</option>
+              <option value="90">90 días</option>
+            </select>
           </div>
         </div>
 
@@ -355,10 +634,10 @@ function NuevoCobroModal({ onClose, onCreated, mutate }: {
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!clienteId || !concepto || !monto || saving}
+            disabled={!concepto || !monto || saving}
             className="px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? 'Creando...' : 'Crear y enviar cobro'}
+            {saving ? 'Creando...' : 'Crear cobro'}
           </button>
         </div>
       </div>

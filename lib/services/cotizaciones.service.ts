@@ -16,6 +16,7 @@ import { EstadoCotizacion } from '@/lib/types';
 import { calcularIVASobreSubtotal, calcularAnticipo } from '@/lib/utils';
 import { sendMail } from '@/lib/services/outlook.service';
 import { emailCotizacion } from '@/lib/templates/emails';
+import { crearCobroDesdeCotizacion } from '@/lib/services/cobros.service';
 
 const db = () => createAdminClient();
 
@@ -454,6 +455,14 @@ export async function aceptarCotizacion(id: string): Promise<Cotizacion> {
     .single();
 
   if (error) throw new CotizacionError('Error al aceptar cotización', error);
+
+  // Auto-create cobro from accepted cotización
+  try {
+    await crearCobroDesdeCotizacion(id);
+  } catch (err: any) {
+    console.error('[Cotizaciones] Error creando cobro automático:', err.message);
+  }
+
   return data as Cotizacion;
 }
 
