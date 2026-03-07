@@ -56,6 +56,10 @@ export async function GET(req: NextRequest) {
         mb_subidos: 0,
         promedio_mb: 0,
         archivos_grandes: 0,
+        hora_entrada: null,
+        hora_salida: null,
+        horas_trabajadas: 0,
+        docs_por_hora: 0,
       });
       d.setDate(d.getDate() + 1);
     }
