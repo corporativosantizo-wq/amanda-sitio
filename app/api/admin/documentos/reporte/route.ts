@@ -1,22 +1,13 @@
 // ============================================================================
 // GET /api/admin/documentos/reporte — Estadísticas de escaneo de documentos
 // Query params: desde, hasta, tipo
-// Uses SQL aggregation via RPC to avoid Supabase's 1000-row limit
+// Uses legal.reporte_documentos() RPC for aggregation (no row limit issues)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const db = () => createAdminClient();
-
-async function sqlJson(query: string): Promise<any[]> {
-  // @ts-ignore
-  const { data, error } = await db().schema('public').rpc('execute_sql_json', {
-    query_text: query,
-  });
-  if (error) throw new Error(`SQL error: ${error.message}`);
-  return (data as any[]) ?? [];
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,45 +22,19 @@ export async function GET(req: NextRequest) {
     const desde = s.get('desde') || defaultDesde.toISOString().split('T')[0];
     const hasta = s.get('hasta') || ahora.toISOString().split('T')[0];
 
-    // Sanitize tipo to prevent SQL injection
-    const tipoFilter = tipo
-      ? `AND tipo = '${tipo.replace(/'/g, "''")}'`
-      : '';
+    // Call the legal.reporte_documentos RPC (no schema switching needed)
+    const { data, error } = await db().rpc('reporte_documentos', {
+      p_desde: desde,
+      p_hasta: hasta,
+      p_tipo: tipo,
+    });
 
-    // 1. Per-day aggregation
-    const porDiaData = await sqlJson(`
-      SELECT
-        (created_at AT TIME ZONE 'America/Guatemala')::date::text AS fecha,
-        count(*)::int AS documentos,
-        coalesce(sum(paginas), 0)::int AS paginas,
-        count(DISTINCT cliente_id)::int AS clientes_distintos,
-        count(*) FILTER (WHERE clasificado_por_ia = true)::int AS clasificados_ia
-      FROM legal.documentos
-      WHERE (created_at AT TIME ZONE 'America/Guatemala')::date >= '${desde}'::date
-        AND (created_at AT TIME ZONE 'America/Guatemala')::date <= '${hasta}'::date
-        ${tipoFilter}
-      GROUP BY 1
-      ORDER BY 1
-    `);
+    if (error) throw new Error(`RPC error: ${error.message}`);
+    if (!data) throw new Error('RPC returned null');
 
-    // 2. By type aggregation
-    const porTipoData = await sqlJson(`
-      SELECT
-        coalesce(tipo, 'sin_tipo') AS tipo,
-        count(*)::int AS cantidad
-      FROM legal.documentos
-      WHERE (created_at AT TIME ZONE 'America/Guatemala')::date >= '${desde}'::date
-        AND (created_at AT TIME ZONE 'America/Guatemala')::date <= '${hasta}'::date
-        ${tipoFilter}
-      GROUP BY 1
-      ORDER BY 2 DESC
-    `);
-
-    // 3. Total count (all time)
-    const totalArr = await sqlJson(
-      `SELECT count(*)::int AS total FROM legal.documentos`
-    );
-    const totalGlobal: number = totalArr[0]?.total ?? 0;
+    const porDiaData: any[] = data.por_dia ?? [];
+    const porTipoData: any[] = data.por_tipo ?? [];
+    const totalGlobal: number = data.total_global ?? 0;
 
     // Fill in missing days (days with 0 documents)
     const porDiaMap = new Map(porDiaData.map((d: any) => [d.fecha, d]));
