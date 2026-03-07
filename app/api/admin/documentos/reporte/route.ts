@@ -53,6 +53,9 @@ export async function GET(req: NextRequest) {
         paginas: 0,
         clientes_distintos: 0,
         clasificados_ia: 0,
+        mb_subidos: 0,
+        promedio_mb: 0,
+        archivos_grandes: 0,
       });
       d.setDate(d.getDate() + 1);
     }
@@ -100,6 +103,8 @@ export async function GET(req: NextRequest) {
       por_dia: diasArray,
       por_tipo: porTipoData,
       por_usuario: porUsuarioData,
+      por_tamano: data.por_tamano ?? {},
+      storage: data.storage ?? {},
       usuarios,
       desde,
       hasta,
