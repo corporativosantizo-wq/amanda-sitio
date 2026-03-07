@@ -34,6 +34,7 @@ export interface DocumentoInsert {
   nombre_archivo: string;
   archivo_tamano: number;
   cliente_id?: string | null;
+  expediente_id?: string | null;
   nombre_original?: string;
   created_by?: string | null;
 }
@@ -76,6 +77,7 @@ export async function crearDocumento(input: DocumentoInsert) {
     estado: 'pendiente',
   };
   if (input.cliente_id) payload.cliente_id = input.cliente_id;
+  if (input.expediente_id) payload.expediente_id = input.expediente_id;
   if (input.created_by) payload.created_by = input.created_by;
 
   const { data, error } = await db()

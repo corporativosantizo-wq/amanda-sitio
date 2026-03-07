@@ -11,9 +11,12 @@ import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import ExcelJS from 'exceljs';
 import { Section, Badge, Skeleton, EmptyState, Q } from '@/components/admin/ui';
+import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
   FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
+  Upload, Search, Unlink,
 } from 'lucide-react';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
@@ -525,7 +528,7 @@ export default function ExpedienteDetallePage() {
           mutate={mutate} refetch={refetch} />
       )}
       {tab === 'documentos' && (
-        <TabDocumentos expedienteId={id} />
+        <TabDocumentos expedienteId={id} clienteId={e.cliente_id} />
       )}
       {tab === 'vinculados' && (
         <TabVinculados vinculados={vinculados} expedienteId={id}
@@ -1326,11 +1329,423 @@ function TabPlazos({ plazos, expedienteId, mutate, refetch }: {
 
 // ── Tab: Documentos ──────────────────────────────────────────────────────
 
-function TabDocumentos({ expedienteId }: { expedienteId: string }) {
-  // Placeholder — Supabase Storage integration will be added
+function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clienteId?: string }) {
+  const { mutate } = useMutate();
+  const { data, loading, refetch } = useFetch<{ data: any[] }>(
+    `/api/admin/expedientes/${expedienteId}/documentos`
+  );
+  const docs = data?.data ?? [];
+
+  const [showVincular, setShowVincular] = useState(false);
+  const [showSubir, setShowSubir] = useState(false);
+
+  const abrirDoc = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const d = await res.json();
+      if (d.signed_url) safeWindowOpen(d.signed_url);
+    } catch { /* ignore */ }
+  };
+
+  const descargarDoc = async (docId: string, nombre?: string) => {
+    try {
+      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const d = await res.json();
+      if (d.signed_url) {
+        const a = document.createElement('a');
+        a.href = d.signed_url;
+        a.download = nombre || 'documento';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.click();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const desvincular = async (docId: string) => {
+    await mutate(`/api/admin/expedientes/${expedienteId}/documentos`, {
+      body: { accion: 'desvincular', documento_id: docId },
+      onSuccess: () => refetch(),
+    });
+  };
+
+  const TIPO_LABELS: Record<string, string> = {
+    contrato_comercial: 'Contrato Comercial', escritura_publica: 'Escritura Pública',
+    testimonio: 'Testimonio', acta_notarial: 'Acta Notarial', poder: 'Poder',
+    contrato_laboral: 'Contrato Laboral', demanda_memorial: 'Demanda / Memorial',
+    resolucion_judicial: 'Resolución Judicial', otro: 'Otro',
+  };
+
+  function getFileIcon(name: string): string {
+    const ext = name?.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+    if (ext === '.pdf') return '\u{1F4C4}';
+    if (ext === '.docx' || ext === '.doc') return '\u{1F4DD}';
+    if (ext === '.xlsx' || ext === '.xls') return '\u{1F4CA}';
+    if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') return '\u{1F5BC}';
+    return '\u{1F4C4}';
+  }
+
+  if (loading) return <Skeleton className="h-40" />;
+
   return (
-    <EmptyState icon="📁" title="Documentos"
-      description="La integración con Supabase Storage se configurará próximamente." />
+    <div className="space-y-4">
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setShowVincular(true)}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          <Link2 size={14} /> Vincular documento
+        </button>
+        <button
+          onClick={() => setShowSubir(true)}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1E3A8A] transition-colors"
+        >
+          <Upload size={14} /> Subir documento
+        </button>
+      </div>
+
+      {/* Document list */}
+      {docs.length === 0 ? (
+        <EmptyState icon="📁" title="Sin documentos"
+          description="No hay documentos vinculados a este expediente. Vincula uno existente o sube uno nuevo." />
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/50">
+                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Documento</th>
+                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Tipo</th>
+                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Fecha</th>
+                <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {docs.map((doc: any) => (
+                <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{getFileIcon(doc.nombre_archivo ?? '')}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate max-w-xs">
+                          {doc.titulo || doc.nombre_archivo}
+                        </p>
+                        {doc.numero_documento && (
+                          <p className="text-xs text-slate-400 font-mono">{doc.numero_documento}</p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                      {TIPO_LABELS[doc.tipo] ?? doc.tipo}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm text-slate-500">
+                      {doc.fecha_documento
+                        ? new Date(doc.fecha_documento + 'T12:00:00').toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : doc.created_at
+                          ? new Date(doc.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' })
+                          : '—'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => abrirDoc(doc.id)}
+                        className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                        title="Abrir"
+                      >
+                        <FileText size={15} />
+                      </button>
+                      <button
+                        onClick={() => descargarDoc(doc.id, doc.nombre_archivo)}
+                        className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="Descargar"
+                      >
+                        <Download size={15} />
+                      </button>
+                      <button
+                        onClick={() => desvincular(doc.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Desvincular"
+                      >
+                        <Unlink size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modal: Vincular documento existente */}
+      {showVincular && (
+        <VincularDocModal
+          expedienteId={expedienteId}
+          clienteId={clienteId}
+          onClose={() => setShowVincular(false)}
+          onLinked={() => { setShowVincular(false); refetch(); }}
+        />
+      )}
+
+      {/* Modal: Subir documento */}
+      {showSubir && (
+        <SubirDocModal
+          expedienteId={expedienteId}
+          clienteId={clienteId}
+          onClose={() => setShowSubir(false)}
+          onUploaded={() => { setShowSubir(false); refetch(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal: Vincular documento existente ─────────────────────────────────
+
+function VincularDocModal({ expedienteId, clienteId, onClose, onLinked }: {
+  expedienteId: string; clienteId?: string;
+  onClose: () => void; onLinked: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [linking, setLinking] = useState<string | null>(null);
+  const timer = useRef<NodeJS.Timeout>(undefined);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ q: query, limit: '10' });
+        if (clienteId) params.set('cliente_id', clienteId);
+        const res = await fetch(`/api/admin/documentos?${params}`);
+        const json = await res.json();
+        // Filter out already-linked docs
+        setResults((json.data ?? []).filter((d: any) => !d.expediente_id));
+      } catch { setResults([]); }
+      setSearching(false);
+    }, 300);
+  }, [query, clienteId]);
+
+  const vincular = async (docId: string) => {
+    setLinking(docId);
+    try {
+      const res = await fetch(`/api/admin/expedientes/${expedienteId}/documentos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'vincular', documento_id: docId }),
+      });
+      if (res.ok) onLinked();
+    } catch { /* ignore */ }
+    setLinking(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-slate-900 mb-3">Vincular documento existente</h2>
+
+        <div className="relative mb-3">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar por título, número o nombre de archivo..."
+            autoFocus
+            className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500"
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {searching && <p className="text-sm text-slate-400 py-4 text-center">Buscando...</p>}
+          {!searching && query.length >= 2 && results.length === 0 && (
+            <p className="text-sm text-slate-400 py-4 text-center">No se encontraron documentos sin vincular</p>
+          )}
+          {results.map((doc: any) => (
+            <div key={doc.id} className="flex items-center justify-between py-2.5 px-2 border-b border-slate-100 hover:bg-slate-50 rounded-lg">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900 truncate">{doc.titulo || doc.nombre_archivo}</p>
+                <p className="text-xs text-slate-400">
+                  {doc.tipo} {doc.numero_documento ? ` · ${doc.numero_documento}` : ''}
+                  {doc.cliente?.nombre ? ` · ${doc.cliente.nombre}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => vincular(doc.id)}
+                disabled={linking === doc.id}
+                className="ml-3 px-3 py-1.5 text-xs font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 whitespace-nowrap"
+              >
+                {linking === doc.id ? '...' : 'Vincular'}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end mt-3 pt-3 border-t border-slate-100">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal: Subir documento al expediente ────────────────────────────────
+
+function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
+  expedienteId: string; clienteId?: string;
+  onClose: () => void; onUploaded: () => void;
+}) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [error, setError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const ALLOWED = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
+
+  const addFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const valid = Array.from(fileList).filter(f => {
+      const ext = f.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+      return ALLOWED.includes(ext);
+    });
+    setFiles(prev => [...prev, ...valid]);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles(prev => prev.filter((_: File, i: number) => i !== idx));
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) return;
+    setUploading(true);
+    setError('');
+
+    const uploaded: { storage_path: string; filename: string; filesize: number }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setProgress(`Subiendo ${i + 1}/${files.length}: ${f.name}`);
+
+      try {
+        // Get signed URL
+        const urlRes = await fetch('/api/admin/documentos/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: f.name, filesize: f.size }),
+        });
+        const urlData = await urlRes.json();
+        if (!urlRes.ok) throw new Error(urlData.error);
+
+        // Upload to storage
+        const result = await signedUrlUpload(urlData.signed_url, f, f.type || 'application/octet-stream');
+        if (!result.ok) throw new Error('Error al subir archivo');
+
+        uploaded.push({ storage_path: urlData.storage_path, filename: f.name, filesize: f.size });
+      } catch (err: any) {
+        setError(`Error en ${f.name}: ${err.message}`);
+        setUploading(false);
+        setProgress('');
+        return;
+      }
+    }
+
+    // Register documents in DB
+    setProgress('Registrando documentos...');
+    try {
+      const res = await fetch('/api/admin/documentos/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: uploaded.map(u => ({ ...u, cliente_id: clienteId, expediente_id: expedienteId })),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Error al registrar');
+      }
+      onUploaded();
+    } catch (err: any) {
+      setError(err.message);
+    }
+
+    setUploading(false);
+    setProgress('');
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-slate-900 mb-3">Subir documento al expediente</h2>
+
+        {/* Drop zone */}
+        <div
+          onClick={() => inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={e => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer.files); }}
+          className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 transition-colors"
+        >
+          <Upload size={24} className="mx-auto text-slate-400 mb-2" />
+          <p className="text-sm text-slate-600">Arrastra archivos aquí o haz clic para seleccionar</p>
+          <p className="text-xs text-slate-400 mt-1">PDF, DOCX, XLSX, JPG, PNG</p>
+          <input ref={inputRef} type="file" multiple accept={ALLOWED.join(',')} className="hidden"
+            onChange={e => addFiles(e.target.files)} />
+        </div>
+
+        {/* File list */}
+        {files.length > 0 && (
+          <div className="mt-3 space-y-1 max-h-40 overflow-y-auto">
+            {files.map((f: File, i: number) => (
+              <div key={i} className="flex items-center justify-between py-1.5 px-2 bg-slate-50 rounded-lg">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-700 truncate">{f.name}</p>
+                  <p className="text-xs text-slate-400">{formatSize(f.size)}</p>
+                </div>
+                <button onClick={() => removeFile(i)} className="p-1 text-slate-400 hover:text-red-500">
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {progress && (
+          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+            {progress}
+          </div>
+        )}
+        {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} disabled={uploading} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-50">
+            Cancelar
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={uploading || files.length === 0}
+            className="px-4 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {uploading ? 'Subiendo...' : `Subir ${files.length > 0 ? `(${files.length})` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

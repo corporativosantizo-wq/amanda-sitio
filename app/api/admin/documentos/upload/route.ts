@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const userEmail = user?.emailAddresses?.[0]?.emailAddress ?? null;
 
     const body = await req.json();
-    const files: { storage_path: string; filename: string; filesize: number; cliente_id?: string }[] = body.files;
+    const files: { storage_path: string; filename: string; filesize: number; cliente_id?: string; expediente_id?: string }[] = body.files;
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return NextResponse.json(
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
           nombre_archivo: f.filename,
           archivo_tamano: f.filesize ?? 0,
           cliente_id: f.cliente_id ?? null,
+          expediente_id: f.expediente_id ?? null,
           nombre_original: f.filename,
           created_by: userEmail,
         });
