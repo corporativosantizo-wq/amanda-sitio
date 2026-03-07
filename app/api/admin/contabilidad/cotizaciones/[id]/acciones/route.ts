@@ -12,14 +12,15 @@ import {
   duplicarCotizacion,
   programarEnvio,
   cancelarEnvioProgramado,
+  reenviarCotizacion,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio';
+type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio' | 'reenviar';
 
-const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio'];
+const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -70,6 +71,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       case 'cancelar_envio':
         resultado = await cancelarEnvioProgramado(id);
         break;
+
+      case 'reenviar': {
+        if (!body.to || !body.subject || !body.mensaje) {
+          return NextResponse.json(
+            { error: 'Se requieren campos: to, subject, mensaje' },
+            { status: 400 }
+          );
+        }
+        await reenviarCotizacion(id, {
+          to: body.to,
+          subject: body.subject,
+          mensaje: body.mensaje,
+          from: body.from,
+        });
+        resultado = { enviado: true };
+        break;
+      }
     }
 
     return NextResponse.json({

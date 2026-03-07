@@ -14,6 +14,12 @@ import {
 } from '@/components/admin/ui';
 import type { CotizacionConCliente, EstadoCotizacion } from '@/lib/types';
 
+const CUENTAS_ENVIO = [
+  { value: 'amanda@papeleo.legal', label: 'amanda@papeleo.legal' },
+  { value: 'asistente@papeleo.legal', label: 'asistente@papeleo.legal' },
+  { value: 'contador@papeleo.legal', label: 'contador@papeleo.legal' },
+];
+
 // ── Types ───────────────────────────────────────────────────────────────
 
 interface ListResponse {
@@ -44,6 +50,7 @@ export default function CotizacionesPage() {
   const [estado, setEstado] = useState(searchParams.get('estado') ?? '');
   const [busqueda, setBusqueda] = useState('');
   const [page, setPage] = useState(1);
+  const [reenviarCot, setReenviarCot] = useState<any>(null);
 
   // Build URL
   const params = new URLSearchParams();
@@ -181,6 +188,7 @@ export default function CotizacionesPage() {
                           cotId={cot.id}
                           onAccion={(accion) => ejecutarAccion(cot.id, accion)}
                           onDuplicar={() => ejecutarAccion(cot.id, 'duplicar')}
+                          onReenviar={() => setReenviarCot(cot)}
                           disabled={mutating}
                         />
                       </td>
@@ -217,17 +225,26 @@ export default function CotizacionesPage() {
           </>
         )}
       </div>
+      {/* Modal: Reenviar cotización */}
+      {reenviarCot && (
+        <ReenviarModal
+          cotizacion={reenviarCot}
+          onClose={() => setReenviarCot(null)}
+          onSent={() => { setReenviarCot(null); refetch(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ── Row Actions ─────────────────────────────────────────────────────────
 
-function RowActions({ estado, cotId, onAccion, onDuplicar, disabled }: {
+function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled }: {
   estado: string;
   cotId: string;
   onAccion: (accion: string) => void;
   onDuplicar: () => void;
+  onReenviar: () => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -258,6 +275,9 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, disabled }: {
   if (estado === 'borrador') {
     acciones.push({ label: 'Enviar', accion: 'enviar', icon: '📤' });
   }
+  if (estado !== 'borrador') {
+    acciones.push({ label: 'Reenviar', accion: 'reenviar', icon: '📧' });
+  }
   if (estado === 'enviada') {
     acciones.push({ label: 'Aceptar', accion: 'aceptar', icon: '✅' });
     acciones.push({ label: 'Rechazar', accion: 'rechazar', icon: '❌' });
@@ -283,6 +303,7 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, disabled }: {
                 onClick={() => {
                   if (a.accion === 'pdf') descargarPDF();
                   else if (a.accion === 'duplicar') { setOpen(false); onDuplicar(); }
+                  else if (a.accion === 'reenviar') { setOpen(false); onReenviar(); }
                   else { setOpen(false); onAccion(a.accion); }
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
@@ -294,6 +315,120 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, disabled }: {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Modal: Reenviar cotización ──────────────────────────────────────────
+
+function ReenviarModal({ cotizacion, onClose, onSent }: {
+  cotizacion: any;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const clienteNombre = cotizacion.cliente?.nombre ?? 'Estimado/a';
+  const clienteEmail = cotizacion.cliente?.email ?? '';
+
+  const [to, setTo] = useState(clienteEmail);
+  const [from, setFrom] = useState('amanda@papeleo.legal');
+  const [subject, setSubject] = useState(
+    `Cotización ${cotizacion.numero} — Despacho Jurídico Amanda Santizo`
+  );
+  const [mensaje, setMensaje] = useState(
+    `Estimado/a ${clienteNombre},\n\nLe reenvío la cotización ${cotizacion.numero} por un monto de ${Q(cotizacion.total)}.\n\nQuedamos a sus órdenes.\n\nLcda. Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`
+  );
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const { mutate } = useMutate();
+
+  const handleEnviar = async () => {
+    if (!to.trim()) { setError('Ingresa un email de destino'); return; }
+    setSending(true);
+    setError('');
+    await mutate(
+      `/api/admin/contabilidad/cotizaciones/${cotizacion.id}/acciones`,
+      {
+        body: { accion: 'reenviar', to, subject, mensaje, from },
+        onSuccess: onSent,
+        onError: (msg: string) => setError(msg),
+      }
+    );
+    setSending(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-slate-900 mb-1">Reenviar cotización</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          {cotizacion.numero} · {clienteNombre} · {Q(cotizacion.total)}
+        </p>
+
+        <div className="space-y-3">
+          {/* From */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Cuenta de envío</label>
+            <select
+              value={from}
+              onChange={e => setFrom(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500"
+            >
+              {CUENTAS_ENVIO.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* To */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Para</label>
+            <input
+              type="email"
+              value={to}
+              onChange={e => setTo(e.target.value)}
+              placeholder="email@cliente.com"
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          {/* Subject */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Asunto</label>
+            <input
+              type="text"
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          {/* Mensaje */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Mensaje</label>
+            <textarea
+              value={mensaje}
+              onChange={e => setMensaje(e.target.value)}
+              rows={8}
+              className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500 resize-none font-mono leading-relaxed"
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+            Cancelar
+          </button>
+          <button
+            onClick={handleEnviar}
+            disabled={sending || !to.trim()}
+            className="px-4 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sending ? 'Enviando...' : 'Enviar'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

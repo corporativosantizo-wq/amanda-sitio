@@ -491,6 +491,38 @@ export async function rechazarCotizacion(id: string): Promise<Cotizacion> {
 }
 
 /**
+ * Reenvía una cotización por email con mensaje personalizado.
+ * No cambia el estado de la cotización.
+ */
+export async function reenviarCotizacion(id: string, params: {
+  to: string;
+  subject: string;
+  mensaje: string;
+  from?: string;
+}): Promise<void> {
+  const actual = await obtenerCotizacion(id);
+  const cliente = actual.cliente as any;
+
+  const htmlBody = params.mensaje
+    .replace(/\n/g, '<br>')
+    .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
+    .replace(/$/, '</div>');
+
+  await sendMail({
+    from: (params.from || 'amanda@papeleo.legal') as any,
+    to: params.to,
+    subject: params.subject,
+    htmlBody,
+  });
+
+  // Update cotización to track reenvío
+  await db()
+    .from('cotizaciones')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', id);
+}
+
+/**
  * Duplica una cotización existente (crea una nueva en borrador).
  * Útil para re-enviar a otro cliente o actualizar precios.
  */
