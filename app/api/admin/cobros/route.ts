@@ -9,6 +9,7 @@ import {
   crearCobro,
   enviarSolicitudPago,
   resumenCobros,
+  cotizacionesSinCobro,
   CobroError,
 } from '@/lib/services/cobros.service';
 
@@ -22,8 +23,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(resumen);
     }
 
+    const estado = s.get('estado') ?? undefined;
     const result = await listarCobros({
-      estado: s.get('estado') ?? undefined,
+      estado,
       cliente_id: s.get('cliente_id') ?? undefined,
       desde: s.get('desde') ?? undefined,
       hasta: s.get('hasta') ?? undefined,
@@ -31,6 +33,17 @@ export async function GET(req: NextRequest) {
       page: parseInt(s.get('page') ?? '1'),
       limit: parseInt(s.get('limit') ?? '50'),
     });
+
+    // Merge accepted cotizaciones without cobros into pendiente/todos views
+    if (!estado || estado === 'pendiente') {
+      const cotsSinCobro = await cotizacionesSinCobro();
+      const pendientes = cotsSinCobro.filter((c: any) => c.saldo_pendiente > 0);
+      if (pendientes.length > 0) {
+        result.data = [...result.data, ...pendientes];
+        result.total += pendientes.length;
+      }
+    }
+
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof CobroError ? err.message : 'Error interno';

@@ -343,7 +343,83 @@ export async function resumenCobros() {
   result.cobrado_mes = (pagos ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
   result.count_cobrado_mes = (pagos ?? []).length;
 
+  // Include accepted cotizaciones without cobros (por cobrar sin cobro formal)
+  const cotsSinCobro = await cotizacionesSinCobro();
+  for (const cot of cotsSinCobro) {
+    const saldo = cot.saldo_pendiente;
+    if (saldo <= 0) continue;
+    result.total_pendiente += saldo;
+    result.count_pendientes++;
+  }
+
   return result;
+}
+
+// --- Cotizaciones aceptadas sin cobro formal ---
+
+export async function cotizacionesSinCobro() {
+  // Fetch accepted cotizaciones that have NO cobro linked
+  const { data: cots } = await db()
+    .from('cotizaciones')
+    .select(`
+      id, numero, total, estado, cliente_id, fecha_aceptacion, created_at,
+      cliente:clientes!cliente_id (id, nombre, email)
+    `)
+    .eq('estado', 'aceptada');
+
+  if (!cots || cots.length === 0) return [];
+
+  // Check which have a cobro already
+  const cotIds = cots.map((c: any) => c.id);
+  const { data: cobrosExistentes } = await db()
+    .from('cobros')
+    .select('cotizacion_id')
+    .in('cotizacion_id', cotIds);
+
+  const cotIdsConCobro = new Set((cobrosExistentes ?? []).map((c: any) => c.cotizacion_id));
+
+  // For each cotización without cobro, calculate paid amount
+  const results: any[] = [];
+  for (const cot of cots) {
+    if (cotIdsConCobro.has(cot.id)) continue;
+
+    const { data: pagosCot } = await db()
+      .from('pagos')
+      .select('monto')
+      .eq('cotizacion_id', cot.id)
+      .eq('estado', 'confirmado');
+
+    const totalPagado = (pagosCot ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
+    const saldo = parseFloat(cot.total) - totalPagado;
+
+    results.push({
+      id: `cot-${cot.id}`,
+      cotizacion_id: cot.id,
+      numero_cobro: 0,
+      numero_cotizacion: cot.numero,
+      cliente_id: cot.cliente_id,
+      concepto: `Cotización ${cot.numero}`,
+      monto: parseFloat(cot.total),
+      monto_pagado: totalPagado,
+      saldo_pendiente: saldo,
+      estado: saldo <= 0 ? 'pagado' : 'pendiente',
+      fecha_emision: cot.fecha_aceptacion ?? cot.created_at?.split('T')[0] ?? '',
+      fecha_vencimiento: null,
+      dias_credito: 0,
+      notas: null,
+      moneda: 'GTQ',
+      factura_solicitada: false,
+      factura_solicitada_at: null,
+      factura_numero: null,
+      factura_serie: null,
+      created_at: cot.created_at,
+      updated_at: cot.created_at,
+      es_cotizacion_sin_cobro: true,
+      cliente: cot.cliente,
+    });
+  }
+
+  return results;
 }
 
 // --- Crear cobro automático desde cotización aceptada ---

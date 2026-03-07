@@ -121,7 +121,7 @@ export default function ContabilidadPage() {
       {/* Summary cards */}
       {resumen && (
         <div className="grid grid-cols-4 gap-4 mb-6">
-          <SummaryCard icon="💰" label="Total pendiente" value={Q(resumen.total_pendiente)} sub={`${resumen.count_pendientes} cobros`} color="text-slate-800" bg="bg-white" />
+          <SummaryCard icon="💰" label="Total pendiente" value={Q(resumen.total_pendiente)} sub={`${resumen.count_pendientes} por cobrar`} color="text-slate-800" bg="bg-white" />
           <SummaryCard icon="🔴" label="Vencidos" value={Q(resumen.total_vencido)} sub={`${resumen.count_vencidos} cobros`} color="text-red-700" bg="bg-red-50" />
           <SummaryCard icon="🟡" label="Por vencer (7 días)" value={Q(resumen.por_vencer_7d)} sub={`${resumen.count_por_vencer} cobros`} color="text-amber-700" bg="bg-amber-50" />
           <SummaryCard icon="🟢" label="Cobrado este mes" value={Q(resumen.cobrado_mes)} sub={`${resumen.count_cobrado_mes} pagos confirmados`} color="text-green-700" bg="bg-green-50" />
@@ -176,27 +176,36 @@ export default function ContabilidadPage() {
                 </td>
               </tr>
             ) : (
-              cobros.map((c: CobroConCliente) => {
-                const vis = estadoVisual(c)
+              cobros.map((c: any) => {
+                const esCotSinCobro = !!c.es_cotizacion_sin_cobro
+                const vis = esCotSinCobro ? { icon: '🟠', color: 'text-orange-600' } : estadoVisual(c)
                 const dias = diasVencido(c.fecha_vencimiento)
-                const esVencido = dias > 0 && c.estado !== 'pagado' && c.estado !== 'cancelado'
+                const esVencido = !esCotSinCobro && dias > 0 && c.estado !== 'pagado' && c.estado !== 'cancelado'
                 return (
                   <tr
                     key={c.id}
-                    className={`hover:bg-gray-50 cursor-pointer ${esVencido ? 'bg-red-50/40' : ''}`}
-                    onClick={() => setShowDetalle(c.id)}
+                    className={`hover:bg-gray-50 cursor-pointer ${esVencido ? 'bg-red-50/40' : esCotSinCobro ? 'bg-orange-50/40' : ''}`}
+                    onClick={() => !esCotSinCobro && setShowDetalle(c.id)}
                   >
                     <td className="px-4 py-3 text-center">{vis.icon}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">COB-{String(c.numero_cobro).padStart(3, '0')}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                      {esCotSinCobro ? c.numero_cotizacion : `COB-${String(c.numero_cobro).padStart(3, '0')}`}
+                    </td>
                     <td className="px-4 py-3 font-medium text-gray-900">{c.cliente?.nombre ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">{c.concepto}</td>
                     <td className="px-4 py-3 text-right font-medium">{Q(c.monto)}</td>
                     <td className="px-4 py-3 text-right text-green-600">{c.monto_pagado > 0 ? Q(c.monto_pagado) : '—'}</td>
                     <td className="px-4 py-3 text-right font-semibold">{Q(c.saldo_pendiente)}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-[10px] font-semibold rounded-full ${ESTADO_BADGE[c.estado] ?? 'bg-gray-100'}`}>
-                        {c.estado.toUpperCase()}
-                      </span>
+                      {esCotSinCobro ? (
+                        <span className="px-2 py-1 text-[10px] font-semibold rounded-full bg-orange-100 text-orange-700">
+                          SIN COBRO
+                        </span>
+                      ) : (
+                        <span className={`px-2 py-1 text-[10px] font-semibold rounded-full ${ESTADO_BADGE[c.estado] ?? 'bg-gray-100'}`}>
+                          {c.estado.toUpperCase()}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {c.fecha_vencimiento
@@ -204,38 +213,49 @@ export default function ContabilidadPage() {
                         : '—'}
                     </td>
                     <td className={`px-4 py-3 text-right text-xs font-mono ${esVencido ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
-                      {c.estado === 'pagado' || c.estado === 'cancelado' ? '—' : dias > 0 ? `+${dias}` : dias === 0 ? 'Hoy' : `${dias}`}
+                      {esCotSinCobro ? '—' : c.estado === 'pagado' || c.estado === 'cancelado' ? '—' : dias > 0 ? `+${dias}` : dias === 0 ? 'Hoy' : `${dias}`}
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        {c.estado !== 'pagado' && c.estado !== 'cancelado' && (
+                        {esCotSinCobro ? (
+                          <Link
+                            href={`/admin/contabilidad/cotizaciones`}
+                            className="px-2 py-1 text-[10px] bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 font-medium"
+                          >
+                            Crear cobro
+                          </Link>
+                        ) : (
                           <>
+                            {c.estado !== 'pagado' && c.estado !== 'cancelado' && (
+                              <>
+                                <button
+                                  onClick={() => setShowPago(c)}
+                                  className="px-2 py-1 text-[10px] bg-green-100 text-green-700 rounded-md hover:bg-green-200 font-medium"
+                                >
+                                  Pago
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    await mutate(`/api/admin/cobros/${c.id}`, {
+                                      method: 'POST',
+                                      body: { accion: 'enviar_recordatorio' },
+                                      onSuccess: () => refetchAll(),
+                                    })
+                                  }}
+                                  className="px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 font-medium"
+                                >
+                                  Cobrar
+                                </button>
+                              </>
+                            )}
                             <button
-                              onClick={() => setShowPago(c)}
-                              className="px-2 py-1 text-[10px] bg-green-100 text-green-700 rounded-md hover:bg-green-200 font-medium"
+                              onClick={() => setShowDetalle(c.id)}
+                              className="px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 font-medium"
                             >
-                              Pago
-                            </button>
-                            <button
-                              onClick={async () => {
-                                await mutate(`/api/admin/cobros/${c.id}`, {
-                                  method: 'POST',
-                                  body: { accion: 'enviar_recordatorio' },
-                                  onSuccess: () => refetchAll(),
-                                })
-                              }}
-                              className="px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 font-medium"
-                            >
-                              Cobrar
+                              Ver
                             </button>
                           </>
                         )}
-                        <button
-                          onClick={() => setShowDetalle(c.id)}
-                          className="px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 font-medium"
-                        >
-                          Ver
-                        </button>
                       </div>
                     </td>
                   </tr>
