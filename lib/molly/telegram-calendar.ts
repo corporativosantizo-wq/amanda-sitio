@@ -17,6 +17,7 @@ import {
 } from './calendar';
 import type { CalendarEvent } from './calendar';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/services/outlook.service';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { HORARIOS } from '@/lib/types';
 import type { TipoCita } from '@/lib/types';
 
@@ -543,6 +544,14 @@ const UNIVERSITY_TEAMS_LINK =
   'https://teams.microsoft.com/dl/launcher/launcher.html?url=%2F_%23%2Fl%2Fmeetup-join%2F19%3Ameeting_NWE3MDA2Y2ItNmRiNC00ZGI2LWI0OTItZTg2NzQwZjU2MzJi%40thread.v2%2F0%3Fcontext%3D%257b%2522Tid%2522%253a%252266f22055-85d8-4984-a4d8-2dd3ac2060b1%2522%252c%2522Oid%2522%253a%2522158e7702-4050-4943-8b04-c5a070024c29%2522%257d%26anon%3Dtrue&type=meetup-join&deeplinkId=973e7d8a-0c9d-4ca2-98c4-b09fb636e19e&directDl=true&msLaunch=true&enableMobilePage=true&suppressPrompt=true';
 const UNIVERSITY_AULA_URL = 'https://cursos.amandasantizo.com';
 
+/** Guatemala hour (0-23) from a Date */
+function gtHour(date: Date): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', hour: 'numeric', hour12: false }).format(date),
+    10,
+  );
+}
+
 /** Format Date as Guatemala ISO string for Graph API queries */
 function toGtISO(date: Date): string {
   const ds = gtDateStr(date);
@@ -551,31 +560,65 @@ function toGtISO(date: Date): string {
 }
 
 /**
- * Check for upcoming [CLASE] events and send Telegram reminder 15 min before.
- * Window: events starting in 10-20 min from now (10-min wide, no overlap with 15-min cron).
- * Only runs on class days (Mon/Fri) in Guatemala timezone to prevent false triggers.
+ * Check for upcoming [CLASE] events and send Telegram reminder ~15 min before.
+ *
+ * Guards (all in America/Guatemala timezone):
+ *  1. Day guard: only Mon (1) and Fri (5)
+ *  2. Hour guard: only between 6 AM and 10 PM (classes don't happen at midnight)
+ *  3. Dedup: DB check prevents re-notifying the same event on the same date
+ *
+ * Window: events starting in 13-17 min from now (4-min wide).
+ * With a 15-min cron, only ONE invocation can ever match a given event.
  */
 export async function checkClassReminders(): Promise<number> {
   const now = new Date();
 
-  // Guard: only check on class days (Mon=1, Fri=5) in Guatemala timezone
+  // Guard 1: only class days (Mon=1, Fri=5) in Guatemala timezone
   const gtDay = gtWeekday(now);
   if (gtDay !== 1 && gtDay !== 5) {
     return 0;
   }
 
-  const windowStart = new Date(now.getTime() + 10 * 60_000);
-  const windowEnd = new Date(now.getTime() + 20 * 60_000);
+  // Guard 2: only during reasonable hours (6 AM - 10 PM Guatemala)
+  const hour = gtHour(now);
+  if (hour < 6 || hour >= 22) {
+    return 0;
+  }
 
-  const events = await getCalendarEvents(toGtISO(windowStart), toGtISO(windowEnd));
+  // Narrow 4-minute window: 13-17 min ahead — guarantees no overlap with 15-min cron
+  const windowStart = new Date(now.getTime() + 13 * 60_000);
+  const windowEnd = new Date(now.getTime() + 17 * 60_000);
+
+  const wsISO = toGtISO(windowStart);
+  const weISO = toGtISO(windowEnd);
+  console.log(`[class-reminder] GT day=${gtDay} hour=${hour} window=${wsISO} → ${weISO}`);
+
+  const events = await getCalendarEvents(wsISO, weISO);
   const clases = events.filter(
     (e: CalendarEvent) => !e.isAllDay && e.subject.toUpperCase().includes('[CLASE]'),
   );
 
   if (clases.length === 0) return 0;
 
+  // Guard 3: dedup — check which events were already notified today
+  const todayGT = gtDateStr(now);
+  const db = createAdminClient();
+
   let sent = 0;
   for (const clase of clases) {
+    // Check if already sent for this event today
+    const { data: existing } = await db
+      .from('class_reminders_sent')
+      .select('id')
+      .eq('event_date', todayGT)
+      .eq('event_subject', clase.subject)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      console.log(`[class-reminder] Skipping (already sent): ${clase.subject}`);
+      continue;
+    }
+
     const isVirtual = clase.subject.toUpperCase().includes('[VIRTUAL]');
 
     const displayName = clase.subject
@@ -611,10 +654,23 @@ export async function checkClassReminders(): Promise<number> {
         inline_keyboard: [buttons],
       },
     });
+
+    // Mark as sent
+    await db
+      .from('class_reminders_sent')
+      .upsert({ event_date: todayGT, event_subject: clase.subject })
+      .select();
+
     sent++;
   }
 
-  console.log(`[telegram-calendar] ${sent} recordatorio(s) de clase enviado(s)`);
+  // Cleanup: delete records older than 7 days (fire and forget)
+  db.from('class_reminders_sent')
+    .delete()
+    .lt('event_date', new Date(now.getTime() - 7 * 86400_000).toISOString().slice(0, 10))
+    .then(() => {});
+
+  console.log(`[class-reminder] ${sent} recordatorio(s) de clase enviado(s)`);
   return sent;
 }
 
