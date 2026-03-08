@@ -376,6 +376,7 @@ export function emailCotizacion(params: {
   fechaEmision?: string;
   anticipoPorcentaje?: number;
   condiciones?: string;
+  notas_cliente?: string;
   logoBase64?: string;
   configuracion?: Record<string, any>;
   tokenRespuesta?: string;
@@ -490,6 +491,15 @@ export function emailCotizacion(params: {
       </tr>
       ${anticipoRow}
     </table>
+    ${params.notas_cliente ? `
+    <table width="100%" style="margin:20px 0;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:16px 18px;border-radius:0 6px 6px 0;">
+          <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;">⚠️ Nota importante</p>
+          <p style="margin:0;font-size:13px;color:#92400E;line-height:1.5;font-weight:600;">${params.notas_cliente.replace(/\n/g, '<br>')}</p>
+        </td>
+      </tr>
+    </table>` : ''}
     ${params.tokenRespuesta ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
       <tr><td align="center">

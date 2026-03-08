@@ -29,6 +29,7 @@ export interface Cotizacion {
 
   condiciones: string | null;
   notas_internas: string | null;
+  notas_cliente: string | null;
   incluye_consultas: number;
   duracion_consulta_min: number;
 
@@ -77,6 +78,7 @@ export interface CotizacionInsert {
   fecha_emision?: string;
   condiciones?: string | null;
   notas_internas?: string | null;
+  notas_cliente?: string | null;
   incluye_consultas?: number;
   duracion_consulta_min?: number;
   requiere_anticipo?: boolean;
@@ -95,6 +97,7 @@ export interface CotizacionUpdate {
   estado?: EstadoCotizacion;
   condiciones?: string | null;
   notas_internas?: string | null;
+  notas_cliente?: string | null;
   incluye_consultas?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;

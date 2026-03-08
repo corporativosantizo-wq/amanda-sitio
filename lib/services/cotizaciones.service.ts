@@ -221,6 +221,7 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       total,
       condiciones,
       notas_internas: input.notas_internas ?? null,
+      notas_cliente: input.notas_cliente ?? null,
       incluye_consultas: input.incluye_consultas ?? 2,
       duracion_consulta_min: input.duracion_consulta_min ?? 15,
       requiere_anticipo: input.requiere_anticipo ?? true,
@@ -286,6 +287,7 @@ export async function actualizarCotizacion(
   // Campos simples
   if (input.condiciones !== undefined) updates.condiciones = input.condiciones;
   if (input.notas_internas !== undefined) updates.notas_internas = input.notas_internas;
+  if (input.notas_cliente !== undefined) updates.notas_cliente = input.notas_cliente;
   if (input.incluye_consultas !== undefined) updates.incluye_consultas = input.incluye_consultas;
   if (input.requiere_anticipo !== undefined) updates.requiere_anticipo = input.requiere_anticipo;
   if (input.anticipo_porcentaje !== undefined) updates.anticipo_porcentaje = input.anticipo_porcentaje;
@@ -398,6 +400,7 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     numeroCotizacion: actual.numero,
     fechaEmision: actual.fecha_emision,
     condiciones: actual.condiciones ?? undefined,
+    notas_cliente: (actual as any).notas_cliente ?? undefined,
     configuracion: config,
     tokenRespuesta: actual.token_respuesta ?? undefined,
   });

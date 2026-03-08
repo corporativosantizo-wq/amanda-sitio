@@ -74,6 +74,7 @@ export default function NuevaCotizacionPage() {
 
   // Terms
   const [condiciones, setCondiciones] = useState(CONDICIONES_DEFAULT);
+  const [notasCliente, setNotasCliente] = useState('');
   const [notas, setNotas] = useState('');
 
   // Scheduled sending
@@ -211,6 +212,7 @@ export default function NuevaCotizacionPage() {
         aplica_iva: i.aplica_iva,
       })),
       condiciones,
+      notas_cliente: notasCliente || null,
       notas_internas: notas || null,
     };
 
@@ -238,7 +240,7 @@ export default function NuevaCotizacionPage() {
       },
       onError: (err: any) => setFormError(String(err)),
     });
-  }, [clienteId, items, condiciones, notas, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
+  }, [clienteId, items, condiciones, notasCliente, notas, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -587,10 +589,25 @@ export default function NuevaCotizacionPage() {
         )}
       </section>
 
-      {/* ══════════ 3. TÉRMINOS ══════════ */}
+      {/* ══════════ 3. NOTA IMPORTANTE ══════════ */}
+      <section className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">
+          3. Nota importante <span className="text-xs text-amber-600 font-normal">(visible para el cliente)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mb-3">Se muestra de forma destacada en la cotización, PDF y email.</p>
+        <textarea
+          value={notasCliente}
+          onChange={e => setNotasCliente(e.target.value)}
+          rows={2}
+          placeholder="Ej: Se requiere adicionalmente Q6,000 + IVA por honorarios..."
+          className="w-full px-4 py-3 text-sm border border-amber-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 bg-amber-50/30"
+        />
+      </section>
+
+      {/* ══════════ 4. TÉRMINOS ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">3. Términos y condiciones</h3>
+          <h3 className="text-sm font-semibold text-slate-900">4. Términos y condiciones</h3>
           <button
             onClick={() => setCondiciones(CONDICIONES_DEFAULT)}
             className="text-xs text-slate-400 hover:text-slate-600"
@@ -606,10 +623,10 @@ export default function NuevaCotizacionPage() {
         />
       </section>
 
-      {/* ══════════ 4. NOTAS INTERNAS ══════════ */}
+      {/* ══════════ 5. NOTAS INTERNAS ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-3">
-          4. Notas internas{' '}
+          5. Notas internas{' '}
           <span className="text-xs text-slate-400 font-normal">(no van en la cotización)</span>
         </h3>
         <textarea
@@ -621,10 +638,10 @@ export default function NuevaCotizacionPage() {
         />
       </section>
 
-      {/* ══════════ 5. PROGRAMAR ENVÍO ══════════ */}
+      {/* ══════════ 6. PROGRAMAR ENVÍO ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">5. Programar envío</h3>
+          <h3 className="text-sm font-semibold text-slate-900">6. Programar envío</h3>
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
@@ -667,10 +684,10 @@ export default function NuevaCotizacionPage() {
         )}
       </section>
 
-      {/* ══════════ 6. REGISTRO RETROACTIVO ══════════ */}
+      {/* ══════════ 7. REGISTRO RETROACTIVO ══════════ */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">6. Registro retroactivo</h3>
+          <h3 className="text-sm font-semibold text-slate-900">7. Registro retroactivo</h3>
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"

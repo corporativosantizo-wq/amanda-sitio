@@ -21,6 +21,9 @@ const C = {
   accentLight: rgb(219 / 255, 234 / 255, 254 / 255),    // #DBEAFE — badges
   tableBorder: rgb(241 / 255, 245 / 255, 249 / 255),    // #F1F5F9 — bordes tabla
   white:       rgb(1, 1, 1),
+  amberBg:     rgb(255 / 255, 251 / 255, 235 / 255),    // #FFFBEB — fondo amber
+  amberBorder: rgb(245 / 255, 158 / 255, 11 / 255),     // #F59E0B — borde amber
+  amberText:   rgb(146 / 255, 64 / 255, 14 / 255),      // #92400E — texto amber
 };
 
 // Colores para segmentos del gradiente simulado
@@ -338,6 +341,36 @@ export async function generarPDFCotizacion(
   }
 
   y -= 10;
+
+  // ── 6b. NOTA IMPORTANTE — caja amarilla destacada ───────────────────
+
+  if ((cotizacion as any).notas_cliente) {
+    const notaText = (cotizacion as any).notas_cliente as string;
+    const notaLines = wrapText(safeText(notaText), regular, 8.5, CW - 28);
+    const notaH = 28 + notaLines.length * 12 + 8;
+
+    ensureSpace(notaH + 10);
+
+    // Background box
+    page.drawRectangle({ x: M, y: y - notaH, width: CW, height: notaH, color: C.amberBg });
+    // Left amber border
+    page.drawRectangle({ x: M, y: y - notaH, width: 4, height: notaH, color: C.amberBorder });
+    // Top/bottom subtle border
+    page.drawRectangle({ x: M, y: y, width: CW, height: 0.5, color: C.amberBorder });
+    page.drawRectangle({ x: M, y: y - notaH, width: CW, height: 0.5, color: C.amberBorder });
+
+    // Title
+    page.drawText('NOTA IMPORTANTE', { x: M + 16, y: y - 16, size: 8.5, font: bold, color: C.amberText });
+
+    // Content
+    let notaY = y - 30;
+    for (const line of notaLines) {
+      page.drawText(line, { x: M + 16, y: notaY, size: 8.5, font: regular, color: C.amberText });
+      notaY -= 12;
+    }
+
+    y -= notaH + 14;
+  }
 
   // ── 7. CONDICIONES DE PAGO — caja con borde izq azul ────────────────
 

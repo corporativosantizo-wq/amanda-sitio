@@ -40,6 +40,7 @@ interface CotizacionDetalle {
   total: number;
   condiciones: string;
   notas_internas: string | null;
+  notas_cliente: string | null;
   envio_programado: boolean;
   envio_programado_fecha: string | null;
   items: Array<{
@@ -298,6 +299,19 @@ export default function CotizacionDetallePage() {
           </button>
         </div>
       </div>
+
+      {/* Nota importante banner */}
+      {cot.notas_cliente && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 border-l-4 border-l-amber-400">
+          <div className="flex items-start gap-3">
+            <span className="text-lg shrink-0">⚠️</span>
+            <div>
+              <h3 className="text-sm font-bold text-amber-900 mb-1">Nota importante</h3>
+              <p className="text-sm text-amber-800 whitespace-pre-line">{cot.notas_cliente}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

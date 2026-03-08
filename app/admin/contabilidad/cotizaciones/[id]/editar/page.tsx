@@ -74,6 +74,7 @@ export default function EditarCotizacionPage() {
 
   // Terms
   const [condiciones, setCondiciones] = useState('');
+  const [notasCliente, setNotasCliente] = useState('');
   const [notas, setNotas] = useState('');
 
   // Pre-populate when data loads
@@ -88,6 +89,7 @@ export default function EditarCotizacionPage() {
         aplica_iva: item.aplica_iva ?? true,
       })));
       setCondiciones(cot.condiciones ?? '');
+      setNotasCliente((cot as any).notas_cliente ?? '');
       setNotas(cot.notas_internas ?? '');
       setInitialized(true);
     }
@@ -184,6 +186,7 @@ export default function EditarCotizacionPage() {
           aplica_iva: i.aplica_iva,
         })),
         condiciones,
+        notas_cliente: notasCliente || null,
         notas_internas: notas || null,
       },
       onSuccess: () => {
@@ -191,7 +194,7 @@ export default function EditarCotizacionPage() {
       },
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [id, items, condiciones, notas, mutate, router]);
+  }, [id, items, condiciones, notasCliente, notas, mutate, router]);
 
   // ── Loading / Error / Not editable ────────────────────────────────
 
@@ -441,6 +444,21 @@ export default function EditarCotizacionPage() {
             </div>
           </>
         )}
+      </section>
+
+      {/* ══════════ NOTA IMPORTANTE ══════════ */}
+      <section className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">
+          Nota importante <span className="text-xs text-amber-600 font-normal">(visible para el cliente)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mb-3">Se muestra de forma destacada en la cotización, PDF y email.</p>
+        <textarea
+          value={notasCliente}
+          onChange={e => setNotasCliente(e.target.value)}
+          rows={2}
+          placeholder="Ej: Se requiere adicionalmente Q6,000 + IVA por honorarios..."
+          className="w-full px-4 py-3 text-sm border border-amber-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 bg-amber-50/30"
+        />
       </section>
 
       {/* ══════════ TÉRMINOS ══════════ */}
