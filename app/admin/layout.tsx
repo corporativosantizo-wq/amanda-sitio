@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { AdminUserProvider, useAdminUser } from '@/lib/rbac/admin-user-context'
 import type { Modulo } from '@/lib/rbac/permissions'
 import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
+import { useActivityTracker } from '@/lib/hooks/use-activity-tracker'
 
 export default function AdminLayout({
   children,
@@ -555,6 +556,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const { user, loading, hasModule, isAdmin } = useAdminUser()
+  useActivityTracker()
 
   const isActive = useCallback((href: string) => {
     if (href === '/admin') return pathname === '/admin'

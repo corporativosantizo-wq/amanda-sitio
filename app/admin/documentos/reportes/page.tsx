@@ -8,6 +8,28 @@ import {
   PieChart, Pie, LineChart, Line,
 } from 'recharts'
 
+// ── Activity/Productivity types ─────────────────────────────────────────────
+
+interface ActividadEvent {
+  fecha: string
+  hora: string
+  accion: string
+  modulo?: string
+  detalle?: string
+}
+
+interface DescansoSchedule {
+  tipo: string
+  hora_inicio: string
+  duracion_minutos: number
+}
+
+interface ActividadResponse {
+  actividad: ActividadEvent[]
+  documentos: { id: string; created_at?: string; titulo?: string }[]
+  descansos: DescansoSchedule[]
+}
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 interface DiaData {
@@ -99,6 +121,7 @@ function promedioHora(horas: (string | null)[]): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function DocumentosReportePage() {
+  const [tab, setTab] = useState<'escaneo' | 'productividad'>('escaneo')
   const [rangoDias, setRangoDias] = useState('30')
   const [tipoFiltro, setTipoFiltro] = useState('')
   const [usuarioFiltro, setUsuarioFiltro] = useState('')
@@ -209,13 +232,31 @@ export default function DocumentosReportePage() {
             <span className="text-slate-300">/</span>
             <span className="text-sm text-slate-600 font-medium">Reportes</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Productividad de escaneo</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Reportes</h1>
         </div>
-        <button onClick={descargarReporte} disabled={!data} className="px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-900 disabled:opacity-40 transition">
-          Descargar reporte
+        {tab === 'escaneo' && (
+          <button onClick={descargarReporte} disabled={!data} className="px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-900 disabled:opacity-40 transition">
+            Descargar reporte
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b">
+        <button onClick={() => setTab('escaneo')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${tab === 'escaneo' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          Escaneo
+        </button>
+        <button onClick={() => setTab('productividad')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${tab === 'productividad' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          Productividad
         </button>
       </div>
 
+      {tab === 'productividad' ? (
+        <ProductividadTab />
+      ) : (
+      <>
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex bg-white rounded-lg border p-1">
@@ -509,6 +550,434 @@ export default function DocumentosReportePage() {
           </div>
         </>
       )}
+      </>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ProductividadTab — Activity timeline, metrics, weekly table, alerts
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PROD_RANGOS = [
+  { value: '7', label: '7 días' }, { value: '14', label: '14 días' },
+  { value: '30', label: '30 días' },
+]
+
+const TIMELINE_START = 8 // 8 AM
+const TIMELINE_END = 18 // 6 PM
+const TIMELINE_HOURS = TIMELINE_END - TIMELINE_START // 10 hours
+
+function ProductividadTab() {
+  const [rangoDias, setRangoDias] = useState('7')
+  const [fechaDetalle, setFechaDetalle] = useState('')
+  const email = 'contador@papeleo.legal'
+
+  const desde = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - (parseInt(rangoDias) - 1))
+    return d.toISOString().split('T')[0]
+  }, [rangoDias])
+  const hasta = new Date().toISOString().split('T')[0]
+
+  // Weekly summary data
+  const weekParams = new URLSearchParams({ email, desde, hasta })
+  const { data: weekData, loading: weekLoading } = useFetch<ActividadResponse>(`/api/admin/actividad?${weekParams}`)
+
+  // Day detail data (when a day is selected)
+  const dayParams = fechaDetalle ? new URLSearchParams({ email, fecha: fechaDetalle }) : null
+  const { data: dayData, loading: dayLoading } = useFetch<ActividadResponse>(
+    dayParams ? `/api/admin/actividad?${dayParams}` : null
+  )
+
+  // Process weekly data into per-day summaries
+  const daySummaries = useMemo(() => {
+    if (!weekData) return []
+    const byDate: Record<string, ActividadEvent[]> = {}
+    for (const ev of weekData.actividad) {
+      if (!byDate[ev.fecha]) byDate[ev.fecha] = []
+      byDate[ev.fecha].push(ev)
+    }
+    // Count docs per date
+    const docsByDate: Record<string, number> = {}
+    for (const doc of weekData.documentos) {
+      const f = doc.created_at?.slice(0, 10)
+      if (f) docsByDate[f] = (docsByDate[f] ?? 0) + 1
+    }
+
+    const summaries: DaySummary[] = []
+    // Generate all dates in range
+    const start = new Date(desde + 'T12:00:00')
+    const end = new Date(hasta + 'T12:00:00')
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const fecha = d.toISOString().split('T')[0]
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
+      if (weekday === 'Sat' || weekday === 'Sun') continue
+
+      const events = byDate[fecha] ?? []
+      const docs = docsByDate[fecha] ?? 0
+      if (events.length === 0 && docs === 0) {
+        summaries.push({ fecha, entrada: null, salida: null, activoMin: 0, idleMin: 0, efectivoMin: 0, docs: 0, docsHora: 0, events: [] })
+        continue
+      }
+
+      // Calculate times
+      const timestamps = events.map((e: ActividadEvent) => new Date(e.hora).getTime()).sort((a: number, b: number) => a - b)
+      const entrada = timestamps.length > 0 ? new Date(timestamps[0]) : null
+      const salida = timestamps.length > 0 ? new Date(timestamps[timestamps.length - 1]) : null
+
+      // Calculate idle time from idle_start/idle_end pairs
+      let idleMs = 0
+      let idleStartTime: number | null = null
+      for (const ev of events) {
+        if (ev.accion === 'idle_start') {
+          idleStartTime = new Date(ev.hora).getTime()
+        } else if (ev.accion === 'idle_end' && idleStartTime) {
+          idleMs += new Date(ev.hora).getTime() - idleStartTime
+          idleStartTime = null
+        }
+      }
+      // If still idle at end of day
+      if (idleStartTime && salida) {
+        idleMs += salida.getTime() - idleStartTime
+      }
+
+      const totalMs = entrada && salida ? salida.getTime() - entrada.getTime() : 0
+      const activoMs = totalMs - idleMs
+      const activoMin = Math.round(activoMs / 60000)
+      const idleMin = Math.round(idleMs / 60000)
+      const efectivoMin = Math.max(0, activoMin)
+      const efectivoHoras = efectivoMin / 60
+      const docsHora = efectivoHoras > 0 ? Math.round(docs / efectivoHoras * 10) / 10 : 0
+
+      const entradaStr = entrada
+        ? entrada.toLocaleTimeString('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: false })
+        : null
+      const salidaStr = salida
+        ? salida.toLocaleTimeString('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: false })
+        : null
+
+      summaries.push({ fecha, entrada: entradaStr, salida: salidaStr, activoMin, idleMin, efectivoMin, docs, docsHora, events })
+    }
+    return summaries
+  }, [weekData, desde, hasta])
+
+  // Today or selected day detail
+  const selectedDay = fechaDetalle
+    ? daySummaries.find((d: DaySummary) => d.fecha === fechaDetalle)
+    : daySummaries[daySummaries.length - 1]
+
+  const selectedEvents = fechaDetalle && dayData ? dayData.actividad : selectedDay?.events ?? []
+  const selectedDocs = fechaDetalle && dayData ? dayData.documentos : []
+  const selectedDescansos = weekData?.descansos ?? []
+
+  // Alerts
+  const alerts = useMemo(() => {
+    const result: { tipo: 'warning' | 'danger'; msg: string }[] = []
+    for (const d of daySummaries) {
+      if (d.docs === 0 && d.entrada !== null) {
+        result.push({ tipo: 'warning', msg: `${formatFechaCorta(d.fecha)}: Conectado pero 0 documentos escaneados` })
+      }
+      if (d.idleMin > 60) {
+        result.push({ tipo: 'warning', msg: `${formatFechaCorta(d.fecha)}: ${d.idleMin} min inactivo (>${Math.round(d.idleMin / 60 * 10) / 10}h)` })
+      }
+      if (d.entrada && horaToMin(d.entrada) > 9 * 60 + 15) {
+        result.push({ tipo: 'danger', msg: `${formatFechaCorta(d.fecha)}: Entrada tardía a las ${d.entrada}` })
+      }
+      if (d.docsHora > 0 && d.docsHora < 5) {
+        result.push({ tipo: 'warning', msg: `${formatFechaCorta(d.fecha)}: Rendimiento bajo (${d.docsHora} docs/hora)` })
+      }
+    }
+    return result.slice(0, 10)
+  }, [daySummaries])
+
+  // Build timeline segments for selected day
+  const timelineSegments = useMemo(() => {
+    if (!selectedEvents || selectedEvents.length === 0) return []
+    return buildTimeline(selectedEvents, selectedDescansos)
+  }, [selectedEvents, selectedDescansos])
+
+  if (weekLoading) return <div className="py-20 text-center text-slate-400">Cargando datos de productividad...</div>
+
+  const activeDays = daySummaries.filter((d: DaySummary) => d.docs > 0 || d.entrada !== null)
+  const avgDocs = activeDays.length > 0 ? Math.round(activeDays.reduce((s: number, d: DaySummary) => s + d.docs, 0) / activeDays.length) : 0
+  const avgEfectivo = activeDays.length > 0 ? Math.round(activeDays.reduce((s: number, d: DaySummary) => s + d.efectivoMin, 0) / activeDays.length) : 0
+  const avgDocsHora = activeDays.length > 0 ? Math.round(activeDays.reduce((s: number, d: DaySummary) => s + d.docsHora, 0) / activeDays.length * 10) / 10 : 0
+
+  const displayDay = selectedDay
+  const displayFecha = displayDay?.fecha ?? hasta
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex bg-white rounded-lg border p-1">
+          {PROD_RANGOS.map(r => (
+            <button key={r.value} onClick={() => setRangoDias(r.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${rangoDias === r.value ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-sm text-slate-500">
+          Trabajador: <strong className="text-slate-700">Brandon (Asistente)</strong>
+        </span>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card label="Promedio docs/día" value={String(avgDocs)} icon="📄" />
+        <Card label="Tiempo efectivo/día" value={`${Math.floor(avgEfectivo / 60)}h ${avgEfectivo % 60}m`} icon="🕐" />
+        <Card label="Promedio docs/hora" value={String(avgDocsHora)} icon="⚡" />
+        <Card label="Días laborados" value={`${activeDays.length}/${daySummaries.length}`} icon="📅" />
+      </div>
+
+      {/* Day timeline */}
+      <div className="bg-white border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Timeline del día — {new Date(displayFecha + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </h2>
+          {fechaDetalle && (
+            <button onClick={() => setFechaDetalle('')} className="text-xs text-blue-600 hover:underline">
+              Ver hoy
+            </button>
+          )}
+        </div>
+
+        {/* Timeline bar */}
+        <div className="relative">
+          {/* Hour labels */}
+          <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+            {Array.from({ length: TIMELINE_HOURS + 1 }, (_, i) => (
+              <span key={i}>{String(TIMELINE_START + i).padStart(2, '0')}:00</span>
+            ))}
+          </div>
+          {/* Bar */}
+          <div className="relative h-8 bg-slate-100 rounded-lg overflow-hidden">
+            {timelineSegments.map((seg: TimelineSegment, i: number) => (
+              <div key={i} title={seg.label}
+                className={`absolute top-0 h-full ${seg.color}`}
+                style={{ left: `${seg.startPct}%`, width: `${Math.max(seg.widthPct, 0.3)}%` }}
+              />
+            ))}
+          </div>
+          {/* Legend */}
+          <div className="flex gap-4 mt-2 text-[10px] text-slate-500">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Activo</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-400 inline-block" /> Descanso</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Idle</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200 inline-block" /> Sin actividad</span>
+          </div>
+        </div>
+
+        {/* Day metrics */}
+        {displayDay && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-4 pt-4 border-t">
+            <MiniStat label="Entrada" value={displayDay.entrada ?? '—'} />
+            <MiniStat label="Salida" value={displayDay.salida ?? '—'} />
+            <MiniStat label="Tiempo activo" value={formatMin(displayDay.activoMin)} />
+            <MiniStat label="Tiempo idle" value={formatMin(displayDay.idleMin)} warn={displayDay.idleMin > 60} />
+            <MiniStat label="Tiempo efectivo" value={formatMin(displayDay.efectivoMin)} />
+            <MiniStat label="Documentos" value={String(displayDay.docs)} />
+            <MiniStat label="Docs/hora" value={String(displayDay.docsHora)} />
+          </div>
+        )}
+      </div>
+
+      {/* Weekly table */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b">
+          <h2 className="text-sm font-semibold text-slate-700">Tabla semanal</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+                <th className="px-3 py-2.5 text-left w-7"></th>
+                <th className="px-3 py-2.5 text-left">Fecha</th>
+                <th className="px-3 py-2.5 text-center">Entrada</th>
+                <th className="px-3 py-2.5 text-center">Salida</th>
+                <th className="px-3 py-2.5 text-right">Activo</th>
+                <th className="px-3 py-2.5 text-right">Idle</th>
+                <th className="px-3 py-2.5 text-right">Efectivo</th>
+                <th className="px-3 py-2.5 text-right">Docs</th>
+                <th className="px-3 py-2.5 text-right">D/h</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {daySummaries.map((d: DaySummary) => {
+                const icono = d.docs > 20 ? '🟢' : d.docs >= 10 ? '🟡' : d.docs > 0 ? '🔴' : d.entrada ? '⚠️' : '⚪'
+                const isSelected = d.fecha === (fechaDetalle || displayDay?.fecha)
+                return (
+                  <tr key={d.fecha} onClick={() => setFechaDetalle(d.fecha)}
+                    className={`cursor-pointer hover:bg-blue-50 transition ${isSelected ? 'bg-blue-50' : ''}`}>
+                    <td className="px-3 py-2 text-center">{icono}</td>
+                    <td className="px-3 py-2 text-slate-700 font-medium">
+                      {new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    </td>
+                    <td className="px-3 py-2 text-center font-mono text-xs text-slate-600">{d.entrada ?? '—'}</td>
+                    <td className="px-3 py-2 text-center font-mono text-xs text-slate-600">{d.salida ?? '—'}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{formatMin(d.activoMin)}</td>
+                    <td className={`px-3 py-2 text-right ${d.idleMin > 60 ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>{formatMin(d.idleMin)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700 font-medium">{formatMin(d.efectivoMin)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{d.docs}</td>
+                    <td className={`px-3 py-2 text-right font-semibold ${d.docsHora >= 10 ? 'text-green-600' : d.docsHora >= 5 ? 'text-violet-600' : d.docsHora > 0 ? 'text-red-600' : 'text-slate-400'}`}>{d.docsHora}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="bg-white border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">Alertas</h2>
+          <div className="space-y-2">
+            {alerts.map((a: { tipo: string; msg: string }, i: number) => (
+              <div key={i} className={`px-3 py-2 rounded-lg text-sm ${a.tipo === 'danger' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                {a.tipo === 'danger' ? '🔴' : '⚠️'} {a.msg}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Productivity helpers ────────────────────────────────────────────────────
+
+interface DaySummary {
+  fecha: string
+  entrada: string | null
+  salida: string | null
+  activoMin: number
+  idleMin: number
+  efectivoMin: number
+  docs: number
+  docsHora: number
+  events: ActividadEvent[]
+}
+
+interface TimelineSegment {
+  startPct: number
+  widthPct: number
+  color: string
+  label: string
+}
+
+function formatMin(min: number): string {
+  if (min === 0) return '—'
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+function formatFechaCorta(fecha: string): string {
+  return new Date(fecha + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
+}
+
+function buildTimeline(events: ActividadEvent[], descansos: DescansoSchedule[]): TimelineSegment[] {
+  const totalMinutes = TIMELINE_HOURS * 60
+  const segments: TimelineSegment[] = []
+
+  // Add break segments
+  for (const d of descansos) {
+    const [h, m] = d.hora_inicio.split(':').map(Number)
+    const startMin = (h - TIMELINE_START) * 60 + m
+    const endMin = startMin + d.duracion_minutos
+    if (startMin >= 0 && startMin < totalMinutes) {
+      segments.push({
+        startPct: (startMin / totalMinutes) * 100,
+        widthPct: (Math.min(d.duracion_minutos, totalMinutes - startMin) / totalMinutes) * 100,
+        color: 'bg-yellow-400',
+        label: `${d.tipo} (${d.hora_inicio})`,
+      })
+    }
+  }
+
+  // Build activity segments from events
+  let lastActiveTime: number | null = null
+  let idleStart: number | null = null
+
+  for (const ev of events) {
+    const evTime = new Date(ev.hora)
+    const gtH = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', hour: 'numeric', hour12: false }).format(evTime), 10)
+    const gtM = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', minute: 'numeric' }).format(evTime), 10)
+    const evMin = (gtH - TIMELINE_START) * 60 + gtM
+
+    if (evMin < 0 || evMin >= totalMinutes) continue
+
+    if (ev.accion === 'idle_start') {
+      // Close active segment
+      if (lastActiveTime !== null) {
+        const width = evMin - lastActiveTime
+        if (width > 0) {
+          segments.push({
+            startPct: (lastActiveTime / totalMinutes) * 100,
+            widthPct: (width / totalMinutes) * 100,
+            color: 'bg-green-500',
+            label: `Activo`,
+          })
+        }
+      }
+      idleStart = evMin
+      lastActiveTime = null
+    } else if (ev.accion === 'idle_end') {
+      if (idleStart !== null) {
+        const width = evMin - idleStart
+        if (width > 0) {
+          segments.push({
+            startPct: (idleStart / totalMinutes) * 100,
+            widthPct: (width / totalMinutes) * 100,
+            color: 'bg-red-400',
+            label: `Idle (${width} min)`,
+          })
+        }
+      }
+      idleStart = null
+      lastActiveTime = evMin
+    } else {
+      // Regular activity (page_view, doc_upload, etc.)
+      if (idleStart === null) {
+        if (lastActiveTime === null) {
+          lastActiveTime = evMin
+        }
+        // Extend active segment (will be closed by next idle or end)
+      }
+    }
+  }
+
+  // Close final active segment
+  if (lastActiveTime !== null) {
+    const lastEv = events[events.length - 1]
+    const lastTime = new Date(lastEv.hora)
+    const lastH = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', hour: 'numeric', hour12: false }).format(lastTime), 10)
+    const lastM = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', minute: 'numeric' }).format(lastTime), 10)
+    const lastMin = (lastH - TIMELINE_START) * 60 + lastM
+    const width = lastMin - lastActiveTime
+    if (width > 0 && lastMin <= totalMinutes) {
+      segments.push({
+        startPct: (lastActiveTime / totalMinutes) * 100,
+        widthPct: (width / totalMinutes) * 100,
+        color: 'bg-green-500',
+        label: 'Activo',
+      })
+    }
+  }
+
+  return segments
+}
+
+function MiniStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="text-center">
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider">{label}</p>
+      <p className={`text-lg font-bold ${warn ? 'text-red-600' : 'text-slate-900'}`}>{value}</p>
     </div>
   )
 }
