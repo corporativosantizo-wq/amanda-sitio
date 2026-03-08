@@ -13,6 +13,7 @@ import {
   getNextBusinessDays,
   formatDateSpanish,
   gtDateStr,
+  gtWeekday,
 } from './calendar';
 import type { CalendarEvent } from './calendar';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/services/outlook.service';
@@ -127,16 +128,17 @@ export async function handleCreateCallback(data: string): Promise<void> {
     state._nextDays = nextDays;
 
     const dayNames = ['Dom', 'Lun', 'Mar', 'Mi\u00E9', 'Jue', 'Vie', 'S\u00E1b'];
+    const gtDayNum = (d: Date) => parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Guatemala', day: 'numeric' }).format(d), 10);
     const row1 = [
       { text: 'Hoy', callback_data: 'cal_day:0' },
       { text: 'Ma\u00F1ana', callback_data: 'cal_day:1' },
     ];
     const row2 = nextDays.slice(0, 3).map((d: Date, i: number) => ({
-      text: `${dayNames[d.getDay()]} ${d.getDate()}`,
+      text: `${dayNames[gtWeekday(d)]} ${gtDayNum(d)}`,
       callback_data: `cal_day:bd_${i}`,
     }));
     const row3 = nextDays.slice(3, 5).map((d: Date, i: number) => ({
-      text: `${dayNames[d.getDay()]} ${d.getDate()}`,
+      text: `${dayNames[gtWeekday(d)]} ${gtDayNum(d)}`,
       callback_data: `cal_day:bd_${i + 3}`,
     }));
 
@@ -551,9 +553,17 @@ function toGtISO(date: Date): string {
 /**
  * Check for upcoming [CLASE] events and send Telegram reminder 15 min before.
  * Window: events starting in 10-20 min from now (10-min wide, no overlap with 15-min cron).
+ * Only runs on class days (Mon/Fri) in Guatemala timezone to prevent false triggers.
  */
 export async function checkClassReminders(): Promise<number> {
   const now = new Date();
+
+  // Guard: only check on class days (Mon=1, Fri=5) in Guatemala timezone
+  const gtDay = gtWeekday(now);
+  if (gtDay !== 1 && gtDay !== 5) {
+    return 0;
+  }
+
   const windowStart = new Date(now.getTime() + 10 * 60_000);
   const windowEnd = new Date(now.getTime() + 20 * 60_000);
 
