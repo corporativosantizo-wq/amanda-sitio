@@ -467,7 +467,7 @@ export default function EditarCotizacionPage() {
       {/* ══════════ NOTA IMPORTANTE ══════════ */}
       <section className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-1">
-          Nota importante <span className="text-xs text-amber-600 font-normal">(visible para el cliente)</span>
+          ⚠️ Nota importante para el cliente <span className="text-xs text-amber-600 font-normal">(visible en cotización, PDF y email)</span>
         </h3>
         <p className="text-xs text-slate-400 mb-3">Se muestra de forma destacada en la cotización, PDF y email.</p>
         <textarea
