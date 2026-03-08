@@ -149,15 +149,21 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
   // 2. Obtener configuración
   const config = await obtenerConfiguracion();
 
-  // 3. Calcular montos desde items
+  // 3. Calcular montos desde items (IVA per-item)
   const itemsConTotal = input.items.map((item, idx) => ({
     ...item,
     total: item.cantidad * item.precio_unitario,
     orden: item.orden ?? idx,
+    aplica_iva: item.aplica_iva ?? true,
   }));
 
   const subtotal = itemsConTotal.reduce((sum, item) => sum + item.total, 0);
-  const { iva, total } = calcularIVASobreSubtotal(subtotal, config.iva_porcentaje);
+  const baseGravable = itemsConTotal
+    .filter(item => item.aplica_iva)
+    .reduce((sum, item) => sum + item.total, 0);
+  const ivaPct = config.iva_porcentaje ?? 12;
+  const iva = Math.round(baseGravable * (ivaPct / 100) * 100) / 100;
+  const total = subtotal + iva;
 
   // 4. Calcular anticipo
   const anticipoPorcentaje = input.anticipo_porcentaje ?? config.anticipo_porcentaje;
@@ -241,6 +247,7 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
     precio_unitario: item.precio_unitario,
     total: item.total,
     orden: item.orden,
+    aplica_iva: item.aplica_iva,
   }));
 
   const { error: itemsError } = await db()
@@ -299,6 +306,7 @@ export async function actualizarCotizacion(
       precio_unitario: item.precio_unitario,
       total: item.cantidad * item.precio_unitario,
       orden: item.orden ?? idx,
+      aplica_iva: item.aplica_iva ?? true,
     }));
 
     const { error: itemsError } = await db()
@@ -307,9 +315,14 @@ export async function actualizarCotizacion(
 
     if (itemsError) throw new CotizacionError('Error al actualizar items', itemsError);
 
-    // Recalcular montos
+    // Recalcular montos (IVA per-item)
     const subtotal = itemsConTotal.reduce((sum, item) => sum + item.total, 0);
-    const { iva, total } = calcularIVASobreSubtotal(subtotal, config.iva_porcentaje);
+    const baseGravable = itemsConTotal
+      .filter(item => item.aplica_iva)
+      .reduce((sum, item) => sum + item.total, 0);
+    const ivaPct = config.iva_porcentaje ?? 12;
+    const iva = Math.round(baseGravable * (ivaPct / 100) * 100) / 100;
+    const total = subtotal + iva;
     const anticipoPorcentaje = (input.anticipo_porcentaje ?? actual.anticipo_porcentaje);
     const { anticipo } = calcularAnticipo(total, anticipoPorcentaje);
 
@@ -535,6 +548,7 @@ export async function duplicarCotizacion(id: string, nuevoClienteId?: string): P
     cantidad: item.cantidad,
     precio_unitario: item.precio_unitario,
     orden: item.orden,
+    aplica_iva: item.aplica_iva,
   }));
 
   return crearCotizacion({

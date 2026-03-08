@@ -58,6 +58,7 @@ export interface CotizacionItem {
   precio_unitario: number;
   total: number;
   orden: number;
+  aplica_iva: boolean;
   created_at: string;
 }
 
@@ -67,6 +68,7 @@ export interface CotizacionItemInsert {
   cantidad: number;
   precio_unitario: number;
   orden?: number;
+  aplica_iva?: boolean;
 }
 
 export interface CotizacionInsert {

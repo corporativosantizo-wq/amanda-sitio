@@ -249,8 +249,11 @@ export async function generarPDFCotizacion(
   const descMaxW = colCant - colServ - 12;
 
   for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const descLines = wrapText(safeText(item.descripcion), regular, 8.5, descMaxW);
+    const item = items[i] as any;
+    const descText = item.aplica_iva === false
+      ? `${item.descripcion} (Exento IVA)`
+      : item.descripcion;
+    const descLines = wrapText(safeText(descText), regular, 8.5, descMaxW);
     const rowH = Math.max(22, descLines.length * 12 + 10);
 
     ensureSpace(rowH + 10);
@@ -288,15 +291,29 @@ export async function generarPDFCotizacion(
 
   // ── 6. TOTALES — alineados a la derecha ──────────────────────────────
 
-  ensureSpace(80);
+  ensureSpace(100);
 
   const totLabelX = M + CW - 200;
   const totValX = tblRight - 4;
 
+  // Calculate base gravable from items
+  const itemSubtotal = items.reduce((s: number, i: any) => s + (i.total ?? i.cantidad * i.precio_unitario), 0);
+  const baseGravable = items
+    .filter((i: any) => i.aplica_iva !== false)
+    .reduce((s: number, i: any) => s + (i.total ?? i.cantidad * i.precio_unitario), 0);
+  const hasExentos = baseGravable < itemSubtotal;
+
   // Subtotal
-  page.drawText('Subtotal', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
-  drawTextRight(page, safeText(formatQ(cotizacion.subtotal)), totValX, y, regular, 9, C.steel);
+  page.drawText('Subtotal (sin IVA)', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
+  drawTextRight(page, safeText(formatQ(itemSubtotal)), totValX, y, regular, 9, C.steel);
   y -= 16;
+
+  // Base gravable (only if there are exempt items)
+  if (hasExentos) {
+    page.drawText('Base gravable', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
+    drawTextRight(page, safeText(formatQ(baseGravable)), totValX, y, regular, 9, C.steel);
+    y -= 16;
+  }
 
   // IVA 12%
   page.drawText('IVA (12%)', { x: totLabelX, y, size: 9, font: regular, color: C.muted });

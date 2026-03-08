@@ -49,6 +49,7 @@ interface CotizacionDetalle {
     precio_unitario: number;
     subtotal: number;
     orden: number;
+    aplica_iva?: boolean;
   }>;
   cliente: {
     id: string;
@@ -319,7 +320,12 @@ export default function CotizacionDetallePage() {
                   {cot.items.map((item, idx) => (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-3 px-5 text-sm text-slate-400">{idx + 1}</td>
-                      <td className="py-3 px-4 text-sm text-slate-800">{item.descripcion}</td>
+                      <td className="py-3 px-4 text-sm text-slate-800">
+                        {item.descripcion}
+                        {item.aplica_iva === false && (
+                          <span className="ml-2 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Exento IVA</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-sm text-center text-slate-600">{item.cantidad}</td>
                       <td className="py-3 px-4 text-sm text-right text-slate-600">{Q(item.precio_unitario)}</td>
                       <td className="py-3 px-5 text-sm text-right font-medium text-slate-900">{Q(item.subtotal)}</td>
@@ -333,14 +339,31 @@ export default function CotizacionDetallePage() {
             <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-blue-50/20 border-t border-slate-200">
               <div className="flex justify-end">
                 <div className="w-72 space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Subtotal (sin IVA)</span>
-                    <span>{Q(cot.total / 1.12)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">IVA (12%)</span>
-                    <span>{Q(cot.impuestos)}</span>
-                  </div>
+                  {(() => {
+                    const itemSubtotal = cot.items.reduce((s: number, i: any) => s + (i.subtotal ?? i.cantidad * i.precio_unitario), 0);
+                    const baseGravable = cot.items
+                      .filter((i: any) => i.aplica_iva !== false)
+                      .reduce((s: number, i: any) => s + (i.subtotal ?? i.cantidad * i.precio_unitario), 0);
+                    const hasExentos = baseGravable < itemSubtotal;
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">Subtotal (sin IVA)</span>
+                          <span>{Q(itemSubtotal)}</span>
+                        </div>
+                        {hasExentos && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Base gravable</span>
+                            <span>{Q(baseGravable)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">IVA (12%)</span>
+                          <span>{Q(cot.impuestos)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div className="flex justify-between text-lg font-bold border-t-2 border-[#1E40AF] pt-2 mt-1">
                     <span className="text-[#1E40AF]">TOTAL</span>
                     <span className="text-[#1E40AF]">{Q(cot.total)}</span>

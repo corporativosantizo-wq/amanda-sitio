@@ -24,7 +24,10 @@ interface ItemForm {
   precio_unitario: number;
   orden: number;
   codigoCatalogo?: string;
+  aplica_iva: boolean;
 }
+
+const EXENTO_KEYWORDS = /gasto|registro|timbre|arancel/i;
 
 interface CotizacionData {
   id: string;
@@ -76,12 +79,13 @@ export default function EditarCotizacionPage() {
   // Pre-populate when data loads
   useEffect(() => {
     if (cot && !initialized) {
-      setItems(cot.items.map(item => ({
+      setItems(cot.items.map((item: any) => ({
         id: item.id,
         descripcion: item.descripcion,
         cantidad: item.cantidad,
         precio_unitario: item.precio_unitario,
         orden: item.orden,
+        aplica_iva: item.aplica_iva ?? true,
       })));
       setCondiciones(cot.condiciones ?? '');
       setNotas(cot.notas_internas ?? '');
@@ -92,12 +96,15 @@ export default function EditarCotizacionPage() {
   // ── Calculations ────────────────────────────────────────────────────
 
   const calc = useMemo(() => {
-    const total = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
-    const sinIva = Math.round((total / 1.12) * 100) / 100;
-    const iva = Math.round((total - sinIva) * 100) / 100;
+    const subtotal = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
+    const baseGravable = items
+      .filter(i => i.aplica_iva)
+      .reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
+    const iva = Math.round(baseGravable * 0.12 * 100) / 100;
+    const total = subtotal + iva;
     const anticipo = Math.round(total * 0.6 * 100) / 100;
     const saldo = Math.round(total * 0.4 * 100) / 100;
-    return { total, sinIva, iva, anticipo, saldo };
+    return { subtotal, baseGravable, iva, total, anticipo, saldo };
   }, [items]);
 
   // ── Catalog filtering ─────────────────────────────────────────────
@@ -109,13 +116,15 @@ export default function EditarCotizacionPage() {
   // ── Item actions ──────────────────────────────────────────────────
 
   const agregarDesdeCatalogo = useCallback((srv: ServicioCatalogo) => {
+    const desc = `${srv.nombre} — ${srv.descripcion}`;
     setItems(prev => [...prev, {
       id: crypto.randomUUID(),
-      descripcion: `${srv.nombre} — ${srv.descripcion}`,
+      descripcion: desc,
       cantidad: 1,
       precio_unitario: srv.precioBase,
       orden: prev.length,
       codigoCatalogo: srv.codigo,
+      aplica_iva: !EXENTO_KEYWORDS.test(desc),
     }]);
   }, []);
 
@@ -126,11 +135,19 @@ export default function EditarCotizacionPage() {
       cantidad: 1,
       precio_unitario: 0,
       orden: prev.length,
+      aplica_iva: true,
     }]);
   }, []);
 
-  const actualizarItem = useCallback((itemId: string, campo: string, valor: string | number) => {
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, [campo]: valor } : i));
+  const actualizarItem = useCallback((itemId: string, campo: string, valor: string | number | boolean) => {
+    setItems(prev => prev.map(i => {
+      if (i.id !== itemId) return i;
+      const updated = { ...i, [campo]: valor };
+      if (campo === 'descripcion') {
+        updated.aplica_iva = !EXENTO_KEYWORDS.test(String(valor));
+      }
+      return updated;
+    }));
   }, []);
 
   const eliminarItem = useCallback((itemId: string) => {
@@ -164,6 +181,7 @@ export default function EditarCotizacionPage() {
           cantidad: i.cantidad,
           precio_unitario: i.precio_unitario,
           orden: i.orden,
+          aplica_iva: i.aplica_iva,
         })),
         condiciones,
         notas_internas: notas || null,
@@ -337,7 +355,8 @@ export default function EditarCotizacionPage() {
           <>
             <div className="hidden sm:grid grid-cols-12 gap-2 px-5 py-2 bg-slate-50/80 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
               <div className="col-span-1">#</div>
-              <div className="col-span-5">Descripción</div>
+              <div className="col-span-4">Descripción</div>
+              <div className="col-span-1 text-center">IVA</div>
               <div className="col-span-2 text-center">Cant.</div>
               <div className="col-span-2 text-right">Precio</div>
               <div className="col-span-1 text-right">Total</div>
@@ -356,7 +375,7 @@ export default function EditarCotizacionPage() {
                     <button onClick={() => moverItem(item.id, 'down')} disabled={idx === items.length - 1} className="text-[10px] text-slate-400 hover:text-slate-700 disabled:invisible leading-none">▼</button>
                   </div>
                 </div>
-                <div className="sm:col-span-5">
+                <div className="sm:col-span-4">
                   <textarea
                     value={item.descripcion}
                     onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
@@ -366,6 +385,19 @@ export default function EditarCotizacionPage() {
                     onInput={(e) => { const el = e.target as HTMLTextAreaElement; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
                   />
                   {item.codigoCatalogo && <span className="text-[10px] text-[#0891B2] ml-1">{item.codigoCatalogo}</span>}
+                </div>
+                <div className="sm:col-span-1 flex sm:justify-center items-start pt-2">
+                  <label className="flex items-center gap-1 cursor-pointer" title={item.aplica_iva ? 'Aplica IVA' : 'Exento de IVA'}>
+                    <input
+                      type="checkbox"
+                      checked={item.aplica_iva}
+                      onChange={e => actualizarItem(item.id, 'aplica_iva', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-[#1E40AF] focus:ring-[#0891B2]/30"
+                    />
+                    <span className={`text-[10px] ${item.aplica_iva ? 'text-slate-500' : 'text-amber-600 font-medium'}`}>
+                      {item.aplica_iva ? '12%' : 'Exento'}
+                    </span>
+                  </label>
                 </div>
                 <div className="sm:col-span-2 flex sm:justify-center items-start gap-2">
                   <label className="sm:hidden text-xs text-slate-400 pt-2">Cant:</label>
@@ -394,7 +426,10 @@ export default function EditarCotizacionPage() {
             <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-blue-50/20">
               <div className="flex justify-end">
                 <div className="w-72 space-y-1.5">
-                  <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal (sin IVA)</span><span className="text-slate-700">{Q(calc.sinIva)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal (sin IVA)</span><span className="text-slate-700">{Q(calc.subtotal)}</span></div>
+                  {calc.baseGravable < calc.subtotal && (
+                    <div className="flex justify-between text-sm"><span className="text-slate-500">Base gravable</span><span className="text-slate-700">{Q(calc.baseGravable)}</span></div>
+                  )}
                   <div className="flex justify-between text-sm"><span className="text-slate-500">IVA (12%)</span><span className="text-slate-700">{Q(calc.iva)}</span></div>
                   <div className="flex justify-between text-lg font-bold border-t-2 border-[#1E40AF] pt-2 mt-1"><span className="text-[#1E40AF]">TOTAL</span><span className="text-[#1E40AF]">{Q(calc.total)}</span></div>
                   <div className="mt-2 bg-blue-50 rounded-lg p-3 space-y-1">
