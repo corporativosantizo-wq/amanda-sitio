@@ -37,6 +37,7 @@ export interface Cotizacion {
   anticipo_porcentaje: number;
   anticipo_monto: number;
 
+  cc_emails: string | null;
   pdf_url: string | null;
   enviada_at: string | null;
   aceptada_at: string | null;
@@ -83,6 +84,7 @@ export interface CotizacionInsert {
   duracion_consulta_min?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;
+  cc_emails?: string | null;
   envio_programado?: boolean;
   envio_programado_fecha?: string | null;
   items: CotizacionItemInsert[];
@@ -98,6 +100,7 @@ export interface CotizacionUpdate {
   condiciones?: string | null;
   notas_internas?: string | null;
   notas_cliente?: string | null;
+  cc_emails?: string | null;
   incluye_consultas?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;

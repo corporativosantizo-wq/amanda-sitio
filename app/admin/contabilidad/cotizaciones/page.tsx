@@ -485,6 +485,7 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
   const sinEmail = cotizaciones.filter((c: any) => !c.cliente?.email);
   const yaEnviadas = cotizaciones.filter((c: any) => c.estado === 'enviada');
   const enviables = cotizaciones.filter((c: any) => c.cliente?.email);
+  const tieneCC = cotizaciones.some((c: any) => c.cc_emails);
 
   const handleEnviar = async () => {
     if (enviables.length === 0) return;
@@ -549,6 +550,7 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
                 <th className="text-left py-2 px-3 font-medium text-slate-500">Cliente</th>
                 <th className="text-right py-2 px-3 font-medium text-slate-500">Monto</th>
                 <th className="text-left py-2 px-3 font-medium text-slate-500">Email</th>
+                {tieneCC && <th className="text-left py-2 px-3 font-medium text-slate-500">CC</th>}
                 <th className="text-center py-2 px-3 font-medium text-slate-500">Estado</th>
               </tr>
             </thead>
@@ -567,6 +569,11 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
                         <span className="text-amber-600 font-medium">⚠️ Sin email</span>
                       )}
                     </td>
+                    {tieneCC && (
+                      <td className="py-2 px-3 text-xs text-slate-500 max-w-[200px] truncate">
+                        {cot.cc_emails || '—'}
+                      </td>
+                    )}
                     <td className="py-2 px-3 text-center">
                       {cot.estado === 'enviada' ? (
                         <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Ya enviada</span>

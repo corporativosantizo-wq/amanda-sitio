@@ -41,6 +41,7 @@ interface CotizacionDetalle {
   condiciones: string;
   notas_internas: string | null;
   notas_cliente: string | null;
+  cc_emails: string | null;
   envio_programado: boolean;
   envio_programado_fecha: string | null;
   items: Array<{
@@ -496,6 +497,12 @@ export default function CotizacionDetallePage() {
                       <a href={`mailto:${cot.cliente.email}`} className="text-[#0891B2] hover:underline">
                         {cot.cliente.email}
                       </a>
+                    </div>
+                  )}
+                  {cot.cc_emails && (
+                    <div className="flex items-start gap-2 text-slate-600">
+                      <span className="text-slate-400">CC:</span>
+                      <span className="text-slate-600">{cot.cc_emails}</span>
                     </div>
                   )}
                   {cot.cliente.telefono && (

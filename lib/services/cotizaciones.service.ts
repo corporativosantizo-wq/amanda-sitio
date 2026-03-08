@@ -222,6 +222,7 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       condiciones,
       notas_internas: input.notas_internas ?? null,
       notas_cliente: input.notas_cliente ?? null,
+      cc_emails: input.cc_emails ?? null,
       incluye_consultas: input.incluye_consultas ?? 2,
       duracion_consulta_min: input.duracion_consulta_min ?? 15,
       requiere_anticipo: input.requiere_anticipo ?? true,
@@ -288,6 +289,7 @@ export async function actualizarCotizacion(
   if (input.condiciones !== undefined) updates.condiciones = input.condiciones;
   if (input.notas_internas !== undefined) updates.notas_internas = input.notas_internas;
   if (input.notas_cliente !== undefined) updates.notas_cliente = input.notas_cliente;
+  if (input.cc_emails !== undefined) updates.cc_emails = input.cc_emails;
   if (input.incluye_consultas !== undefined) updates.incluye_consultas = input.incluye_consultas;
   if (input.requiere_anticipo !== undefined) updates.requiere_anticipo = input.requiere_anticipo;
   if (input.anticipo_porcentaje !== undefined) updates.anticipo_porcentaje = input.anticipo_porcentaje;
@@ -405,6 +407,11 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     tokenRespuesta: actual.token_respuesta ?? undefined,
   });
 
+  // Parsear CC emails si existen
+  const ccEmails = (actual as any).cc_emails
+    ? (actual as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
+    : undefined;
+
   // Enviar email — si falla, NO cambiamos el estado
   try {
     await sendMail({
@@ -412,6 +419,7 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
       to: cliente.email,
       subject: template.subject,
       htmlBody: template.html,
+      ...(ccEmails && ccEmails.length > 0 ? { cc: ccEmails } : {}),
     });
   } catch (err: any) {
     throw new CotizacionError(
@@ -559,6 +567,7 @@ export async function duplicarCotizacion(id: string, nuevoClienteId?: string): P
     expediente_id: original.expediente_id,
     condiciones: original.condiciones,
     notas_internas: `Duplicada de ${original.numero}`,
+    cc_emails: (original as any).cc_emails ?? null,
     incluye_consultas: original.incluye_consultas,
     duracion_consulta_min: original.duracion_consulta_min,
     requiere_anticipo: original.requiere_anticipo,
@@ -612,11 +621,17 @@ export async function enviarCotizacionMasivo(params: {
         .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
         .replace(/$/, '</div>');
 
+      // Parsear CC emails si existen
+      const ccEmails = (cot as any).cc_emails
+        ? (cot as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
+        : undefined;
+
       await sendMail({
         from: from as any,
         to: cliente.email,
         subject,
         htmlBody,
+        ...(ccEmails && ccEmails.length > 0 ? { cc: ccEmails } : {}),
       });
 
       // Actualizar estado a enviada si es borrador

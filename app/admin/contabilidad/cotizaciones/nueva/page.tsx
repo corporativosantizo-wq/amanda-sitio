@@ -72,6 +72,9 @@ export default function NuevaCotizacionPage() {
   const [catFiltro, setCatFiltro] = useState<CategoriaServicio | ''>('');
   const [catalogoBusqueda, setCatalogoBusqueda] = useState('');
 
+  // CC emails
+  const [ccEmails, setCcEmails] = useState('');
+
   // Terms
   const [condiciones, setCondiciones] = useState(CONDICIONES_DEFAULT);
   const [notasCliente, setNotasCliente] = useState('');
@@ -214,6 +217,7 @@ export default function NuevaCotizacionPage() {
       condiciones,
       notas_cliente: notasCliente || null,
       notas_internas: notas || null,
+      cc_emails: ccEmails.trim() || null,
     };
 
     if (modo === 'programar') {
@@ -240,7 +244,7 @@ export default function NuevaCotizacionPage() {
       },
       onError: (err: any) => setFormError(String(err)),
     });
-  }, [clienteId, items, condiciones, notasCliente, notas, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
+  }, [clienteId, items, condiciones, notasCliente, notas, ccEmails, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -313,6 +317,21 @@ export default function NuevaCotizacionPage() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* CC emails */}
+        {clienteSeleccionado && (
+          <div className="mt-3">
+            <label className="text-xs text-slate-500 font-medium">CC (copia de correo)</label>
+            <input
+              type="text"
+              placeholder="correo1@ejemplo.com, correo2@ejemplo.com"
+              value={ccEmails}
+              onChange={e => setCcEmails(e.target.value)}
+              className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+            <p className="text-xs text-slate-400 mt-1">Separar múltiples correos con coma. Se enviarán como CC al enviar la cotización.</p>
           </div>
         )}
       </section>
