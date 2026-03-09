@@ -73,7 +73,7 @@ const CUENTAS = [
 
 export default function ComunicacionesPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<'nuevo' | 'programados' | 'enviados'>('nuevo');
+  const [tab, setTab] = useState<'nuevo' | 'masivo' | 'programados' | 'enviados'>('nuevo');
 
   return (
     <div className="space-y-6">
@@ -86,6 +86,7 @@ export default function ComunicacionesPage() {
       <div className="flex bg-white rounded-lg border border-slate-200 p-1 w-fit">
         {[
           { key: 'nuevo' as const, label: '📝 Nuevo correo' },
+          { key: 'masivo' as const, label: '📎 Envío masivo' },
           { key: 'programados' as const, label: '📅 Programados' },
           { key: 'enviados' as const, label: '✅ Enviados' },
         ].map(t => (
@@ -104,6 +105,7 @@ export default function ComunicacionesPage() {
       </div>
 
       {tab === 'nuevo' && <NuevoCorreoTab />}
+      {tab === 'masivo' && <EnvioMasivoDocumentosTab />}
       {tab === 'programados' && <CorreosListTab estado="programado" />}
       {tab === 'enviados' && <CorreosListTab estado="enviado" />}
     </div>
@@ -595,6 +597,554 @@ function NuevoCorreoTab() {
       )}
     </div>
   );
+}
+
+// ── Tab: Envío masivo de documentos ──────────────────────────────────────
+
+interface ArchivoItem {
+  file: File;
+  base64: string;
+  clienteId: string | null;
+  clienteNombre: string;
+  email: string;
+  cc: string;
+  matched: boolean;
+}
+
+function EnvioMasivoDocumentosTab() {
+  const [paso, setPaso] = useState(1);
+  const [archivos, setArchivos] = useState<ArchivoItem[]>([]);
+  const [asunto, setAsunto] = useState('Envío de documento — {nombre_cliente}');
+  const [cuerpo, setCuerpo] = useState('');
+  const [cuenta, setCuenta] = useState('asistente@papeleo.legal');
+  const [sending, setSending] = useState(false);
+  const [progreso, setProgreso] = useState<string | null>(null);
+  const [resultado, setResultado] = useState<{ enviados: number; errores: any[] } | null>(null);
+
+  // Load plantilla "envio-documento" for default body
+  const { data: config } = useFetch<{ plantillas: Plantilla[]; pies: PieConf[] }>(
+    '/api/admin/comunicaciones?tipo=plantillas'
+  );
+
+  useEffect(() => {
+    if (config && !cuerpo) {
+      const tpl = config.plantillas.find((p: Plantilla) => p.slug === 'envio-documento');
+      if (tpl) setCuerpo(tpl.cuerpo_template);
+    }
+  }, [config, cuerpo]);
+
+  const pieTexto = useMemo(
+    () => config?.pies.find((p: PieConf) => p.cuenta_email === cuenta)?.texto ?? '',
+    [config, cuenta]
+  );
+
+  // ── Step 1: File upload ──────────────────────────────────────────────
+
+  const handleFiles = async (files: FileList) => {
+    const items: ArchivoItem[] = [];
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!['pdf', 'doc', 'docx'].includes(ext ?? '')) continue;
+
+      const base64 = await fileToBase64(file);
+      const baseName = file.name.replace(/\.[^.]+$/, '').trim();
+
+      items.push({
+        file,
+        base64,
+        clienteId: null,
+        clienteNombre: baseName,
+        email: '',
+        cc: '',
+        matched: false,
+      });
+    }
+    setArchivos(prev => [...prev, ...items]);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+  };
+
+  const removeFile = (idx: number) => {
+    setArchivos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // ── Step 2: Auto-match clients ───────────────────────────────────────
+
+  const autoMatchClientes = async () => {
+    const updated = [...archivos];
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].matched) continue;
+      const nombre = updated[i].clienteNombre;
+      try {
+        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`);
+        const json = await res.json();
+        const clientes = json.data ?? json;
+        if (clientes.length > 0) {
+          const c = clientes[0];
+          updated[i] = {
+            ...updated[i],
+            clienteId: c.id,
+            clienteNombre: c.nombre,
+            email: c.email ?? '',
+            matched: true,
+          };
+        }
+      } catch { /* ignore */ }
+    }
+    setArchivos(updated);
+  };
+
+  useEffect(() => {
+    if (paso === 2 && archivos.some((a: ArchivoItem) => !a.matched)) {
+      autoMatchClientes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso]);
+
+  const updateArchivo = (idx: number, updates: Partial<ArchivoItem>) => {
+    setArchivos(prev => prev.map((a, i) => i === idx ? { ...a, ...updates } : a));
+  };
+
+  // ── Step 4: Send ─────────────────────────────────────────────────────
+
+  const enviables = archivos.filter((a: ArchivoItem) => a.email);
+
+  const handleEnviar = async () => {
+    if (enviables.length === 0) return;
+    setSending(true);
+    setProgreso(`Enviando 0/${enviables.length}...`);
+
+    try {
+      const items = enviables.map((a: ArchivoItem) => ({
+        filename: a.file.name,
+        contentType: a.file.type || 'application/octet-stream',
+        contentBase64: a.base64,
+        clienteId: a.clienteId,
+        clienteNombre: a.clienteNombre,
+        email: a.email,
+        cc: a.cc || null,
+      }));
+
+      const res = await fetch('/api/admin/comunicaciones/masivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items,
+          asunto_template: asunto,
+          cuerpo_template: cuerpo,
+          cuenta_envio: cuenta,
+        }),
+        redirect: 'manual',
+      });
+
+      if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401) {
+        setResultado({ enviados: 0, errores: [{ filename: '', email: '', error: 'Sesión expirada. Recarga la página.' }] });
+        setSending(false);
+        setProgreso(null);
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Error al enviar');
+
+      setResultado({ enviados: data.enviados, errores: data.errores ?? [] });
+      setProgreso(null);
+    } catch (err: any) {
+      setResultado({ enviados: 0, errores: [{ filename: '', email: '', error: err.message }] });
+    }
+    setSending(false);
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────
+
+  if (resultado) {
+    return (
+      <div className="max-w-4xl space-y-4">
+        <div className={`p-5 rounded-xl border ${resultado.enviados > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+          <h3 className="text-sm font-bold mb-2">
+            {resultado.enviados > 0 ? '✅' : '❌'} Envío masivo completado
+          </h3>
+          <p className="text-sm">
+            {resultado.enviados} correo{resultado.enviados !== 1 ? 's' : ''} enviado{resultado.enviados !== 1 ? 's' : ''} exitosamente
+          </p>
+          {resultado.errores.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <p className="text-sm font-medium text-red-700">{resultado.errores.length} error{resultado.errores.length !== 1 ? 'es' : ''}:</p>
+              {resultado.errores.map((e: any, i: number) => (
+                <p key={i} className="text-xs text-red-600">{e.filename} → {e.email}: {e.error}</p>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => { setResultado(null); setArchivos([]); setPaso(1); }}
+          className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg"
+        >
+          Nuevo envío masivo
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      {/* Step indicators */}
+      <div className="flex items-center gap-2 text-sm">
+        {[
+          { n: 1, label: 'Archivos' },
+          { n: 2, label: 'Asignar clientes' },
+          { n: 3, label: 'Mensaje' },
+          { n: 4, label: 'Enviar' },
+        ].map((s, i) => (
+          <div key={s.n} className="flex items-center gap-2">
+            {i > 0 && <div className={`w-8 h-0.5 ${paso >= s.n ? 'bg-[#0891B2]' : 'bg-slate-200'}`} />}
+            <button
+              onClick={() => paso > s.n && setPaso(s.n)}
+              disabled={paso < s.n}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                paso === s.n ? 'bg-[#0891B2] text-white'
+                  : paso > s.n ? 'bg-cyan-50 text-[#0891B2] cursor-pointer hover:bg-cyan-100'
+                  : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              <span>{s.n}</span> {s.label}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* ═══ PASO 1: Subir archivos ═══ */}
+      {paso === 1 && (
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <h3 className="text-sm font-semibold text-slate-900">Subir documentos</h3>
+
+          {/* Drop zone */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={e => e.preventDefault()}
+            className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-[#0891B2] hover:bg-cyan-50/20 transition-all cursor-pointer"
+            onClick={() => document.getElementById('file-input')?.click()}
+          >
+            <div className="text-3xl mb-2">📎</div>
+            <p className="text-sm font-medium text-slate-700">Arrastra archivos aquí o haz clic para seleccionar</p>
+            <p className="text-xs text-slate-400 mt-1">PDF, DOC, DOCX</p>
+            <input
+              id="file-input"
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx"
+              className="hidden"
+              onChange={e => e.target.files && handleFiles(e.target.files)}
+            />
+          </div>
+
+          {/* File list */}
+          {archivos.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-500">{archivos.length} archivo{archivos.length !== 1 ? 's' : ''}</p>
+              {archivos.map((a: ArchivoItem, i: number) => (
+                <div key={i} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-2.5 border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">{a.file.name.endsWith('.pdf') ? '📕' : '📘'}</span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{a.file.name}</p>
+                      <p className="text-xs text-slate-400">{(a.file.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                  </div>
+                  <button onClick={() => removeFile(i)} className="text-xs text-red-500 hover:text-red-700 font-medium">Quitar</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              onClick={() => archivos.length > 0 && setPaso(2)}
+              disabled={archivos.length === 0}
+              className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg disabled:opacity-40"
+            >
+              Continuar →
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ PASO 2: Asignar clientes ═══ */}
+      {paso === 2 && (
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">Asignar clientes a documentos</h3>
+            <button
+              onClick={autoMatchClientes}
+              className="text-xs font-medium text-[#0891B2] bg-cyan-50 px-3 py-1.5 rounded-lg hover:bg-cyan-100"
+            >
+              🔄 Re-buscar clientes
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left py-2 px-4 font-medium text-slate-500 text-xs">Archivo</th>
+                  <th className="text-left py-2 px-4 font-medium text-slate-500 text-xs">Cliente</th>
+                  <th className="text-left py-2 px-4 font-medium text-slate-500 text-xs">Email</th>
+                  <th className="text-left py-2 px-4 font-medium text-slate-500 text-xs">CC</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {archivos.map((a: ArchivoItem, i: number) => (
+                  <ArchivoRow key={i} item={a} index={i} onChange={updateArchivo} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="px-6 py-4 border-t border-slate-100 flex justify-between">
+            <button onClick={() => setPaso(1)} className="text-sm text-slate-500 hover:text-slate-700">← Archivos</button>
+            <div className="flex items-center gap-3">
+              {archivos.filter((a: ArchivoItem) => !a.email).length > 0 && (
+                <span className="text-xs text-amber-600">⚠️ {archivos.filter((a: ArchivoItem) => !a.email).length} sin email</span>
+              )}
+              <button onClick={() => setPaso(3)} className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg">
+                Continuar →
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ PASO 3: Mensaje ═══ */}
+      {paso === 3 && (
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <h3 className="text-sm font-semibold text-slate-900">Personalizar mensaje</h3>
+          <p className="text-xs text-slate-400">Se usa el mismo mensaje para todos. Variables: {'{nombre_cliente}'}, {'{nombre_documento}'}</p>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Asunto</label>
+            <input
+              type="text"
+              value={asunto}
+              onChange={e => setAsunto(e.target.value)}
+              className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Cuerpo del correo</label>
+            <textarea
+              value={cuerpo}
+              onChange={e => setCuerpo(e.target.value)}
+              rows={10}
+              className="w-full mt-1 px-4 py-3 text-sm border border-slate-200 rounded-lg font-sans leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Cuenta de envío</label>
+            <select
+              value={cuenta}
+              onChange={e => setCuenta(e.target.value)}
+              className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-cyan-500"
+            >
+              {CUENTAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+
+          {pieTexto && (
+            <div className="border-t border-slate-200 pt-3">
+              <p className="text-xs text-slate-400 mb-1">Pie de confidencialidad</p>
+              <div className="text-[11px] text-slate-400 bg-slate-50 rounded-lg p-3 border border-slate-100 leading-relaxed">
+                {pieTexto.substring(0, 200)}...
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-between">
+            <button onClick={() => setPaso(2)} className="text-sm text-slate-500 hover:text-slate-700">← Clientes</button>
+            <button onClick={() => setPaso(4)} className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg">
+              Revisar y enviar →
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ PASO 4: Confirmar ═══ */}
+      {paso === 4 && (
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <h3 className="text-sm font-semibold text-slate-900">
+            Confirmar envío masivo
+          </h3>
+          <p className="text-sm text-slate-600">
+            Se enviarán <strong>{enviables.length}</strong> correo{enviables.length !== 1 ? 's' : ''} con documentos adjuntos desde <strong>{cuenta.split('@')[0]}</strong>
+          </p>
+
+          {archivos.filter((a: ArchivoItem) => !a.email).length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm text-amber-800">
+              ⚠️ {archivos.filter((a: ArchivoItem) => !a.email).length} archivo{archivos.filter((a: ArchivoItem) => !a.email).length !== 1 ? 's' : ''} sin email — no se enviarán
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">Archivo</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">Cliente</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">Email</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {archivos.map((a: ArchivoItem, i: number) => (
+                  <tr key={i} className={!a.email ? 'bg-amber-50' : ''}>
+                    <td className="py-2 px-3 text-slate-700">
+                      <span className="mr-1">{a.file.name.endsWith('.pdf') ? '📕' : '📘'}</span>
+                      {a.file.name}
+                    </td>
+                    <td className="py-2 px-3 text-slate-700">{a.clienteNombre || '—'}</td>
+                    <td className="py-2 px-3">
+                      {a.email ? (
+                        <span className="text-slate-600">{a.email}</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">⚠️ Sin email</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button onClick={() => setPaso(3)} className="text-sm text-slate-500 hover:text-slate-700">← Editar mensaje</button>
+            <div className="flex-1" />
+            <button
+              onClick={handleEnviar}
+              disabled={sending || enviables.length === 0}
+              className="px-5 py-2.5 text-sm font-semibold bg-[#0891B2] text-white rounded-lg hover:bg-[#0891B2]/90 disabled:opacity-50 transition-colors"
+            >
+              {sending ? (progreso ?? 'Enviando...') : `📧 Enviar ${enviables.length} correo${enviables.length !== 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── ArchivoRow: editable row with client autocomplete ────────────────────
+
+function ArchivoRow({ item, index, onChange }: {
+  item: ArchivoItem;
+  index: number;
+  onChange: (idx: number, updates: Partial<ArchivoItem>) => void;
+}) {
+  const [busqueda, setBusqueda] = useState('');
+  const [showDrop, setShowDrop] = useState(false);
+
+  const clienteUrl = busqueda.length >= 2
+    ? `/api/admin/clientes?q=${encodeURIComponent(busqueda)}&limit=3`
+    : null;
+  const { data: clientesRes } = useFetch<{ data: ClienteBusqueda[] }>(clienteUrl);
+
+  const selectCliente = (c: ClienteBusqueda) => {
+    onChange(index, {
+      clienteId: c.id,
+      clienteNombre: c.nombre,
+      email: c.email ?? '',
+      matched: true,
+    });
+    setBusqueda('');
+    setShowDrop(false);
+  };
+
+  return (
+    <tr className={!item.email ? 'bg-amber-50/50' : ''}>
+      <td className="py-2 px-4">
+        <div className="flex items-center gap-2">
+          <span>{item.file.name.endsWith('.pdf') ? '📕' : '📘'}</span>
+          <span className="text-xs text-slate-700 truncate max-w-[180px]">{item.file.name}</span>
+        </div>
+      </td>
+      <td className="py-2 px-4 relative">
+        {item.matched ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-800">{item.clienteNombre}</span>
+            <button
+              onClick={() => onChange(index, { clienteId: null, clienteNombre: '', email: '', matched: false })}
+              className="text-[10px] text-red-500 hover:text-red-700"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar cliente..."
+              value={busqueda}
+              onChange={e => { setBusqueda(e.target.value); setShowDrop(true); }}
+              onFocus={() => setShowDrop(true)}
+              className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-cyan-400"
+            />
+            {showDrop && clientesRes?.data && clientesRes.data.length > 0 && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDrop(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-32 overflow-y-auto">
+                  {clientesRes.data.map((c: ClienteBusqueda) => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectCliente(c)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 border-b border-slate-50 last:border-0"
+                    >
+                      <span className="font-medium">{c.nombre}</span>
+                      <span className="text-slate-400 ml-1">{c.email ?? ''}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="py-2 px-4">
+        <input
+          type="email"
+          value={item.email}
+          onChange={e => onChange(index, { email: e.target.value })}
+          placeholder="correo@ejemplo.com"
+          className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-cyan-400"
+        />
+      </td>
+      <td className="py-2 px-4">
+        <input
+          type="text"
+          value={item.cc}
+          onChange={e => onChange(index, { cc: e.target.value })}
+          placeholder="CC..."
+          className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-cyan-400"
+        />
+      </td>
+    </tr>
+  );
+}
+
+// ── Helper: File to base64 ───────────────────────────────────────────────
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data:xxx;base64, prefix
+      resolve(result.split(',')[1] ?? result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── Tab: Lista de correos (Programados / Enviados) ───────────────────────
