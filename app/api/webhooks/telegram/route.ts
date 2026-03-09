@@ -25,6 +25,7 @@ import {
   startCancelFlow,
   handleCancelCallback,
 } from '@/lib/molly/telegram-calendar';
+import { obtenerDatosPago, solicitarFacturaRE } from '@/lib/services/factura-re.service';
 import { searchDriveFiles } from '@/lib/molly/graph-drive';
 import type { DriveItem } from '@/lib/molly/graph-drive';
 import { searchEmails, getConversationThread } from '@/lib/molly/graph-mail';
@@ -172,6 +173,13 @@ async function handleCallbackQuery(query: any): Promise<void> {
     if (data === 'cobros_recordar') {
       await answerCallbackQuery(query.id, 'Enviando recordatorios...');
       await handleCobrosRecordar();
+      return;
+    }
+
+    // Factura request callbacks (from payment notifications)
+    if (data.startsWith('factura_si:') || data.startsWith('factura_no:')) {
+      await answerCallbackQuery(query.id);
+      await handleFacturaCallback(data);
       return;
     }
 
@@ -1119,6 +1127,39 @@ async function handleCobrosRecordar(): Promise<void> {
   } catch (err: any) {
     console.error('[telegram] Error triggering cobros recordar:', err.message);
     await sendTelegramMessage(`\u274C Error: ${err.message}`);
+  }
+}
+
+// ── Factura request callbacks ─────────────────────────────────────────────
+
+async function handleFacturaCallback(data: string): Promise<void> {
+  const [action, pagoId] = data.split(':');
+
+  if (!pagoId) return;
+
+  if (action === 'factura_no') {
+    await sendTelegramMessage('OK, no se solicitará factura para este pago.');
+    return;
+  }
+
+  // factura_si → fetch payment data and send invoice request to RE
+  try {
+    const datos = await obtenerDatosPago(pagoId);
+    if (!datos) {
+      await sendTelegramMessage('⚠️ No se encontraron datos del pago. Verifica en el dashboard.');
+      return;
+    }
+
+    await solicitarFacturaRE(datos);
+
+    const montoFmt = `Q${datos.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+    await sendTelegramMessage(
+      `✅ Solicitud de factura enviada a RE para <b>${escapeHtml(datos.cliente_nombre)}</b> — ${montoFmt}`,
+      { parse_mode: 'HTML' },
+    );
+  } catch (err: any) {
+    console.error('[telegram] Error enviando factura:', err.message);
+    await sendTelegramMessage(`❌ Error al solicitar factura: ${err.message}`);
   }
 }
 

@@ -121,14 +121,22 @@ export async function notificarPagoParaFactura(pagoId: string): Promise<void> {
       );
       console.log('[FacturaRE] Anticipo notificado (sin solicitud de factura) para pago', pagoId);
     } else if (totalCubierto) {
-      // Full payment → suggest invoice
+      // Full payment → suggest invoice with inline buttons
       await sendTelegramMessage(
         `📄 <b>Pago completo registrado</b>\n\n` +
         `<b>Cliente:</b> ${cliente.nombre} — ${montoFmt}\n` +
         `<b>Concepto:</b> ${concepto}\n` +
         `<b>NIT:</b> ${cliente.nit || 'CF'}\n\n` +
-        `Preparé solicitud de factura para RE. Aprueba desde el asistente contable.`,
-        { parse_mode: 'HTML' },
+        `Solicitud de factura lista para RE Contadores.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Enviar solicitud de factura', callback_data: `factura_si:${pagoId}` },
+              { text: '❌ No solicitar', callback_data: `factura_no:${pagoId}` },
+            ]],
+          },
+        },
       );
       console.log('[FacturaRE] Telegram de solicitud de factura enviado para pago', pagoId);
     } else {
