@@ -25,6 +25,7 @@ interface PagoAsociado {
   fecha_pago: string;
   es_anticipo: boolean;
   confirmado_at: string | null;
+  factura_solicitada: boolean;
 }
 
 interface CotizacionDetalle {
@@ -134,6 +135,8 @@ export default function CotizacionDetallePage() {
   }, [id, mutate, refetch]);
 
   const [descargando, setDescargando] = useState(false);
+  const [showFacturaModal, setShowFacturaModal] = useState(false);
+  const [enviandoFactura, setEnviandoFactura] = useState(false);
   const descargarPdf = useCallback(async () => {
     setDescargando(true);
     try {
@@ -188,6 +191,24 @@ export default function CotizacionDetallePage() {
     : totalPagado >= cot.total
       ? 'completo'
       : 'parcial';
+
+  // Find last confirmed non-anticipo pago for factura request
+  const pagoParaFactura = pagosConfirmados.find(p => !p.es_anticipo && !p.factura_solicitada);
+  const facturaYaSolicitada = pagosConfirmados.some(p => p.factura_solicitada);
+
+  const solicitarFacturaCot = async () => {
+    if (!pagoParaFactura) return;
+    setEnviandoFactura(true);
+    await mutate('/api/admin/contabilidad/solicitar-factura', {
+      body: { pago_id: pagoParaFactura.id },
+      onSuccess: () => {
+        setShowFacturaModal(false);
+        refetch();
+      },
+      onError: (err: any) => alert(`Error: ${err}`),
+    });
+    setEnviandoFactura(false);
+  };
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -503,6 +524,21 @@ export default function CotizacionDetallePage() {
                 + Registrar pago
               </button>
             )}
+
+            {/* Solicitar factura button */}
+            {estadoPago === 'completo' && pagoParaFactura && !facturaYaSolicitada && (
+              <button
+                onClick={() => setShowFacturaModal(true)}
+                className="w-full px-4 py-2.5 text-sm font-medium text-white bg-[#1E40AF] rounded-lg hover:bg-[#1e3a8a] transition-colors"
+              >
+                📄 Solicitar factura a RE
+              </button>
+            )}
+            {facturaYaSolicitada && (
+              <div className="w-full px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
+                ✅ Factura solicitada
+              </div>
+            )}
           </Section>
         </div>
 
@@ -622,6 +658,51 @@ export default function CotizacionDetallePage() {
           </Section>
         </div>
       </div>
+
+      {/* Modal solicitar factura */}
+      {showFacturaModal && cot.cliente && pagoParaFactura && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowFacturaModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">📄 Solicitar factura a RE Contadores</h3>
+            <p className="text-xs text-slate-500 mb-4">Se enviará email desde contador@papeleo.legal</p>
+
+            <div className="space-y-2.5 mb-5 bg-slate-50 rounded-lg p-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Cliente</span>
+                <span className="font-medium text-slate-900">{cot.cliente.nombre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">NIT</span>
+                <span className="font-medium text-slate-900">{cot.cliente.nit || 'CF'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Monto</span>
+                <span className="font-bold text-[#1E40AF]">{Q(pagoParaFactura.monto)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Concepto</span>
+                <span className="font-medium text-slate-900">{cot.numero}</span>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-400 mb-4 space-y-0.5">
+              <p><b>Para:</b> contabilidad@re.com.gt, veronica.zoriano@re.com.gt, joaquin.sandoval@re.com.gt</p>
+              <p><b>Desde:</b> contador@papeleo.legal</p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowFacturaModal(false)}
+                className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+                ❌ Cancelar
+              </button>
+              <button onClick={solicitarFacturaCot} disabled={enviandoFactura}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#1E40AF] rounded-lg hover:bg-[#1e3a8a] transition-colors disabled:opacity-50">
+                {enviandoFactura ? 'Enviando...' : '✅ Enviar solicitud'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal programar envío */}
       {showProgramarModal && (
