@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/resumen-semanal",
       "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/cron/enviar-cotizaciones",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
