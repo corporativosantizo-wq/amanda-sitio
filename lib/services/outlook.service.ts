@@ -630,7 +630,13 @@ export async function sendMail(params: {
     console.log('[sendMail] cc:', ccList.join(', '));
   }
 
+  // Auto-BCC amanda@ when sending from asistente@ or contador@
+  const AUTO_BCC_SENDERS = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
+  const AUTO_BCC_ADDR = 'amanda@papeleo.legal';
   const bccList = parseEmailList(params.bcc);
+  if (AUTO_BCC_SENDERS.includes(params.from) && !bccList.includes(AUTO_BCC_ADDR)) {
+    bccList.push(AUTO_BCC_ADDR);
+  }
   if (bccList.length > 0) {
     message.bccRecipients = bccList.map((addr) => ({ emailAddress: { address: addr } }));
     console.log('[sendMail] bcc:', bccList.join(', '));
