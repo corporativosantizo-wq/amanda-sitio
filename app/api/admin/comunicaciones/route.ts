@@ -10,6 +10,7 @@ import {
   listarPiesConfidencialidad,
   listarCorreos,
   crearCorreo,
+  actualizarCorreo,
   enviarCorreoAhora,
   cancelarCorreo,
 } from '@/lib/services/comunicaciones.service';
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
         cuenta_envio: body.cuenta_envio || 'amanda@papeleo.legal',
         asunto: body.asunto,
         cuerpo: body.cuerpo,
+        adjuntos: body.adjuntos ?? [],
         estado: accion === 'programar' ? 'programado' : 'borrador',
         programado_para: body.programado_para,
       });
@@ -63,6 +65,20 @@ export async function POST(req: NextRequest) {
         await enviarCorreoAhora(correo.id);
       }
 
+      return NextResponse.json(correo);
+    }
+
+    if (accion === 'actualizar') {
+      const correo = await actualizarCorreo(body.id, {
+        destinatario_email: body.destinatario_email,
+        destinatario_nombre: body.destinatario_nombre,
+        cc_emails: body.cc_emails,
+        cuenta_envio: body.cuenta_envio,
+        asunto: body.asunto,
+        cuerpo: body.cuerpo,
+        adjuntos: body.adjuntos,
+        programado_para: body.programado_para,
+      });
       return NextResponse.json(correo);
     }
 

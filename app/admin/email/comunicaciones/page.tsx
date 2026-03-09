@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
@@ -38,6 +38,13 @@ interface PieConf {
   texto: string;
 }
 
+interface AdjuntoMeta {
+  name: string;
+  path: string;
+  size: number;
+  contentType: string;
+}
+
 interface Correo {
   id: string;
   destinatario_email: string;
@@ -46,6 +53,7 @@ interface Correo {
   cuenta_envio: string;
   asunto: string;
   cuerpo: string;
+  adjuntos: AdjuntoMeta[];
   estado: string;
   programado_para: string | null;
   enviado_at: string | null;
@@ -138,6 +146,11 @@ function NuevoCorreoTab() {
   const [camposExtra, setCamposExtra] = useState<Record<string, string>>({});
   const [cuenta, setCuenta] = useState('amanda@papeleo.legal');
 
+  // Attachments
+  const [adjuntos, setAdjuntos] = useState<AdjuntoMeta[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const adjuntoInputRef = useRef<HTMLInputElement>(null);
+
   // Schedule
   const [programarFecha, setProgramarFecha] = useState('');
   const [programarHora, setProgramarHora] = useState('08:00');
@@ -224,6 +237,44 @@ function NuevoCorreoTab() {
     setCuerpo(c);
   }, [asunto, cuerpo, camposExtra]);
 
+  // Upload attachments
+  const handleUploadAdjuntos = async (files: FileList) => {
+    setUploadingFiles(true);
+    try {
+      const formData = new FormData();
+      for (const f of Array.from(files)) formData.append('files', f);
+      const res = await fetch('/api/admin/comunicaciones/adjuntos', {
+        method: 'POST',
+        body: formData,
+        redirect: 'manual',
+      });
+      if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 405) {
+        setToast({ type: 'error', msg: 'Sesión expirada. Recarga la página.' });
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) { setToast({ type: 'error', msg: data.error ?? 'Error al subir' }); return; }
+      setAdjuntos(prev => [...prev, ...data.adjuntos]);
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message ?? 'Error al subir archivos' });
+    } finally {
+      setUploadingFiles(false);
+      if (adjuntoInputRef.current) adjuntoInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAdjunto = async (idx: number) => {
+    const adj = adjuntos[idx];
+    try {
+      await fetch('/api/admin/comunicaciones/adjuntos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: adj.path }),
+      });
+    } catch { /* best effort */ }
+    setAdjuntos(prev => prev.filter((_, i) => i !== idx));
+  };
+
   // Send
   const handleEnviar = async (modo: 'ahora' | 'programar') => {
     if (!destinatarioEmail) return setToast({ type: 'error', msg: 'Falta email de destinatario' });
@@ -249,6 +300,7 @@ function NuevoCorreoTab() {
         cuenta_envio: cuenta,
         asunto,
         cuerpo,
+        adjuntos,
         enviar_ahora: modo === 'ahora',
         programado_para: programadoPara,
       },
@@ -267,6 +319,7 @@ function NuevoCorreoTab() {
         setAsunto('');
         setCuerpo('');
         setCamposExtra({});
+        setAdjuntos([]);
       },
       onError: (err: any) => setToast({ type: 'error', msg: String(err) }),
     });
@@ -493,6 +546,54 @@ function NuevoCorreoTab() {
             />
           </div>
 
+          {/* Adjuntos */}
+          <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-700">📎 Adjuntos</p>
+              <button
+                onClick={() => adjuntoInputRef.current?.click()}
+                disabled={uploadingFiles}
+                className="text-xs font-medium text-[#0891B2] bg-cyan-50 px-3 py-1.5 rounded-lg hover:bg-cyan-100 disabled:opacity-50"
+              >
+                {uploadingFiles ? 'Subiendo...' : '+ Adjuntar archivo'}
+              </button>
+              <input
+                ref={adjuntoInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={e => e.target.files && handleUploadAdjuntos(e.target.files)}
+              />
+            </div>
+
+            {/* Drop zone */}
+            <div
+              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) handleUploadAdjuntos(e.dataTransfer.files); }}
+              onDragOver={e => e.preventDefault()}
+              className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center text-xs text-slate-400 hover:border-[#0891B2] hover:bg-cyan-50/20 transition-all cursor-pointer"
+              onClick={() => adjuntoInputRef.current?.click()}
+            >
+              Arrastra archivos aquí — PDF, DOCX, XLSX, JPG, PNG (máx. 25 MB)
+            </div>
+
+            {/* File list */}
+            {adjuntos.length > 0 && (
+              <div className="space-y-1.5">
+                {adjuntos.map((adj: AdjuntoMeta, i: number) => (
+                  <div key={adj.path} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{adj.name.endsWith('.pdf') ? '📕' : adj.name.match(/\.(jpg|jpeg|png)$/i) ? '🖼️' : '📘'}</span>
+                      <span className="text-xs font-medium text-slate-700">{adj.name}</span>
+                      <span className="text-xs text-slate-400">{(adj.size / 1024).toFixed(0)} KB</span>
+                    </div>
+                    <button onClick={() => handleRemoveAdjunto(i)} className="text-xs text-red-500 hover:text-red-700 font-medium">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Pie preview */}
           {pieTexto && (
             <div className="border-t border-slate-200 pt-3">
@@ -538,6 +639,18 @@ function NuevoCorreoTab() {
               </div>
             )}
           </div>
+
+          {/* Adjuntos summary */}
+          {adjuntos.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs font-medium text-blue-700 mb-1.5">📎 {adjuntos.length} adjunto{adjuntos.length !== 1 ? 's' : ''}</p>
+              <div className="space-y-1">
+                {adjuntos.map((adj: AdjuntoMeta) => (
+                  <p key={adj.path} className="text-xs text-blue-600">{adj.name} ({(adj.size / 1024).toFixed(0)} KB)</p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Cuenta de envío */}
           <div>
@@ -1154,6 +1267,7 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
     `/api/admin/comunicaciones?tipo=correos&estado=${estado}&limit=30`
   );
   const { mutate, loading: acting } = useMutate();
+  const [editando, setEditando] = useState<Correo | null>(null);
 
   const handleAccion = async (id: string, accion: 'enviar' | 'cancelar') => {
     await mutate('/api/admin/comunicaciones', {
@@ -1176,6 +1290,7 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
   }
 
   return (
+    <>
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
@@ -1189,7 +1304,9 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {res.data.map((c: Correo) => (
+          {res.data.map((c: Correo) => {
+            const tieneAdjuntos = Array.isArray(c.adjuntos) && c.adjuntos.length > 0;
+            return (
             <tr key={c.id} className="hover:bg-slate-50">
               <td className="py-3 px-4">
                 <div className="flex items-center gap-2">
@@ -1200,7 +1317,12 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
                   </div>
                 </div>
               </td>
-              <td className="py-3 px-4 text-slate-700 max-w-[250px] truncate">{c.asunto}</td>
+              <td className="py-3 px-4 text-slate-700 max-w-[250px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate">{c.asunto}</span>
+                  {tieneAdjuntos && <span title={`${c.adjuntos.length} adjunto${c.adjuntos.length !== 1 ? 's' : ''}`} className="shrink-0">📎</span>}
+                </div>
+              </td>
               <td className="py-3 px-4 text-xs text-slate-500">
                 {estado === 'programado' && c.programado_para
                   ? new Date(c.programado_para).toLocaleDateString('es-GT', {
@@ -1219,6 +1341,13 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
                 <td className="py-3 px-4 text-right">
                   <div className="flex justify-end gap-2">
                     <button
+                      onClick={() => setEditando(c)}
+                      disabled={acting}
+                      className="px-2.5 py-1 text-xs font-medium bg-amber-500 text-white rounded-md hover:bg-amber-400 disabled:opacity-50"
+                    >
+                      Editar
+                    </button>
+                    <button
                       onClick={() => handleAccion(c.id, 'enviar')}
                       disabled={acting}
                       className="px-2.5 py-1 text-xs font-medium bg-[#0891B2] text-white rounded-md hover:bg-[#0891B2]/90 disabled:opacity-50"
@@ -1236,11 +1365,239 @@ function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
                 </td>
               )}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       <div className="px-4 py-2 border-t border-slate-200 text-xs text-slate-400">
         {res.total} correo{res.total !== 1 ? 's' : ''}
+      </div>
+    </div>
+
+    {/* Modal editar */}
+    {editando && (
+      <EditarCorreoModal
+        correo={editando}
+        onClose={() => setEditando(null)}
+        onSaved={() => { setEditando(null); refetch(); }}
+      />
+    )}
+    </>
+  );
+}
+
+// ── Modal: Editar correo programado ──────────────────────────────────────
+
+function EditarCorreoModal({ correo, onClose, onSaved }: {
+  correo: Correo;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { mutate, loading: saving } = useMutate();
+  const [asunto, setAsunto] = useState(correo.asunto);
+  const [cuerpo, setCuerpo] = useState(correo.cuerpo);
+  const [email, setEmail] = useState(correo.destinatario_email);
+  const [cc, setCc] = useState(correo.cc_emails ?? '');
+  const [cuenta, setCuenta] = useState(correo.cuenta_envio);
+  const [adjuntos, setAdjuntos] = useState<AdjuntoMeta[]>(
+    Array.isArray(correo.adjuntos) ? correo.adjuntos : []
+  );
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (files: FileList) => {
+    setUploadingFiles(true);
+    try {
+      const formData = new FormData();
+      for (const f of Array.from(files)) formData.append('files', f);
+      const res = await fetch('/api/admin/comunicaciones/adjuntos', {
+        method: 'POST',
+        body: formData,
+        redirect: 'manual',
+      });
+      if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 405) {
+        setError('Sesión expirada. Recarga la página.');
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? 'Error al subir'); return; }
+      setAdjuntos(prev => [...prev, ...data.adjuntos]);
+    } catch (err: any) {
+      setError(err.message ?? 'Error al subir');
+    } finally {
+      setUploadingFiles(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemove = async (idx: number) => {
+    const adj = adjuntos[idx];
+    try {
+      await fetch('/api/admin/comunicaciones/adjuntos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: adj.path }),
+      });
+    } catch { /* best effort */ }
+    setAdjuntos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleGuardar = async () => {
+    if (!email.trim()) { setError('Falta email'); return; }
+    if (!asunto.trim()) { setError('Falta asunto'); return; }
+
+    await mutate('/api/admin/comunicaciones', {
+      body: {
+        accion: 'actualizar',
+        id: correo.id,
+        destinatario_email: email,
+        cc_emails: cc.trim() || null,
+        cuenta_envio: cuenta,
+        asunto,
+        cuerpo,
+        adjuntos,
+      },
+      onSuccess: () => onSaved(),
+      onError: (err: any) => setError(String(err)),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+          <h3 className="text-sm font-bold text-slate-900">Editar correo programado</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Email destinatario</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">CC (opcional)</label>
+              <input
+                type="text"
+                value={cc}
+                onChange={e => setCc(e.target.value)}
+                placeholder="cc1@ejemplo.com, cc2@ejemplo.com"
+                className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Cuenta de envío</label>
+            <select
+              value={cuenta}
+              onChange={e => setCuenta(e.target.value)}
+              className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-cyan-500"
+            >
+              {CUENTAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Asunto</label>
+            <input
+              type="text"
+              value={asunto}
+              onChange={e => setAsunto(e.target.value)}
+              className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Contenido</label>
+            <textarea
+              value={cuerpo}
+              onChange={e => setCuerpo(e.target.value)}
+              rows={10}
+              className="w-full mt-1 px-4 py-3 text-sm border border-slate-200 rounded-lg font-sans leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+            />
+          </div>
+
+          {/* Adjuntos */}
+          <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-700">📎 Adjuntos</p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFiles}
+                className="text-xs font-medium text-[#0891B2] bg-cyan-50 px-3 py-1.5 rounded-lg hover:bg-cyan-100 disabled:opacity-50"
+              >
+                {uploadingFiles ? 'Subiendo...' : '+ Adjuntar archivo'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={e => e.target.files && handleUpload(e.target.files)}
+              />
+            </div>
+
+            <div
+              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files); }}
+              onDragOver={e => e.preventDefault()}
+              className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center text-xs text-slate-400 hover:border-[#0891B2] hover:bg-cyan-50/20 transition-all cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Arrastra archivos aquí — PDF, DOCX, XLSX, JPG, PNG (máx. 25 MB)
+            </div>
+
+            {adjuntos.length > 0 && (
+              <div className="space-y-1.5">
+                {adjuntos.map((adj: AdjuntoMeta, i: number) => (
+                  <div key={adj.path} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{adj.name.endsWith('.pdf') ? '📕' : adj.name.match(/\.(jpg|jpeg|png)$/i) ? '🖼️' : '📘'}</span>
+                      <span className="text-xs font-medium text-slate-700">{adj.name}</span>
+                      <span className="text-xs text-slate-400">{(adj.size / 1024).toFixed(0)} KB</span>
+                    </div>
+                    <button onClick={() => handleRemove(i)} className="text-xs text-red-500 hover:text-red-700 font-medium">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {adjuntos.length === 0 && (
+              <p className="text-xs text-slate-400 text-center">Sin adjuntos</p>
+            )}
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-3 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleGuardar}
+            disabled={saving}
+            className="px-5 py-2 text-sm font-semibold bg-[#1E40AF] text-white rounded-lg hover:bg-[#1E40AF]/90 disabled:opacity-50"
+          >
+            {saving ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </div>
       </div>
     </div>
   );

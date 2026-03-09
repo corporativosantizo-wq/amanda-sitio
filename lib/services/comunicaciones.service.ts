@@ -176,6 +176,32 @@ export async function listarCorreos(params: {
   return { data: (data ?? []) as CorreoProgramado[], total: count ?? 0 };
 }
 
+export async function actualizarCorreo(
+  id: string,
+  input: Partial<Pick<CrearCorreoInput, 'destinatario_email' | 'destinatario_nombre' | 'cc_emails' | 'cuenta_envio' | 'asunto' | 'cuerpo' | 'adjuntos' | 'programado_para'>>,
+): Promise<CorreoProgramado> {
+  const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (input.destinatario_email !== undefined) updates.destinatario_email = input.destinatario_email;
+  if (input.destinatario_nombre !== undefined) updates.destinatario_nombre = input.destinatario_nombre;
+  if (input.cc_emails !== undefined) updates.cc_emails = input.cc_emails;
+  if (input.cuenta_envio !== undefined) updates.cuenta_envio = input.cuenta_envio;
+  if (input.asunto !== undefined) updates.asunto = input.asunto;
+  if (input.cuerpo !== undefined) updates.cuerpo = input.cuerpo;
+  if (input.adjuntos !== undefined) updates.adjuntos = input.adjuntos;
+  if (input.programado_para !== undefined) updates.programado_para = input.programado_para;
+
+  const { data, error } = await db()
+    .from('correos_programados')
+    .update(updates)
+    .eq('id', id)
+    .in('estado', ['borrador', 'programado'])
+    .select()
+    .single();
+
+  if (error) throw new Error('Error al actualizar correo: ' + error.message);
+  return data as CorreoProgramado;
+}
+
 export async function cancelarCorreo(id: string): Promise<void> {
   const { error } = await db()
     .from('correos_programados')
@@ -211,6 +237,27 @@ export async function enviarCorreoAhora(id: string): Promise<void> {
     ? correo.cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
     : undefined;
 
+  // Download attachments from Storage if any
+  const adjuntosArr = Array.isArray(correo.adjuntos) ? correo.adjuntos : [];
+  const attachments: Array<{ name: string; contentType: string; contentBytes: string }> = [];
+
+  for (const adj of adjuntosArr) {
+    if (!adj.path) continue;
+    const { data: fileData, error: dlError } = await db().storage
+      .from('adjuntos-correo')
+      .download(adj.path);
+    if (dlError || !fileData) {
+      console.error(`[Correo] Error descargando adjunto ${adj.path}:`, dlError?.message);
+      continue;
+    }
+    const buffer = Buffer.from(await fileData.arrayBuffer());
+    attachments.push({
+      name: adj.name,
+      contentType: adj.contentType || 'application/octet-stream',
+      contentBytes: buffer.toString('base64'),
+    });
+  }
+
   try {
     await sendMail({
       from: correo.cuenta_envio as MailboxAlias,
@@ -218,6 +265,7 @@ export async function enviarCorreoAhora(id: string): Promise<void> {
       subject: correo.asunto,
       htmlBody,
       ...(ccList && ccList.length > 0 ? { cc: ccList } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
 
     await db()
