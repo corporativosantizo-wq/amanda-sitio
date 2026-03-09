@@ -105,7 +105,7 @@ const SYSTEM_PROMPT = `Eres Molly, la asistente ejecutiva de inteligencia artifi
 
 ## EQUIPO
 - Amanda Santizo — Directora, Abogada titular
-- Lcda. Astrid Bolaños — Asesora Jurídica (gestiona asistente@papeleo.legal)
+- Asistente administrativa (gestiona asistente@papeleo.legal)
 - Daniel Herrera — Contador (gestiona contador@papeleo.legal)
 - Molly (tú) — Asistente IA ejecutiva
 
@@ -339,9 +339,8 @@ NUNCA envíes sin este flujo, aunque Amanda diga "envíalo" o "mándale" — eso
 
 ### Firmas por cuenta:
 Cuando envíes desde **asistente@papeleo.legal**, firma como:
-Lcda. Astrid Bolaños
-Asesora Jurídica
-Despacho Jurídico Amanda Santizo
+Lic. Amanda Santizo
+Despacho Jurídico
 Tel. 2335-3613 | amandasantizo.com
 
 Cuando envíes desde **contador@papeleo.legal**, firma como:
@@ -351,8 +350,7 @@ Despacho Jurídico Amanda Santizo
 Tel. 2335-3613
 
 Cuando envíes desde **amanda@papeleo.legal**, firma como:
-Lcda. Amanda Santizo
-Abogada y Notaria
+Lic. Amanda Santizo
 Despacho Jurídico
 Tel. 2335-3613 | amandasantizo.com
 

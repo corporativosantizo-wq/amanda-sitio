@@ -46,11 +46,11 @@ const ACCOUNT_DRAFT: Record<string, AccountDraftConfig> = {
     tono: 'Tono contable y profesional. Respuestas técnicas sobre facturas, pagos, retenciones fiscales. No mencionar servicios legales ni citas.',
   },
   'asistente@papeleo.legal': {
-    firma: 'Amanda Santizo | papeleo.legal',
+    firma: 'Lic. Amanda Santizo | Despacho Jurídico',
     tono: 'Tono cordial y profesional. Respuestas amables para consultas generales y agendamiento.',
   },
   'amanda@papeleo.legal': {
-    firma: 'Lcda. Amanda Santizo | IURISLEX',
+    firma: 'Lic. Amanda Santizo | Despacho Jurídico',
     tono: 'Tono personal y directo, de abogada a colega o cliente VIP. Más breve y cercano que las otras cuentas.',
   },
 };

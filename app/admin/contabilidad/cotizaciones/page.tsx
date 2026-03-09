@@ -500,7 +500,7 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
 }) {
   const [from, setFrom] = useState('amanda@papeleo.legal');
   const [mensaje, setMensaje] = useState(
-    `Estimado/a {nombre},\n\nAdjunto encontrará la cotización {numero} por un monto de Q{total} correspondiente a los servicios profesionales solicitados.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLcda. Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`
+    `Estimado/a {nombre},\n\nAdjunto encontrará la cotización {numero} por un monto de Q{total} correspondiente a los servicios profesionales solicitados.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
   );
   const [sending, setSending] = useState(false);
   const [progreso, setProgreso] = useState<string | null>(null);
@@ -714,7 +714,7 @@ function ReenviarModal({ cotizacion, onClose, onSent }: {
     `Cotización ${cotizacion.numero} — Despacho Jurídico Amanda Santizo`
   );
   const [mensaje, setMensaje] = useState(
-    `Estimado/a ${clienteNombre},\n\nLe reenvío la cotización ${cotizacion.numero} por un monto de ${Q(cotizacion.total)}.\n\nQuedamos a sus órdenes.\n\nLcda. Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`
+    `Estimado/a ${clienteNombre},\n\nLe reenvío la cotización ${cotizacion.numero} por un monto de ${Q(cotizacion.total)}.\n\nQuedamos a sus órdenes.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
