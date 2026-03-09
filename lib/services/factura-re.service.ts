@@ -29,23 +29,121 @@ export interface SolicitudFacturaParams {
 // ── Notificación (se llama automáticamente al confirmar pago) ───────────────
 
 /**
- * Notifica a Amanda por Telegram que se registró un pago y hay solicitud
- * de factura pendiente de aprobación. NO envía el email a RE.
+ * Notifica a Amanda por Telegram que se registró un pago.
+ *
+ * Regla de factura:
+ * - Si es anticipo y NO cubre el total → solo notificar anticipo, NO solicitar factura
+ * - Si el monto total pagado >= total de la cotización → solicitar factura
+ * - Amanda puede solicitar factura manualmente en cualquier momento
  */
 export async function notificarPagoParaFactura(pagoId: string): Promise<void> {
   try {
-    const datos = await obtenerDatosPago(pagoId);
-    if (!datos) return;
+    // Fetch pago con datos extra para decidir si solicitar factura
+    const { data: pago, error } = await db()
+      .from('pagos')
+      .select(`
+        id, monto, fecha_pago, referencia_bancaria, notas, cobro_id,
+        es_anticipo, cotizacion_id,
+        cliente:clientes!cliente_id (id, nombre, nit)
+      `)
+      .eq('id', pagoId)
+      .single();
 
-    const montoFmt = `Q${datos.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+    if (error || !pago) return;
 
-    await sendTelegramMessage(
-      `📄 Pago registrado: ${datos.cliente_nombre} — ${montoFmt}\n` +
-      `Concepto: ${datos.concepto}\n` +
-      `NIT: ${datos.cliente_nit || 'CF'}\n\n` +
-      `Preparé solicitud de factura para RE. Aprueba desde el asistente contable.`,
-    );
-    console.log('[FacturaRE] Telegram de notificación enviado para pago', pagoId);
+    const cliente = pago.cliente as any;
+    if (!cliente) return;
+
+    const montoFmt = `Q${pago.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+
+    // Check if total is covered (sum all confirmed + this new pago for the cotización)
+    let totalCubierto = false;
+    let saldoPendiente = 0;
+    let totalCotizacion = 0;
+
+    if (pago.cotizacion_id) {
+      const { data: cot } = await db()
+        .from('cotizaciones')
+        .select('total')
+        .eq('id', pago.cotizacion_id)
+        .single();
+
+      if (cot) {
+        totalCotizacion = cot.total;
+        // Sum all confirmed payments for this cotización
+        const { data: pagos } = await db()
+          .from('pagos')
+          .select('monto')
+          .eq('cotizacion_id', pago.cotizacion_id)
+          .eq('estado', 'confirmado');
+
+        const totalPagado = (pagos ?? []).reduce((s: number, p: any) => s + p.monto, 0);
+        saldoPendiente = Math.max(0, totalCotizacion - totalPagado);
+        totalCubierto = totalPagado >= totalCotizacion;
+      }
+    } else if (pago.cobro_id) {
+      const { data: cobro } = await db()
+        .from('cobros')
+        .select('monto, monto_pagado, saldo_pendiente')
+        .eq('id', pago.cobro_id)
+        .single();
+
+      if (cobro) {
+        totalCotizacion = cobro.monto;
+        saldoPendiente = cobro.saldo_pendiente;
+        totalCubierto = cobro.saldo_pendiente <= 0;
+      }
+    }
+
+    // Determine concepto
+    let concepto = pago.notas || 'Servicios legales';
+    if (pago.cobro_id) {
+      const { data: cobro } = await db()
+        .from('cobros')
+        .select('concepto')
+        .eq('id', pago.cobro_id)
+        .single();
+      if (cobro?.concepto) concepto = cobro.concepto;
+    }
+
+    const saldoFmt = `Q${saldoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+
+    if (pago.es_anticipo && !totalCubierto) {
+      // Anticipo that doesn't cover total → do NOT suggest invoice
+      await sendTelegramMessage(
+        `💰 <b>Anticipo registrado</b>\n\n` +
+        `<b>Cliente:</b> ${cliente.nombre}\n` +
+        `<b>Monto:</b> ${montoFmt}\n` +
+        `<b>Concepto:</b> ${concepto}\n` +
+        `<b>Pendiente:</b> ${saldoFmt}\n\n` +
+        `Factura se solicitará al completar el pago.`,
+        { parse_mode: 'HTML' },
+      );
+      console.log('[FacturaRE] Anticipo notificado (sin solicitud de factura) para pago', pagoId);
+    } else if (totalCubierto) {
+      // Full payment → suggest invoice
+      await sendTelegramMessage(
+        `📄 <b>Pago completo registrado</b>\n\n` +
+        `<b>Cliente:</b> ${cliente.nombre} — ${montoFmt}\n` +
+        `<b>Concepto:</b> ${concepto}\n` +
+        `<b>NIT:</b> ${cliente.nit || 'CF'}\n\n` +
+        `Preparé solicitud de factura para RE. Aprueba desde el asistente contable.`,
+        { parse_mode: 'HTML' },
+      );
+      console.log('[FacturaRE] Telegram de solicitud de factura enviado para pago', pagoId);
+    } else {
+      // Partial payment (not anticipo) that doesn't cover total
+      await sendTelegramMessage(
+        `💰 <b>Pago parcial registrado</b>\n\n` +
+        `<b>Cliente:</b> ${cliente.nombre}\n` +
+        `<b>Monto:</b> ${montoFmt}\n` +
+        `<b>Concepto:</b> ${concepto}\n` +
+        `<b>Pendiente:</b> ${saldoFmt}\n\n` +
+        `Factura se solicitará al completar el pago.`,
+        { parse_mode: 'HTML' },
+      );
+      console.log('[FacturaRE] Pago parcial notificado (sin solicitud de factura) para pago', pagoId);
+    }
   } catch (err: any) {
     console.error('[FacturaRE] Error notificando pago:', err.message);
   }
