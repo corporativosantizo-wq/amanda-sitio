@@ -44,9 +44,10 @@ export async function listarPagos(params: ListParams = {}) {
     .from('pagos')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, codigo, nombre),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit),
       factura:facturas!factura_id (id, numero, total),
-      cotizacion:cotizaciones!cotizacion_id (id, numero, total)
+      cotizacion:cotizaciones!cotizacion_id (id, numero, total),
+      cobro:cobros!cobro_id (id, factura_solicitada)
     `, { count: 'exact' })
     .order('fecha_pago', { ascending: false })
     .range(offset, offset + limit - 1);

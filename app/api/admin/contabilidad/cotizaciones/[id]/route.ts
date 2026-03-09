@@ -22,12 +22,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const cotizacion = await obtenerCotizacion(id);
 
-    // Fetch pagos linked to this cotización
-    const { data: pagos } = await createAdminClient()
+    // Fetch pagos linked to this cotización (include cobro for factura_solicitada)
+    const { data: pagosRaw } = await createAdminClient()
       .from('pagos')
-      .select('id, numero, monto, estado, tipo, metodo, fecha_pago, es_anticipo, confirmado_at')
+      .select('id, numero, monto, estado, tipo, metodo, fecha_pago, es_anticipo, confirmado_at, cobro:cobros!cobro_id (id, factura_solicitada)')
       .eq('cotizacion_id', id)
       .order('fecha_pago', { ascending: false });
+
+    // Flatten cobro.factura_solicitada into each pago
+    const pagos = (pagosRaw ?? []).map((p: any) => ({
+      ...p,
+      factura_solicitada: p.cobro?.factura_solicitada ?? false,
+      cobro: undefined,
+    }));
 
     return NextResponse.json({ ...cotizacion, pagos: pagos ?? [] });
   } catch (error) {

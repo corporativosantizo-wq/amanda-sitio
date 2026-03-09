@@ -34,10 +34,10 @@ interface Pago {
   es_anticipo: boolean;
   fecha_pago: string;
   notas: string | null;
-  factura_solicitada: boolean;
   factura: { numero: string } | null;
   cotizacion: { id: string; numero: string } | null;
   cliente: { nombre: string; nit: string | null } | null;
+  cobro: { id: string; factura_solicitada: boolean } | null;
 }
 
 export default function PagosListPage() {
@@ -180,13 +180,13 @@ export default function PagosListPage() {
                             ✓ Confirmar
                           </button>
                         )}
-                        {p.estado === 'confirmado' && !p.es_anticipo && !p.factura_solicitada && (
+                        {p.estado === 'confirmado' && !p.es_anticipo && !p.cobro?.factura_solicitada && (
                           <button onClick={(e) => { e.stopPropagation(); setFacturaModal(p); }}
                             className="px-2.5 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors">
                             📄 Solicitar factura
                           </button>
                         )}
-                        {p.factura_solicitada && (
+                        {p.cobro?.factura_solicitada && (
                           <span className="px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md">
                             ✅ Factura solicitada
                           </span>

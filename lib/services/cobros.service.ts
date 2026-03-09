@@ -362,7 +362,7 @@ export async function cotizacionesSinCobro() {
   const { data: cots } = await db()
     .from('cotizaciones')
     .select(`
-      id, numero, total, estado, cliente_id, fecha_aceptacion, created_at,
+      id, numero, total, estado, cliente_id, aceptada_at, created_at,
       cliente:clientes!cliente_id (id, nombre, email)
     `)
     .eq('estado', 'aceptada');
@@ -403,7 +403,7 @@ export async function cotizacionesSinCobro() {
       monto_pagado: totalPagado,
       saldo_pendiente: saldo,
       estado: saldo <= 0 ? 'pagado' : 'pendiente',
-      fecha_emision: cot.fecha_aceptacion ?? cot.created_at?.split('T')[0] ?? '',
+      fecha_emision: cot.aceptada_at?.split('T')[0] ?? cot.created_at?.split('T')[0] ?? '',
       fecha_vencimiento: null,
       dias_credito: 0,
       notas: null,

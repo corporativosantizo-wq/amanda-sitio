@@ -208,17 +208,41 @@ Tel. 2335-3613</p>
   });
   console.log('[FacturaRE] Email enviado a RE Contadores para pago', pago_id);
 
-  // 2. Registrar en BD
+  // 2. Marcar factura_solicitada en cobro asociado (pagos no tiene este campo)
   try {
-    await db()
+    // Buscar cobro_id del pago
+    const { data: pagoData } = await db()
       .from('pagos')
-      .update({
-        factura_solicitada: true,
-        factura_solicitada_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', pago_id);
-    console.log('[FacturaRE] BD actualizada: factura_solicitada=true para pago', pago_id);
+      .select('cobro_id, cotizacion_id')
+      .eq('id', pago_id)
+      .single();
+
+    let cobroId = pagoData?.cobro_id;
+
+    // Si no tiene cobro directo, buscar cobro por cotizacion_id
+    if (!cobroId && pagoData?.cotizacion_id) {
+      const { data: cobro } = await db()
+        .from('cobros')
+        .select('id')
+        .eq('cotizacion_id', pagoData.cotizacion_id)
+        .limit(1)
+        .maybeSingle();
+      cobroId = cobro?.id;
+    }
+
+    if (cobroId) {
+      await db()
+        .from('cobros')
+        .update({
+          factura_solicitada: true,
+          factura_solicitada_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cobroId);
+      console.log('[FacturaRE] BD actualizada: factura_solicitada=true para cobro', cobroId);
+    } else {
+      console.log('[FacturaRE] Pago sin cobro asociado, email enviado sin marcar BD', pago_id);
+    }
   } catch (err: any) {
     console.error('[FacturaRE] Error actualizando BD:', err.message);
   }
