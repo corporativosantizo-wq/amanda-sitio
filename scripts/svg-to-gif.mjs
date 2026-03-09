@@ -4,19 +4,19 @@
 
 import puppeteer from 'puppeteer';
 import GIFEncoder from 'gif-encoder-2';
-import { createCanvas, createImageData } from 'canvas';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const INPUT = resolve(__dirname, '../public/email/robot-abogado-walking-v2.svg');
+const INPUT = resolve(__dirname, '../public/email/robot-firma-pro-v2.svg');
 const OUTPUT = resolve(__dirname, '../public/email/firma-robot.gif');
-const WIDTH = 280;
-const HEIGHT = 102; // viewBox 0 0 400 145 → aspect ratio ~2.76:1
+// SVG viewBox: 300x130 → scale to 200px wide, proportional height
+const WIDTH = 200;
+const HEIGHT = Math.round(200 * (130 / 300)); // 87
 const FPS = 10;
-const DURATION_MS = 12000; // 12s full cycle
+const DURATION_MS = 10000; // 10s full cycle
 const FRAME_DELAY = Math.round(1000 / FPS);
 const TOTAL_FRAMES = Math.round(DURATION_MS / FRAME_DELAY);
 
@@ -24,7 +24,6 @@ async function main() {
   console.log(`Converting SVG to GIF: ${TOTAL_FRAMES} frames at ${FPS}fps`);
   console.log(`Size: ${WIDTH}x${HEIGHT}, Duration: ${DURATION_MS}ms`);
 
-  // Read from the already-updated SVG in public/email
   const svgContent = readFileSync(INPUT, 'utf-8');
 
   const browser = await puppeteer.launch({
@@ -33,9 +32,8 @@ async function main() {
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 1 });
+  await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 2 });
 
-  // Create HTML page with the SVG
   const html = `<!DOCTYPE html>
 <html><head><style>
   * { margin: 0; padding: 0; }
@@ -45,16 +43,17 @@ async function main() {
 <body>${svgContent}</body></html>`;
 
   await page.setContent(html, { waitUntil: 'networkidle0' });
-
-  // Wait a moment for animations to start
   await new Promise(r => setTimeout(r, 500));
 
-  // Create GIF encoder
+  // Use 2x capture for quality, then resize to 1x for GIF
+  const capW = WIDTH * 2;
+  const capH = HEIGHT * 2;
+
   const encoder = new GIFEncoder(WIDTH, HEIGHT, 'neuquant', true);
   encoder.setDelay(FRAME_DELAY);
-  encoder.setRepeat(0); // infinite loop
+  encoder.setRepeat(0);
   encoder.setTransparent(0x00000000);
-  encoder.setQuality(10);
+  encoder.setQuality(8);
   encoder.start();
 
   console.log('Capturing frames...');
@@ -66,7 +65,6 @@ async function main() {
       clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT },
     });
 
-    // Decode PNG to raw pixels using canvas
     const { createCanvas: cc, loadImage } = await import('canvas');
     const img = await loadImage(screenshot);
     const canvas = cc(WIDTH, HEIGHT);
@@ -80,7 +78,6 @@ async function main() {
       console.log(`  Frame ${i + 1}/${TOTAL_FRAMES}`);
     }
 
-    // Advance animation by waiting
     await new Promise(r => setTimeout(r, FRAME_DELAY));
   }
 
