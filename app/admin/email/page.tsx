@@ -335,13 +335,21 @@ export default function MollyMailPage() {
           <h1 className="font-display text-3xl font-bold text-navy">Molly Mail</h1>
           <p className="text-slate mt-1">Asistente de email con IA</p>
         </div>
-        <button
-          onClick={handleTrigger}
-          disabled={triggerLoading}
-          className="px-4 py-2 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-cyan/90 transition-colors disabled:opacity-50"
-        >
-          {triggerLoading ? 'Revisando...' : 'Revisar emails ahora'}
-        </button>
+        <div className="flex gap-3">
+          <a
+            href="/admin/email/comunicaciones"
+            className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            📝 Nuevo correo
+          </a>
+          <button
+            onClick={handleTrigger}
+            disabled={triggerLoading}
+            className="px-4 py-2 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-cyan/90 transition-colors disabled:opacity-50"
+          >
+            {triggerLoading ? 'Revisando...' : 'Revisar emails ahora'}
+          </button>
+        </div>
       </div>
 
       {/* Stats bar */}
