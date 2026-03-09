@@ -619,7 +619,7 @@ export async function sendMail(params: {
   console.log('[sendMail] POST', url);
 
   // Inject robot signature image before pie de confidencialidad (or at end)
-  const ROBOT_IMG = '<img src="https://amandasantizo.com/email/firma-robot.svg" width="140" alt="Despacho Jurídico — Amanda Santizo" style="margin-top:12px;display:block;">';
+  const ROBOT_IMG = '<img src="https://amandasantizo.com/email/firma-robot.gif" width="200" alt="Despacho Jurídico — Amanda Santizo" style="margin-top:12px;display:block;">';
   const pieMarker = '<div style="margin-top:24px;font-size:11px;color:#94a3b8;">';
   let htmlContent = params.htmlBody;
   if (htmlContent.includes(pieMarker)) {
