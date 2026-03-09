@@ -260,8 +260,9 @@ const CONTABLE_TOOLS: Anthropic.Messages.Tool[] = [
       },
       required: ['to', 'subject', 'htmlBody'],
     },
+    cache_control: { type: 'ephemeral' },
   },
-];
+] as Anthropic.Messages.Tool[];
 
 // ── Tool Handlers ───────────────────────────────────────────────────────────
 
@@ -337,7 +338,7 @@ async function handleConsultarPagos(input: any): Promise<string> {
         fecha_pago: p.fecha_pago,
         referencia: p.referencia_bancaria,
         factura: p.factura?.numero ?? null,
-        factura_solicitada: p.factura_solicitada ?? false,
+        factura_solicitada: p.cobro?.factura_solicitada ?? false,
       })),
     });
   } catch (err: any) {
@@ -585,24 +586,33 @@ export async function POST(req: Request) {
 
     return Response.json({ role: 'assistant', content: reply });
   } catch (error: any) {
-    console.error('[ContableAI] Error:', error);
+    const status = error?.status ?? error?.error?.status;
+    const errorMsg = error?.message ?? error?.error?.message ?? String(error);
+    console.error('[ContableAI] Error:', status, errorMsg);
 
-    if (error?.status === 429) {
+    if (status === 429) {
       return Response.json(
-        { error: 'Límite de uso alcanzado. Intenta de nuevo en unos segundos.' },
+        { error: 'Daniel está ocupado. Intenta de nuevo en 30 segundos.' },
         { status: 429 },
       );
     }
 
-    if (error?.status === 529) {
+    if (status === 529) {
       return Response.json(
-        { error: 'El asistente contable está ocupado. Intenta de nuevo en unos segundos.' },
+        { error: 'El servicio de IA está saturado. Intenta de nuevo en unos segundos.' },
         { status: 503 },
       );
     }
 
+    if (status === 400) {
+      return Response.json(
+        { error: `Error en la solicitud: ${errorMsg}` },
+        { status: 400 },
+      );
+    }
+
     return Response.json(
-      { error: 'Error interno del asistente contable' },
+      { error: `Error del asistente contable: ${errorMsg}` },
       { status: 500 },
     );
   }
