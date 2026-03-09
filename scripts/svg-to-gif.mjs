@@ -14,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const INPUT = resolve(__dirname, '../public/email/robot-abogado-walking-v2.svg');
 const OUTPUT = resolve(__dirname, '../public/email/firma-robot.gif');
 const WIDTH = 280;
-const HEIGHT = 112;
+const HEIGHT = 102; // viewBox 0 0 400 145 → aspect ratio ~2.76:1
 const FPS = 10;
 const DURATION_MS = 12000; // 12s full cycle
 const FRAME_DELAY = Math.round(1000 / FPS);
@@ -24,12 +24,8 @@ async function main() {
   console.log(`Converting SVG to GIF: ${TOTAL_FRAMES} frames at ${FPS}fps`);
   console.log(`Size: ${WIDTH}x${HEIGHT}, Duration: ${DURATION_MS}ms`);
 
-  // Copy SVG to public for serving
-  const svgContent = readFileSync(
-    resolve('/Users/amandasantizo/Downloads/robot-abogado-walking-v2.svg'),
-    'utf-8'
-  );
-  writeFileSync(INPUT, svgContent);
+  // Read from the already-updated SVG in public/email
+  const svgContent = readFileSync(INPUT, 'utf-8');
 
   const browser = await puppeteer.launch({
     headless: true,
