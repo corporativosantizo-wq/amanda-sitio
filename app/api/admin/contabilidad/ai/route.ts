@@ -495,7 +495,7 @@ async function callWithRetry(
       return await anthropic.messages.create(params);
     } catch (err: any) {
       const status = err?.status ?? err?.error?.status;
-      if (status === 529 && attempt < maxRetries) {
+      if ((status === 429 || status === 529) && attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, attempt * 2000));
         continue;
       }
@@ -522,11 +522,23 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    // Initial call
+    // ── Inyectar fecha actual al system prompt ──────────────────────────
+    const hoyGT = new Date().toLocaleDateString('es-GT', {
+      timeZone: 'America/Guatemala',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const isoHoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+    const dynamicPrompt = SYSTEM_PROMPT + `\n\n## FECHA ACTUAL\nHoy es ${hoyGT} (${isoHoy}). Usa SIEMPRE esta fecha como referencia.`;
+
+    // Initial call (with prompt caching on system prompt)
     let response = await callWithRetry({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
+      system: [{ type: 'text', text: dynamicPrompt, cache_control: { type: 'ephemeral' } }],
       tools: CONTABLE_TOOLS,
       messages: anthropicMessages,
     });
@@ -561,7 +573,7 @@ export async function POST(req: Request) {
       response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
+        system: [{ type: 'text', text: dynamicPrompt, cache_control: { type: 'ephemeral' } }],
         tools: CONTABLE_TOOLS,
         messages: conversationMessages,
       });
@@ -574,6 +586,13 @@ export async function POST(req: Request) {
     return Response.json({ role: 'assistant', content: reply });
   } catch (error: any) {
     console.error('[ContableAI] Error:', error);
+
+    if (error?.status === 429) {
+      return Response.json(
+        { error: 'Límite de uso alcanzado. Intenta de nuevo en unos segundos.' },
+        { status: 429 },
+      );
+    }
 
     if (error?.status === 529) {
       return Response.json(
