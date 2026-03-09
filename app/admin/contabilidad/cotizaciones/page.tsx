@@ -402,7 +402,10 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled 
     setOpen(false);
     setDescargando(true);
     try {
-      const res = await fetch(`/api/admin/contabilidad/cotizaciones/${cotId}/pdf`);
+      const res = await fetch(`/api/admin/contabilidad/cotizaciones/${cotId}/pdf`, { redirect: 'manual' });
+      if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401 || (res.status >= 300 && res.status < 400)) {
+        throw new Error('Sesión expirada. Recarga la página para continuar.');
+      }
       if (!res.ok) throw new Error('Error al generar PDF');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -503,7 +506,16 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
           subject_template: 'Cotización {numero} — Despacho Jurídico Amanda Santizo',
           mensaje_template: mensaje,
         }),
+        redirect: 'manual',
       });
+
+      // Clerk session expired → middleware redirects to login → 405
+      if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401 || (res.status >= 300 && res.status < 400)) {
+        onError('Sesión expirada. Recarga la página para continuar.');
+        setSending(false);
+        setProgreso(null);
+        return;
+      }
 
       const result = await res.json();
 
