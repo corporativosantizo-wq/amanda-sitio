@@ -618,19 +618,9 @@ export async function sendMail(params: {
   const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
   console.log('[sendMail] POST', url);
 
-  // Inject robot signature image before pie de confidencialidad (or at end)
-  const ROBOT_IMG = '<img src="https://amandasantizo.com/email/firma-robot.gif" width="200" alt="Despacho Jurídico — Amanda Santizo" style="margin-top:12px;display:block;">';
-  const pieMarker = '<div style="margin-top:24px;font-size:11px;color:#94a3b8;">';
-  let htmlContent = params.htmlBody;
-  if (htmlContent.includes(pieMarker)) {
-    htmlContent = htmlContent.replace(pieMarker, ROBOT_IMG + pieMarker);
-  } else {
-    htmlContent = htmlContent + ROBOT_IMG;
-  }
-
   const message: any = {
     subject: params.subject,
-    body: { contentType: 'HTML', content: htmlContent },
+    body: { contentType: 'HTML', content: params.htmlBody },
     toRecipients: toList.map((addr) => ({ emailAddress: { address: addr } })),
   };
 
