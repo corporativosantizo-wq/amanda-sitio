@@ -208,12 +208,12 @@ export default function CotizacionDetallePage() {
           </div>
           <p className="text-sm text-slate-500 mt-1">{estado.icon} {estado.description}</p>
           {cot.envio_programado && cot.envio_programado_fecha && (
-            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
-              <span className="text-amber-600 text-sm">🕐</span>
-              <span className="text-sm font-medium text-amber-800">
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg">
+              <span className="text-violet-600 text-sm">📅</span>
+              <span className="text-sm font-medium text-violet-800">
                 Envío programado:{' '}
                 {new Date(cot.envio_programado_fecha).toLocaleDateString('es-GT', {
-                  day: 'numeric', month: 'short', year: 'numeric',
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
                   hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala',
                 })}
               </span>
@@ -235,9 +235,9 @@ export default function CotizacionDetallePage() {
                 <button
                   onClick={cancelarEnvioProgramado}
                   disabled={actuando}
-                  className="px-3 py-2 text-sm font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
+                  className="px-3 py-2 text-sm font-medium border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
                 >
-                  🕐 Cancelar envío programado
+                  📅 Cancelar envío programado
                 </button>
               ) : (
                 <button
@@ -300,6 +300,33 @@ export default function CotizacionDetallePage() {
           </button>
         </div>
       </div>
+
+      {/* Envío programado banner */}
+      {cot.envio_programado && cot.envio_programado_fecha && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-5 border-l-4 border-l-violet-500">
+          <div className="flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <span className="text-lg shrink-0">📅</span>
+              <div>
+                <h3 className="text-sm font-bold text-violet-900 mb-0.5">Envío programado</h3>
+                <p className="text-sm text-violet-700">
+                  {new Date(cot.envio_programado_fecha).toLocaleDateString('es-GT', {
+                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala',
+                  })}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={cancelarEnvioProgramado}
+              disabled={actuando}
+              className="px-3 py-1.5 text-sm font-medium border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-100 transition-colors disabled:opacity-50"
+            >
+              Cancelar programacion
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Nota importante banner */}
       {cot.notas_cliente && (

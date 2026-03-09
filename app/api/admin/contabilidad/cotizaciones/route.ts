@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     // Parámetros de filtro
     const params = {
       estado: searchParams.get('estado') as EstadoCotizacion | undefined,
+      programadas: searchParams.get('programadas') === 'true' || undefined,
       cliente_id: searchParams.get('cliente_id') ?? undefined,
       page: parseInt(searchParams.get('page') ?? '1'),
       limit: parseInt(searchParams.get('limit') ?? '20'),

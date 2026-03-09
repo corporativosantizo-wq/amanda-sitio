@@ -35,6 +35,7 @@ interface ListResponse {
 const ESTADOS = [
   { value: '', label: 'Todos' },
   { value: 'borrador', label: 'Borrador' },
+  { value: 'programadas', label: '📅 Programadas' },
   { value: 'enviada', label: 'Enviada' },
   { value: 'aceptada', label: 'Aceptada' },
   { value: 'rechazada', label: 'Rechazada' },
@@ -59,7 +60,11 @@ export default function CotizacionesPage() {
 
   // Build URL
   const params = new URLSearchParams();
-  if (estado) params.set('estado', estado);
+  if (estado === 'programadas') {
+    params.set('programadas', 'true');
+  } else if (estado) {
+    params.set('estado', estado);
+  }
   if (busqueda) params.set('q', busqueda);
   params.set('page', String(page));
   params.set('limit', '15');
@@ -265,7 +270,22 @@ export default function CotizacionesPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <Badge variant={cot.estado}>{cot.estado}</Badge>
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge variant={cot.estado}>{cot.estado}</Badge>
+                            {cot.envio_programado && cot.envio_programado_fecha && (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded text-xs font-medium">
+                                  📅 Programada
+                                </span>
+                                <span className="text-[10px] text-violet-500">
+                                  {new Date(cot.envio_programado_fecha).toLocaleDateString('es-GT', {
+                                    weekday: 'short', day: 'numeric', month: 'short',
+                                    hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala',
+                                  })}
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <span className="text-sm text-slate-500">{cot.created_at ? new Date(cot.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' }) : '—'}</span>

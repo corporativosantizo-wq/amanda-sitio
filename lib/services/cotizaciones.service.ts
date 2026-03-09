@@ -34,6 +34,7 @@ function fechaGT(d: Date): string {
 
 interface ListParams {
   estado?: EstadoCotizacion;
+  programadas?: boolean;
   cliente_id?: string;
   page?: number;
   limit?: number;
@@ -46,7 +47,7 @@ interface ListParams {
  * Lista cotizaciones con filtros, paginación y datos del cliente.
  */
 export async function listarCotizaciones(params: ListParams = {}) {
-  const { estado, cliente_id, page = 1, limit = 20, busqueda } = params;
+  const { estado, programadas, cliente_id, page = 1, limit = 20, busqueda } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
@@ -58,7 +59,9 @@ export async function listarCotizaciones(params: ListParams = {}) {
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (estado) {
+  if (programadas) {
+    query = query.eq('envio_programado', true).eq('estado', EstadoCotizacion.BORRADOR);
+  } else if (estado) {
     query = query.eq('estado', estado);
   }
   if (cliente_id) {
