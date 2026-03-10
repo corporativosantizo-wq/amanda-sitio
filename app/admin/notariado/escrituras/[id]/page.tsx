@@ -86,6 +86,9 @@ export default function EscrituraDetallePage() {
   const [showAvisoModal, setShowAvisoModal] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [accionLoading, setAccionLoading] = useState(false);
+  const [testimonioEditando, setTestimonioEditando] = useState<string | null>(null);
+  const [testimonioTexto, setTestimonioTexto] = useState('');
+  const [testimonioSaving, setTestimonioSaving] = useState(false);
 
   // Archivos de la Escritura (PDF firmado + DOCX editable)
   const [archivoPdf, setArchivoPdf] = useState<Documento | null>(null);
@@ -327,12 +330,71 @@ export default function EscrituraDetallePage() {
         }
         return;
       }
-      const { data } = await res.json();
-      setEscritura(prev => prev ? { ...prev, estado: data.estado } : prev);
+      // Refetch to get updated testimonios (created by DB trigger + texto generated)
+      await refetchEscritura();
     } catch {
       alert('Error al cambiar estado');
     }
     setAccionLoading(false);
+  };
+
+  // Refetch escritura (including testimonios)
+  const refetchEscritura = async () => {
+    try {
+      const res = await fetch(`/api/admin/notariado/escrituras/${id}`);
+      if (res.ok) setEscritura(await res.json());
+    } catch { /* ignore */ }
+  };
+
+  // Guardar texto_razon editado
+  const handleGuardarTexto = async (testimonioId: string) => {
+    setTestimonioSaving(true);
+    try {
+      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto_razon: testimonioTexto }),
+      });
+      if (!res.ok) { alert('Error al guardar'); return; }
+      await refetchEscritura();
+      setTestimonioEditando(null);
+    } catch { alert('Error al guardar'); }
+    setTestimonioSaving(false);
+  };
+
+  // Regenerar texto desde plantilla
+  const handleRegenerarTexto = async (testimonioId: string) => {
+    if (!confirm('Esto sobrescribirá el texto actual con la plantilla. ¿Continuar?')) return;
+    try {
+      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'regenerar_texto' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Error al regenerar');
+        return;
+      }
+      await refetchEscritura();
+    } catch { alert('Error al regenerar'); }
+  };
+
+  // Acción de testimonio (generar/firmar/entregar)
+  const handleTestimonioAccion = async (testimonioId: string, accion: string) => {
+    try {
+      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Error');
+        return;
+      }
+      await refetchEscritura();
+    } catch { alert('Error al cambiar estado'); }
   };
 
   // ── Render ──────────────────────────────────────────────────────────
@@ -509,6 +571,135 @@ export default function EscrituraDetallePage() {
           </div>
         )}
       </div>
+
+      {/* ── Testimonios ──────────────────────────────────────────────── */}
+      {escritura.testimonios && escritura.testimonios.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">Testimonios</h2>
+          <div className="space-y-4">
+            {escritura.testimonios.map((t: any) => {
+              const isEditing = testimonioEditando === t.id;
+              const TIPO_LABEL: Record<string, string> = {
+                primer_testimonio: 'Primer Testimonio',
+                testimonio_especial: 'Testimonio Especial',
+              };
+              const ESTADO_TEST: Record<string, string> = {
+                borrador: 'bg-slate-100 text-slate-700',
+                generado: 'bg-blue-100 text-blue-700',
+                firmado: 'bg-indigo-100 text-indigo-700',
+                entregado: 'bg-green-100 text-green-700',
+              };
+
+              return (
+                <div key={t.id} className="border border-slate-200 rounded-lg p-4">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📜</span>
+                      <span className="text-sm font-semibold text-slate-900">{TIPO_LABEL[t.tipo] ?? t.tipo}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${ESTADO_TEST[t.estado] ?? 'bg-slate-100'}`}>{t.estado}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {t.estado === 'borrador' && (
+                        <button
+                          onClick={() => handleRegenerarTexto(t.id)}
+                          className="px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                          title="Regenerar desde plantilla"
+                        >
+                          Regenerar
+                        </button>
+                      )}
+                      {t.estado === 'borrador' && t.texto_razon && (
+                        <button
+                          onClick={() => handleTestimonioAccion(t.id, 'generar')}
+                          className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                        >
+                          Marcar generado
+                        </button>
+                      )}
+                      {t.estado === 'generado' && (
+                        <button
+                          onClick={() => handleTestimonioAccion(t.id, 'firmar')}
+                          className="px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
+                        >
+                          Marcar firmado
+                        </button>
+                      )}
+                      {t.estado === 'firmado' && (
+                        <button
+                          onClick={() => handleTestimonioAccion(t.id, 'entregar')}
+                          className="px-2.5 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
+                        >
+                          Marcar entregado
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Destinatario */}
+                  <p className="text-xs text-slate-500 mb-2">
+                    <span className="font-medium">Destinatario:</span> {t.destinatario}
+                  </p>
+
+                  {/* Texto de razón */}
+                  {t.texto_razon ? (
+                    <div>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={testimonioTexto}
+                            onChange={e => setTestimonioTexto(e.target.value)}
+                            rows={10}
+                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/20"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleGuardarTexto(t.id)}
+                              disabled={testimonioSaving}
+                              className="px-3 py-1.5 text-xs font-medium bg-[#2d6bcf] text-white rounded-md hover:bg-[#2558a8] disabled:opacity-50"
+                            >
+                              {testimonioSaving ? 'Guardando...' : 'Guardar'}
+                            </button>
+                            <button
+                              onClick={() => setTestimonioEditando(null)}
+                              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div
+                            className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-y-auto cursor-pointer hover:border-slate-300 transition-colors"
+                            onClick={() => { setTestimonioEditando(t.id); setTestimonioTexto(t.texto_razon); }}
+                            title="Click para editar"
+                          >
+                            {t.texto_razon}
+                          </div>
+                          {t.texto_editado && (
+                            <p className="text-[10px] text-amber-600 mt-1">Texto editado manualmente</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-400 bg-slate-50 rounded-lg p-3 border border-dashed border-slate-200 text-center">
+                      Sin texto de razón generado
+                      <button
+                        onClick={() => handleRegenerarTexto(t.id)}
+                        className="ml-2 text-[#2d6bcf] hover:underline font-medium"
+                      >
+                        Generar ahora
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Document Folders ──────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

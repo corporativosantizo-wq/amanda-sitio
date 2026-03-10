@@ -322,6 +322,26 @@ export async function autorizarEscritura(id: string): Promise<Escritura> {
     .single();
 
   if (error) throw new EscrituraError('Error al autorizar escritura', error);
+
+  // DB trigger auto_crear_testimonios creates borrador testimonios.
+  // Now generate texto_razon for each one from plantillas_razon.
+  try {
+    const { regenerarTextoRazon } = await import('@/lib/services/testimonios.service');
+    const { data: testimonios } = await db()
+      .from('testimonios')
+      .select('id')
+      .eq('escritura_id', id);
+
+    if (testimonios && testimonios.length > 0) {
+      await Promise.allSettled(
+        testimonios.map((t: any) => regenerarTextoRazon(t.id))
+      );
+    }
+  } catch (e) {
+    // Non-blocking: testimonios were created, texto_razon can be regenerated later
+    console.error('[autorizarEscritura] Error generando texto_razon:', e);
+  }
+
   return data as Escritura;
 }
 
