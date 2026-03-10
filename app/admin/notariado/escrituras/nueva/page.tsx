@@ -248,11 +248,16 @@ export default function NuevaEscrituraPage() {
       const res = await fetch('/api/admin/notariado/escrituras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        redirect: 'manual',
         body: JSON.stringify({
           ...form,
           comparecientes: validComps,
         }),
       })
+
+      if (res.type === 'opaqueredirect' || res.status === 401) {
+        throw new Error('Sesión expirada. Recarga la página e intenta de nuevo.')
+      }
 
       if (!res.ok) {
         let errorMessage = `Error del servidor (${res.status})`

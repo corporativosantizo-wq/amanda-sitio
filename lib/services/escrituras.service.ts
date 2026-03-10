@@ -33,13 +33,17 @@ interface ListParams {
 // --- Protocolo Anual ---
 
 export async function obtenerOCrearProtocolo(anio: number): Promise<ProtocoloAnual> {
-  const { data } = await db()
+  // Try to find existing protocol for the year (prefer 'abierto')
+  const { data: rows } = await db()
     .from('protocolo_anual')
     .select('*')
     .eq('anio', anio)
-    .single();
+    .order('created_at', { ascending: false });
 
-  if (data) return data as ProtocoloAnual;
+  if (rows && rows.length > 0) {
+    const abierto = rows.find((r: any) => r.estado === 'abierto');
+    return (abierto ?? rows[0]) as ProtocoloAnual;
+  }
 
   const { data: nuevo, error } = await db()
     .from('protocolo_anual')
@@ -47,7 +51,7 @@ export async function obtenerOCrearProtocolo(anio: number): Promise<ProtocoloAnu
     .select()
     .single();
 
-  if (error) throw new EscrituraError('Error al crear protocolo anual', error);
+  if (error) throw new EscrituraError(`No hay protocolo abierto para el año ${anio} y no se pudo crear uno`, error);
   return nuevo as ProtocoloAnual;
 }
 
@@ -219,7 +223,10 @@ export async function crearEscritura(input: EscrituraInsert): Promise<Escritura>
     .select()
     .single();
 
-  if (error) throw new EscrituraError('Error al crear escritura', error);
+  if (error) {
+    const detail = (error as any).message ?? String(error);
+    throw new EscrituraError(`Error al crear escritura: ${detail}`, error);
+  }
 
   // Si el trigger auto-asignó número, generar numero_texto
   const escritura = data as Escritura;
