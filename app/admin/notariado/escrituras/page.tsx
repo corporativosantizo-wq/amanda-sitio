@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import { PageHeader, Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 const TABS = [
   { key: '', label: 'Todas' },
@@ -68,7 +69,7 @@ export default function EscriturasListPage() {
       formData.append('escritura_id', escrituraId);
       formData.append('categoria', categoria);
 
-      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const res = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'POST',
         body: formData,
       });
@@ -110,11 +111,11 @@ export default function EscriturasListPage() {
   // Download
   const handleDownload = async (escrituraId: string, categoria: string) => {
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${escrituraId}&categoria=${categoria}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${escrituraId}&categoria=${categoria}`);
       if (!res.ok) return;
       const docs = await res.json();
       if (docs.length === 0) return;
-      const dlRes = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${docs[0].id}`);
+      const dlRes = await adminFetch(`/api/admin/notariado/escrituras/documentos/download?id=${docs[0].id}`);
       if (!dlRes.ok) return;
       const { url } = await dlRes.json();
       safeWindowOpen(url);
@@ -126,12 +127,12 @@ export default function EscriturasListPage() {
   const handleDeleteDoc = async (escrituraId: string, categoria: string) => {
     if (!confirm(`¿Eliminar el archivo ${categoria === 'escritura_pdf' ? 'PDF' : 'DOCX'} de esta escritura?`)) return;
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${escrituraId}&categoria=${categoria}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${escrituraId}&categoria=${categoria}`);
       if (!res.ok) return;
       const docs = await res.json();
       if (docs.length === 0) return;
 
-      const delRes = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const delRes = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: docs[0].id }),

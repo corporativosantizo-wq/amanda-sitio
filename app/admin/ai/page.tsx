@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 import type { TareaConCliente } from '@/lib/types';
 import {
@@ -333,15 +334,7 @@ export default function AIAssistantPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/admin/ai/upload', { method: 'POST', body: formData, redirect: 'manual' });
-      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
-        throw new Error('Tu sesión expiró. Recarga la página.');
-      }
-      if (!res.ok) {
-        let errMsg = `Error ${res.status}`;
-        try { const err = await res.json(); errMsg = err.error ?? errMsg; } catch {}
-        throw new Error(errMsg);
-      }
+      const res = await adminFetch('/api/admin/ai/upload', { method: 'POST', body: formData });
 
       const data = await res.json();
       setAttachedFile({
@@ -390,17 +383,11 @@ export default function AIAssistantPage() {
         body.attachment = currentAttachment;
       }
 
-      const res = await fetch('/api/admin/ai', {
+      const res = await adminFetch('/api/admin/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        redirect: 'manual', // Don't follow redirects — catch Clerk auth redirects
       });
-
-      // Clerk redirect (session expired) → browser would follow to /sign-in → 405
-      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
-        throw new Error('Tu sesión expiró. Recarga la página para volver a iniciar sesión.');
-      }
 
       if (!res.ok) {
         let errMsg = `Error ${res.status}`;

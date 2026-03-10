@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 
 export default function EditarPost() {
   const router = useRouter()
@@ -21,7 +22,7 @@ export default function EditarPost() {
   useEffect(() => {
     const fetchPost = async () => {
       try {
-        const res = await fetch(`/api/admin/posts/${params.id}`)
+        const res = await adminFetch(`/api/admin/posts/${params.id}`)
         if (!res.ok) throw new Error('No se pudo cargar el artículo')
         const data = await res.json()
         setForm({
@@ -45,7 +46,7 @@ export default function EditarPost() {
     setError('')
 
     try {
-      const res = await fetch(`/api/admin/posts/${params.id}`, {
+      const res = await adminFetch(`/api/admin/posts/${params.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),

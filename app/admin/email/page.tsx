@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -142,10 +143,10 @@ export default function MollyMailPage() {
   const fetchData = useCallback(async () => {
     try {
       const [statsRes, draftsRes, threadsRes, filteredRes] = await Promise.all([
-        fetch('/api/admin/molly/stats'),
-        fetch('/api/admin/molly/drafts'),
-        fetch('/api/admin/molly?limit=10'),
-        fetch('/api/admin/molly/filtered'),
+        adminFetch('/api/admin/molly/stats'),
+        adminFetch('/api/admin/molly/drafts'),
+        adminFetch('/api/admin/molly?limit=10'),
+        adminFetch('/api/admin/molly/filtered'),
       ])
 
       if (statsRes.ok) setStats(await statsRes.json())
@@ -184,16 +185,11 @@ export default function MollyMailPage() {
       const payload: Record<string, string> = { draftId, action }
       if (editedBody !== undefined) payload.editedBody = editedBody
 
-      const res = await fetch('/api/admin/molly/drafts', {
+      const res = await adminFetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || `Error del servidor (${res.status})`)
-      }
 
       setDrafts((prev) => prev.filter((d) => d.id !== draftId))
       setEditedBodies((prev) => {
@@ -226,17 +222,11 @@ export default function MollyMailPage() {
         payload.editedBody = edited
       }
 
-      const res = await fetch('/api/admin/molly/drafts', {
+      const res = await adminFetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setErrorMsg(data.error || `Error ${res.status}`)
-        return
-      }
 
       setSchedulingDraft(null)
       setScheduleDate('')
@@ -258,17 +248,11 @@ export default function MollyMailPage() {
     setActionLoading(draftId)
     setErrorMsg(null)
     try {
-      const res = await fetch('/api/admin/molly/drafts', {
+      await adminFetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ draftId, action: 'cancel_schedule' }),
       })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setErrorMsg(data.error || `Error ${res.status}`)
-        return
-      }
 
       fetchData()
     } catch (err: any) {
@@ -281,7 +265,7 @@ export default function MollyMailPage() {
   const handleTrigger = async () => {
     setTriggerLoading(true)
     try {
-      await fetch('/api/admin/molly', { method: 'POST' })
+      await adminFetch('/api/admin/molly', { method: 'POST' })
       await fetchData()
     } catch (err) {
       console.error('Error:', err)
@@ -293,16 +277,11 @@ export default function MollyMailPage() {
   const handleRestore = async (threadId: string) => {
     setRestoringId(threadId)
     try {
-      const res = await fetch('/api/admin/molly/filtered', {
+      await adminFetch('/api/admin/molly/filtered', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ threadId }),
       })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setErrorMsg(data.error || `Error ${res.status}`)
-        return
-      }
       fetchData()
     } catch (err: any) {
       setErrorMsg(err.message || 'Error de conexión')

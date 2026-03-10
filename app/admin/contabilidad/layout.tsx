@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 
 // ── Chat Panel: Asistente Contable ──────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function ContableChatPanel({ onClose }: { onClose: () => void }) {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/admin/contabilidad/ai', {
+      const res = await adminFetch('/api/admin/contabilidad/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages }),

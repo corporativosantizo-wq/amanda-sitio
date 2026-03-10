@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   type CategoriaLaboral,
   CATEGORIA_LABORAL_LABEL,
@@ -68,7 +69,7 @@ export default function NuevoTramiteLaboralPage() {
     clearTimeout(clienteTimer.current);
     clienteTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(clienteNombre)}&limit=8&activo=true`);
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteNombre)}&limit=8&activo=true`);
         const json = await res.json();
         setClienteSugerencias(json.data ?? []);
         setShowSugerencias(true);

@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { Download, Upload } from 'lucide-react';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import {
   PageHeader, Badge, Q, EmptyState, TableSkeleton,
@@ -53,7 +54,7 @@ export default function ClientesListPage() {
 
   // Fetch grupos for filter dropdown
   useEffect(() => {
-    fetch('/api/admin/clientes/grupos')
+    adminFetch('/api/admin/clientes/grupos')
       .then(r => r.json())
       .then(d => setGrupos(d.grupos ?? []))
       .catch(() => {});
@@ -86,7 +87,7 @@ export default function ClientesListPage() {
       exportParams.set('page', '1');
       exportParams.set('limit', '10000');
 
-      const res = await fetch(`/api/admin/clientes?${exportParams}`);
+      const res = await adminFetch(`/api/admin/clientes?${exportParams}`);
       const json = await res.json();
       const rows: ClienteRow[] = json.data ?? [];
 

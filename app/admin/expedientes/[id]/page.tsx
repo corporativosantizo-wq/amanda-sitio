@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import ExcelJS from 'exceljs';
 import { Section, Badge, Skeleton, EmptyState, Q } from '@/components/admin/ui';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 import {
@@ -603,7 +604,7 @@ function TabDatos({ exp, editing, form, set, setForm, onStartEdit, onCancel, onS
 
     clienteTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8&activo=true`);
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8&activo=true`);
         const json = await res.json();
         setClienteSugerencias(json.data ?? []);
         setShowClienteSug(true);
@@ -631,7 +632,7 @@ function TabDatos({ exp, editing, form, set, setForm, onStartEdit, onCancel, onS
         const params = new URLSearchParams({ q, limit: '10' });
         if (form.instancia) params.set('instancia', form.instancia);
         if (form.departamento) params.set('departamento', form.departamento);
-        const res = await fetch(`/api/admin/tribunales?${params}`);
+        const res = await adminFetch(`/api/admin/tribunales?${params}`);
         const json = await res.json();
         setTribunalSugerencias(json.data ?? []);
         setShowTribunalSug(true);
@@ -652,7 +653,7 @@ function TabDatos({ exp, editing, form, set, setForm, onStartEdit, onCancel, onS
       try {
         const params = new URLSearchParams({ q, limit: '10' });
         if (form.departamento) params.set('departamento', form.departamento);
-        const res = await fetch(`/api/admin/fiscalias?${params}`);
+        const res = await adminFetch(`/api/admin/fiscalias?${params}`);
         const json = await res.json();
         setFiscaliaSugerencias(json.data ?? []);
         setShowFiscaliaSug(true);
@@ -1341,7 +1342,7 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
 
   const abrirDoc = async (docId: string) => {
     try {
-      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const res = await adminFetch(`/api/admin/documentos/${docId}`);
       const d = await res.json();
       if (d.signed_url) safeWindowOpen(d.signed_url);
     } catch { /* ignore */ }
@@ -1349,7 +1350,7 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
 
   const descargarDoc = async (docId: string, nombre?: string) => {
     try {
-      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const res = await adminFetch(`/api/admin/documentos/${docId}`);
       const d = await res.json();
       if (d.signed_url) {
         const a = document.createElement('a');
@@ -1525,7 +1526,7 @@ function VincularDocModal({ expedienteId, clienteId, onClose, onLinked }: {
       try {
         const params = new URLSearchParams({ q: query, limit: '10' });
         if (clienteId) params.set('cliente_id', clienteId);
-        const res = await fetch(`/api/admin/documentos?${params}`);
+        const res = await adminFetch(`/api/admin/documentos?${params}`);
         const json = await res.json();
         // Filter out already-linked docs
         setResults((json.data ?? []).filter((d: any) => !d.expediente_id));
@@ -1537,7 +1538,7 @@ function VincularDocModal({ expedienteId, clienteId, onClose, onLinked }: {
   const vincular = async (docId: string) => {
     setLinking(docId);
     try {
-      const res = await fetch(`/api/admin/expedientes/${expedienteId}/documentos`, {
+      const res = await adminFetch(`/api/admin/expedientes/${expedienteId}/documentos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accion: 'vincular', documento_id: docId }),
@@ -1639,7 +1640,7 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
 
       try {
         // Get signed URL
-        const urlRes = await fetch('/api/admin/documentos/upload-url', {
+        const urlRes = await adminFetch('/api/admin/documentos/upload-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: f.name, filesize: f.size }),
@@ -1663,7 +1664,7 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
     // Register documents in DB
     setProgress('Registrando documentos...');
     try {
-      const res = await fetch('/api/admin/documentos/upload', {
+      const res = await adminFetch('/api/admin/documentos/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1770,7 +1771,7 @@ function TabVinculados({ vinculados, expedienteId, mutate, refetch }: {
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/expedientes?q=${encodeURIComponent(search)}&limit=5`);
+        const res = await adminFetch(`/api/admin/expedientes?q=${encodeURIComponent(search)}&limit=5`);
         const json = await res.json();
         setResults((json.data ?? []).filter((e: any) => e.id !== expedienteId));
       } catch { setResults([]); }

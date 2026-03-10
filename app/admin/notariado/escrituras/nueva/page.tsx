@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { TipoInstrumento, TIPO_INSTRUMENTO_LABEL } from '@/lib/types/enums'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 
 const DEPARTAMENTOS = [
   'Guatemala', 'Sacatepéquez', 'Chimaltenango', 'El Progreso',
@@ -65,7 +66,7 @@ function ClienteAutocomplete({
     if (q.length < 2) { setSugerencias([]); return }
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8`)
+      const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(q)}&limit=8`)
       if (res.ok) {
         const data = await res.json()
         const items: ClienteSugerencia[] = (data.data ?? []).map((c: any) => ({
@@ -245,31 +246,14 @@ export default function NuevaEscrituraPage() {
 
     setGuardando(true)
     try {
-      const res = await fetch('/api/admin/notariado/escrituras', {
+      await adminFetch('/api/admin/notariado/escrituras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        redirect: 'manual',
         body: JSON.stringify({
           ...form,
           comparecientes: validComps,
         }),
       })
-
-      if (res.type === 'opaqueredirect' || res.status === 401) {
-        throw new Error('Sesión expirada. Recarga la página e intenta de nuevo.')
-      }
-
-      if (!res.ok) {
-        let errorMessage = `Error del servidor (${res.status})`
-        try {
-          const text = await res.text()
-          const parsed = JSON.parse(text)
-          errorMessage = parsed.error || errorMessage
-        } catch {
-          // Response body was empty or not JSON
-        }
-        throw new Error(errorMessage)
-      }
 
       router.push('/admin/notariado/escrituras')
     } catch (err: any) {

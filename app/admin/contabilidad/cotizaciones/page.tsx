@@ -8,6 +8,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   PageHeader, Badge, Section, EmptyState,
   TableSkeleton, Q,
@@ -423,7 +424,7 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled 
     setOpen(false);
     setDescargando(true);
     try {
-      const res = await fetch(`/api/admin/contabilidad/cotizaciones/${cotId}/pdf`, { redirect: 'manual' });
+      const res = await adminFetch(`/api/admin/contabilidad/cotizaciones/${cotId}/pdf`);
       if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401 || (res.status >= 300 && res.status < 400)) {
         throw new Error('Sesión expirada. Recarga la página para continuar.');
       }
@@ -517,7 +518,7 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
     setProgreso(`Enviando 0/${enviables.length}...`);
 
     try {
-      const res = await fetch('/api/admin/contabilidad/cotizaciones/masivo', {
+      const res = await adminFetch('/api/admin/contabilidad/cotizaciones/masivo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -527,7 +528,6 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
           subject_template: 'Cotización {numero} — Despacho Jurídico Amanda Santizo',
           mensaje_template: mensaje,
         }),
-        redirect: 'manual',
       });
 
       // Clerk session expired → middleware redirects to login → 405

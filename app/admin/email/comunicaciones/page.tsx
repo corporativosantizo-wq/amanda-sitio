@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   PageHeader, Badge, EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
@@ -243,17 +244,11 @@ function NuevoCorreoTab() {
     try {
       const formData = new FormData();
       for (const f of Array.from(files)) formData.append('files', f);
-      const res = await fetch('/api/admin/comunicaciones/adjuntos', {
+      const res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
         method: 'POST',
         body: formData,
-        redirect: 'manual',
       });
-      if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 405) {
-        setToast({ type: 'error', msg: 'Sesión expirada. Recarga la página.' });
-        return;
-      }
       const data = await res.json();
-      if (!res.ok) { setToast({ type: 'error', msg: data.error ?? 'Error al subir' }); return; }
       setAdjuntos(prev => [...prev, ...data.adjuntos]);
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message ?? 'Error al subir archivos' });
@@ -266,7 +261,7 @@ function NuevoCorreoTab() {
   const handleRemoveAdjunto = async (idx: number) => {
     const adj = adjuntos[idx];
     try {
-      await fetch('/api/admin/comunicaciones/adjuntos', {
+      await adminFetch('/api/admin/comunicaciones/adjuntos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: adj.path }),
@@ -815,7 +810,7 @@ function EnvioMasivoDocumentosTab() {
       if (updated[i].matched) continue;
       const nombre = updated[i].clienteNombre;
       try {
-        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`);
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`);
         const json = await res.json();
         const clientes = json.data ?? json;
         if (clientes.length > 0) {
@@ -864,7 +859,7 @@ function EnvioMasivoDocumentosTab() {
         cc: a.cc || null,
       }));
 
-      const res = await fetch('/api/admin/comunicaciones/masivo', {
+      const res = await adminFetch('/api/admin/comunicaciones/masivo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -873,18 +868,9 @@ function EnvioMasivoDocumentosTab() {
           cuerpo_template: cuerpo,
           cuenta_envio: cuenta,
         }),
-        redirect: 'manual',
       });
 
-      if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401) {
-        setResultado({ enviados: 0, errores: [{ filename: '', email: '', error: 'Sesión expirada. Recarga la página.' }] });
-        setSending(false);
-        setProgreso(null);
-        return;
-      }
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Error al enviar');
 
       setResultado({ enviados: data.enviados, errores: data.errores ?? [] });
       setProgreso(null);
@@ -1434,17 +1420,11 @@ function EditarCorreoModal({ correo, onClose, onSaved }: {
     try {
       const formData = new FormData();
       for (const f of Array.from(files)) formData.append('files', f);
-      const res = await fetch('/api/admin/comunicaciones/adjuntos', {
+      const res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
         method: 'POST',
         body: formData,
-        redirect: 'manual',
       });
-      if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 405) {
-        setError('Sesión expirada. Recarga la página.');
-        return;
-      }
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? 'Error al subir'); return; }
       setAdjuntos(prev => [...prev, ...data.adjuntos]);
     } catch (err: any) {
       setError(err.message ?? 'Error al subir');
@@ -1457,7 +1437,7 @@ function EditarCorreoModal({ correo, onClose, onSaved }: {
   const handleRemove = async (idx: number) => {
     const adj = adjuntos[idx];
     try {
-      await fetch('/api/admin/comunicaciones/adjuntos', {
+      await adminFetch('/api/admin/comunicaciones/adjuntos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: adj.path }),

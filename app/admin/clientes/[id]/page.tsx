@@ -14,6 +14,7 @@ import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
 import { Scale, Shield, Building2, AlertTriangle, Download } from 'lucide-react';
 import type { CargoRepresentante } from '@/lib/types';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 import {
   type OrigenExpediente,
@@ -502,7 +503,7 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
     if (!valor.trim() || valor.trim().length < 2) { setter([]); showSetter(false); return; }
     timerRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/clientes/representantes?q=${encodeURIComponent(valor.trim())}`);
+        const res = await adminFetch(`/api/admin/clientes/representantes?q=${encodeURIComponent(valor.trim())}`);
         const json = await res.json();
         const reps = json.representantes ?? [];
         setter(reps);
@@ -919,7 +920,7 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
     try {
       const results = await Promise.all(
         grupoEmpresas.map(async emp => {
-          const res = await fetch(`/api/admin/clientes/${emp.id}`);
+          const res = await adminFetch(`/api/admin/clientes/${emp.id}`);
           const json = await res.json();
           return ((json.expedientes ?? []) as ExpedienteRow[]).map(e => ({ ...e, empresa: emp.nombre }));
         })
@@ -1032,7 +1033,7 @@ function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
   const openSignedUrl = async (doc: DocRow, download = false) => {
     setLoadingId(doc.id);
     try {
-      const res = await fetch(`/api/admin/documentos/${doc.id}`);
+      const res = await adminFetch(`/api/admin/documentos/${doc.id}`);
       const data = await res.json();
       if (data.signed_url) {
         const url = download

@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { validateExternalUrl } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // 1x1 transparent PNG placeholder for when URL validation fails
 const PLACEHOLDER_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQABNjN9GQAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAA0lEQVQI12P4z8BQDwAEgAF/QualzQAAAABJRU5ErkJggg==';
@@ -32,8 +33,7 @@ export default function ConfiguracionNotariadoPage() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/admin/notariado/configuracion');
-      if (!res.ok) throw new Error('Error al cargar configuración');
+      const res = await adminFetch('/api/admin/notariado/configuracion');
       const data = await res.json();
       setConfig(data);
       setWidth(data.membrete_width ?? 600);
@@ -63,13 +63,10 @@ export default function ConfiguracionNotariadoPage() {
       formData.append('width', String(width));
       formData.append('height', String(height));
 
-      const res = await fetch('/api/admin/notariado/configuracion', {
+      const res = await adminFetch('/api/admin/notariado/configuracion', {
         method: 'POST',
         body: formData,
       });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Error al subir imagen');
 
       setSuccess('Membrete actualizado correctamente');
       if (fileRef.current) fileRef.current.value = '';
@@ -89,8 +86,7 @@ export default function ConfiguracionNotariadoPage() {
     setSuccess('');
 
     try {
-      const res = await fetch('/api/admin/notariado/configuracion', { method: 'DELETE' });
-      if (!res.ok) throw new Error('Error al eliminar');
+      const res = await adminFetch('/api/admin/notariado/configuracion', { method: 'DELETE' });
 
       setSuccess('Membrete eliminado');
       await fetchConfig();

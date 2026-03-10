@@ -12,6 +12,7 @@ import { generarAvisoGeneral, type TipoAviso } from '@/lib/generators/aviso-gene
 import { saveAs } from 'file-saver';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { TipoInstrumento, TIPO_INSTRUMENTO_LABEL } from '@/lib/types/enums';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -120,9 +121,8 @@ export default function EscrituraDetallePage() {
 
   // Fetch escritura
   useEffect(() => {
-    fetch(`/api/admin/notariado/escrituras/${id}`)
+    adminFetch(`/api/admin/notariado/escrituras/${id}`)
       .then(async (res) => {
-        if (!res.ok) throw new Error('Escritura no encontrada');
         return res.json();
       })
       .then(setEscritura)
@@ -135,8 +135,8 @@ export default function EscrituraDetallePage() {
     setArchivosLoading(true);
     try {
       const [pdfRes, docxRes] = await Promise.all([
-        fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_pdf`),
-        fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_docx`),
+        adminFetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_pdf`),
+        adminFetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=escritura_docx`),
       ]);
       if (pdfRes.ok) {
         const pdfDocs = await pdfRes.json();
@@ -161,7 +161,7 @@ export default function EscrituraDetallePage() {
       formData.append('escritura_id', id);
       formData.append('categoria', categoria);
 
-      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const res = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'POST',
         body: formData,
       });
@@ -198,7 +198,7 @@ export default function EscrituraDetallePage() {
   const handleDeleteArchivo = async (doc: Documento) => {
     if (!confirm(`¿Eliminar "${doc.nombre_archivo}"?`)) return;
     try {
-      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const res = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: doc.id }),
@@ -214,7 +214,7 @@ export default function EscrituraDetallePage() {
   const fetchDocumentos = useCallback(async () => {
     setDocsLoading(true);
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=${tabActiva}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/documentos?escritura_id=${id}&categoria=${tabActiva}`);
       if (res.ok) {
         const data = await res.json();
         setDocumentos(data);
@@ -234,7 +234,7 @@ export default function EscrituraDetallePage() {
       formData.append('escritura_id', id);
       formData.append('categoria', tabActiva);
 
-      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const res = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'POST',
         body: formData,
       });
@@ -286,7 +286,7 @@ export default function EscrituraDetallePage() {
   // Download
   const handleDownload = async (doc: Documento) => {
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${doc.id}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/documentos/download?id=${doc.id}`);
       if (!res.ok) { alert('Error al descargar'); return; }
       const { url } = await res.json();
       safeWindowOpen(url);
@@ -299,7 +299,7 @@ export default function EscrituraDetallePage() {
   const handleDelete = async (doc: Documento) => {
     if (!confirm(`¿Eliminar "${doc.nombre_archivo}"?`)) return;
     try {
-      const res = await fetch('/api/admin/notariado/escrituras/documentos', {
+      const res = await adminFetch('/api/admin/notariado/escrituras/documentos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: doc.id }),
@@ -332,7 +332,7 @@ export default function EscrituraDetallePage() {
 
     setAccionLoading(true);
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/${id}/acciones`, {
+      const res = await adminFetch(`/api/admin/notariado/escrituras/${id}/acciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accion, motivo }),
@@ -358,7 +358,7 @@ export default function EscrituraDetallePage() {
   // Refetch escritura (including testimonios)
   const refetchEscritura = async () => {
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/${id}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/${id}`);
       if (res.ok) setEscritura(await res.json());
     } catch { /* ignore */ }
   };
@@ -367,7 +367,7 @@ export default function EscrituraDetallePage() {
   const handleGuardarTexto = async (testimonioId: string) => {
     setTestimonioSaving(true);
     try {
-      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}`, {
+      const res = await adminFetch(`/api/admin/notariado/testimonios/${testimonioId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ texto_razon: testimonioTexto }),
@@ -383,7 +383,7 @@ export default function EscrituraDetallePage() {
   const handleRegenerarTexto = async (testimonioId: string) => {
     if (!confirm('Esto sobrescribirá el texto actual con la plantilla. ¿Continuar?')) return;
     try {
-      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
+      const res = await adminFetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accion: 'regenerar_texto' }),
@@ -400,7 +400,7 @@ export default function EscrituraDetallePage() {
   // Acción de testimonio (generar/firmar/entregar)
   const handleTestimonioAccion = async (testimonioId: string, accion: string) => {
     try {
-      const res = await fetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
+      const res = await adminFetch(`/api/admin/notariado/testimonios/${testimonioId}/acciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accion }),
@@ -1002,7 +1002,7 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
       // Fetch membrete config
       let membrete;
       try {
-        const memRes = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+        const memRes = await adminFetch('/api/admin/notariado/configuracion/membrete-base64');
         if (memRes.ok) {
           const memJson = await memRes.json();
           membrete = memJson.membrete ?? undefined;
@@ -1036,7 +1036,7 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
         formData.append('subcategoria', tipoAviso);
         formData.append('notas', motivo || `Aviso de ${tipoLabel}`);
 
-        await fetch('/api/admin/notariado/avisos-generales', {
+        await adminFetch('/api/admin/notariado/avisos-generales', {
           method: 'POST',
           body: formData,
         });
@@ -1228,22 +1228,12 @@ function EditarEscrituraModal({
         notas: form.notas || null,
       };
 
-      const res = await fetch(`/api/admin/notariado/escrituras/${escritura.id}`, {
+      await adminFetch(`/api/admin/notariado/escrituras/${escritura.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        redirect: 'manual',
         body: JSON.stringify(body),
       });
 
-      if (res.type === 'opaqueredirect' || res.status === 401) {
-        setError('Sesión expirada. Recarga la página.');
-        return;
-      }
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setError(err.error || 'Error al guardar');
-        return;
-      }
       onSaved();
     } catch {
       setError('Error al guardar');

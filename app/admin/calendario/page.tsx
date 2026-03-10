@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import { safeRedirect } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 /** Detect Clerk auth redirect (session expired) */
 function isAuthRedirect(res: Response): boolean {
@@ -352,14 +353,16 @@ function CalendarioPage() {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     getToken().catch(() => {});
-    fetch(`/api/admin/calendario/eventos?fecha_inicio=${start}&fecha_fin=${end}&limit=200`, { redirect: 'manual' })
-      .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
+    adminFetch(`/api/admin/calendario/eventos?fecha_inicio=${start}&fecha_fin=${end}&limit=200`)
+      .then((r) => r.json())
       .then((json) => {
-        if (!json) return;
         const dates = new Set<string>((json.data ?? []).map((c: CitaItem) => c.fecha));
         setMonthEventDates(dates);
       })
-      .catch(() => setMonthEventDates(new Set()));
+      .catch((err) => {
+        if (err?.message === 'SESSION_EXPIRED') { window.location.reload(); return; }
+        setMonthEventDates(new Set());
+      });
   }, [miniCalMonth, getToken]);
 
   // Show OAuth result from URL params
@@ -378,11 +381,9 @@ function CalendarioPage() {
 
     try {
       await getToken().catch(() => {});
-      const res = await fetch(
-        `/api/admin/calendario/eventos?fecha_inicio=${startStr}&fecha_fin=${endStr}&limit=200`,
-        { redirect: 'manual' }
+      const res = await adminFetch(
+        `/api/admin/calendario/eventos?fecha_inicio=${startStr}&fecha_fin=${endStr}&limit=200`
       );
-      if (isAuthRedirect(res)) { window.location.reload(); return; }
       const json = await res.json();
       const data: CitaItem[] = json.data ?? [];
       setCitas(data);
@@ -404,8 +405,7 @@ function CalendarioPage() {
   // Outlook auth
   const connectOutlook = async () => {
     await getToken().catch(() => {});
-    const res = await fetch('/api/admin/calendario/auth', { redirect: 'manual' });
-    if (isAuthRedirect(res)) { window.location.reload(); return; }
+    const res = await adminFetch('/api/admin/calendario/auth');
     const json = await res.json();
     if (json.url) safeRedirect(json.url);
   };
@@ -413,13 +413,11 @@ function CalendarioPage() {
   // Actions
   const handleAction = async (citaId: string, accion: 'completar' | 'cancelar') => {
     await getToken().catch(() => {});
-    const res = await fetch(`/api/admin/calendario/eventos/${citaId}`, {
+    await adminFetch(`/api/admin/calendario/eventos/${citaId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accion }),
-      redirect: 'manual',
     });
-    if (isAuthRedirect(res)) { window.location.reload(); return; }
     setShowDetail(null);
     fetchCitas();
   };
@@ -427,11 +425,9 @@ function CalendarioPage() {
   // Delete
   const handleDelete = async (citaId: string) => {
     await getToken().catch(() => {});
-    const res = await fetch(`/api/admin/calendario/eventos/${citaId}`, {
+    await adminFetch(`/api/admin/calendario/eventos/${citaId}`, {
       method: 'DELETE',
-      redirect: 'manual',
     });
-    if (isAuthRedirect(res)) { window.location.reload(); return; }
     setShowDetail(null);
     fetchCitas();
   };
@@ -1514,7 +1510,7 @@ function EditModal({
 
     try {
       await getToken().catch(() => {});
-      const res = await fetch(`/api/admin/calendario/eventos/${cita.id}`, {
+      await adminFetch(`/api/admin/calendario/eventos/${cita.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1525,21 +1521,12 @@ function EditModal({
           hora_fin: horaFin,
           duracion_minutos: duracion,
         }),
-        redirect: 'manual',
       });
-
-      if (isAuthRedirect(res)) throw new Error(SESSION_EXPIRED_MSG);
-
-      if (!res.ok) {
-        let msg = `Error al actualizar (${res.status})`;
-        try { const json = await res.json(); msg = json.error || msg; } catch {}
-        throw new Error(msg);
-      }
 
       onSaved();
     } catch (err: any) {
+      if (err.message === 'SESSION_EXPIRED') { window.location.reload(); return; }
       setError(err.message);
-      if (err.message === SESSION_EXPIRED_MSG) window.location.reload();
     } finally {
       setSaving(false);
     }
@@ -1752,14 +1739,16 @@ function CreateModal({
     setSelectedSlot(null);
     const durParam = isSmart ? `&duracion=${duracion}` : '';
     getToken().catch(() => {});
-    fetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}`, { redirect: 'manual' })
-      .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
+    adminFetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}`)
+      .then((r) => r.json())
       .then((json) => {
-        if (!json) return;
         setSlots(json.slots ?? []);
         setSlotMode(json.mode ?? 'fixed');
       })
-      .catch(() => setSlots([]))
+      .catch((err) => {
+        if (err?.message === 'SESSION_EXPIRED') { window.location.reload(); return; }
+        setSlots([]);
+      })
       .finally(() => setLoadingSlots(false));
   }, [fecha, tipo, duracion, isFree, isSmart, getToken]);
 
@@ -1768,10 +1757,13 @@ function CreateModal({
     if (clienteSearch.length < 2) { setClientes([]); return; }
     const timer = setTimeout(() => {
       getToken().catch(() => {});
-      fetch(`/api/admin/clientes?busqueda=${encodeURIComponent(clienteSearch)}&limit=5`, { redirect: 'manual' })
-        .then((r) => { if (isAuthRedirect(r)) { window.location.reload(); return null; } return r.json(); })
-        .then((json) => { if (json) setClientes(json.data ?? []); })
-        .catch(() => setClientes([]));
+      adminFetch(`/api/admin/clientes?busqueda=${encodeURIComponent(clienteSearch)}&limit=5`)
+        .then((r) => r.json())
+        .then((json) => { setClientes(json.data ?? []); })
+        .catch((err) => {
+          if (err?.message === 'SESSION_EXPIRED') { window.location.reload(); return; }
+          setClientes([]);
+        });
     }, 300);
     return () => clearTimeout(timer);
   }, [clienteSearch, getToken]);
@@ -1804,7 +1796,7 @@ function CreateModal({
 
     try {
       await getToken().catch(() => {});
-      const res = await fetch('/api/admin/calendario/eventos', {
+      await adminFetch('/api/admin/calendario/eventos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1820,21 +1812,12 @@ function CreateModal({
           cliente_id: clienteId || null,
           isOnlineMeeting: withTeams,
         }),
-        redirect: 'manual',
       });
-
-      if (isAuthRedirect(res)) throw new Error(SESSION_EXPIRED_MSG);
-
-      if (!res.ok) {
-        let msg = `Error al crear evento (${res.status})`;
-        try { const json = await res.json(); msg = json.error || msg; } catch {}
-        throw new Error(msg);
-      }
 
       onCreated();
     } catch (err: any) {
+      if (err.message === 'SESSION_EXPIRED') { window.location.reload(); return; }
       setError(err.message);
-      if (err.message === SESSION_EXPIRED_MSG) window.location.reload();
     } finally {
       setSaving(false);
     }

@@ -8,6 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 const TIPOS: Record<string, string> = {
@@ -172,7 +173,7 @@ export default function DocumentosPage() {
 
   // Load clientes for dropdown
   useEffect(() => {
-    fetch('/api/admin/clientes?limit=200&activo=true')
+    adminFetch('/api/admin/clientes?limit=200&activo=true')
       .then((r: any) => r.json())
       .then((d: any) => setClientes(d.data ?? []))
       .catch(() => {});
@@ -241,7 +242,7 @@ export default function DocumentosPage() {
 
   const verPDFBusqueda = async (docId: string) => {
     try {
-      const res = await fetch(`/api/admin/documentos/${docId}`);
+      const res = await adminFetch(`/api/admin/documentos/${docId}`);
       const d = await res.json();
       if (d.signed_url) safeWindowOpen(d.signed_url);
     } catch { /* ignore */ }
@@ -262,7 +263,7 @@ export default function DocumentosPage() {
   const aprobar = async (id: string, edits?: any) => {
     setProcessing((prev: Set<string>) => new Set([...prev, id]));
     try {
-      await fetch('/api/admin/documentos/approve', {
+      await adminFetch('/api/admin/documentos/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acciones: [{ id, accion: 'aprobar', edits }] }),
@@ -279,7 +280,7 @@ export default function DocumentosPage() {
   const rechazar = async (id: string) => {
     setProcessing((prev: Set<string>) => new Set([...prev, id]));
     try {
-      await fetch('/api/admin/documentos/approve', {
+      await adminFetch('/api/admin/documentos/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acciones: [{ id, accion: 'rechazar' }] }),
@@ -301,7 +302,7 @@ export default function DocumentosPage() {
     const acciones = alta.map((d: DocItem) => ({ id: d.id, accion: 'aprobar' as const }));
     setProcessing(new Set(alta.map((d: DocItem) => d.id)));
     try {
-      await fetch('/api/admin/documentos/approve', {
+      await adminFetch('/api/admin/documentos/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acciones }),
@@ -313,7 +314,7 @@ export default function DocumentosPage() {
 
   const verPDF = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/documentos/${id}`);
+      const res = await adminFetch(`/api/admin/documentos/${id}`);
       const data = await res.json();
       if (data.signed_url) safeWindowOpen(data.signed_url);
     } catch { /* ignore */ }
@@ -321,7 +322,7 @@ export default function DocumentosPage() {
 
   const descargarDoc = async (id: string, nombre?: string) => {
     try {
-      const res = await fetch(`/api/admin/documentos/${id}`);
+      const res = await adminFetch(`/api/admin/documentos/${id}`);
       const data = await res.json();
       if (data.signed_url) {
         const a = document.createElement('a');
@@ -335,7 +336,7 @@ export default function DocumentosPage() {
   };
 
   const cambiarCliente = async (docId: string, clienteId: string) => {
-    await fetch(`/api/admin/documentos/${docId}`, {
+    await adminFetch(`/api/admin/documentos/${docId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cliente_id: clienteId }),
@@ -384,7 +385,7 @@ export default function DocumentosPage() {
       status: 'Transcribiendo...',
     });
     try {
-      const res = await fetch('/api/admin/documentos/transcribir', {
+      const res = await adminFetch('/api/admin/documentos/transcribir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documento_id: docId }),
@@ -418,7 +419,7 @@ export default function DocumentosPage() {
         status: 'Transcribiendo...',
       });
       try {
-        const res = await fetch('/api/admin/documentos/transcribir', {
+        const res = await adminFetch('/api/admin/documentos/transcribir', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ documento_id: ids[i] }),

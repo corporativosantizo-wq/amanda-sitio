@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   PageHeader, Badge, Section, KPICard,
   EmptyState, Skeleton, Q,
@@ -140,7 +141,7 @@ export default function CotizacionDetallePage() {
   const descargarPdf = useCallback(async () => {
     setDescargando(true);
     try {
-      const res = await fetch(`/api/admin/contabilidad/cotizaciones/${id}/pdf`);
+      const res = await adminFetch(`/api/admin/contabilidad/cotizaciones/${id}/pdf`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'Error al generar PDF');

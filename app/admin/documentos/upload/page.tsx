@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 
 const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
@@ -99,7 +100,7 @@ export default function UploadDocumentos() {
     searchTimeout.current = setTimeout(async () => {
       setSearchingClientes(true);
       try {
-        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(clienteQuery)}&limit=8&activo=true`);
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteQuery)}&limit=8&activo=true`);
         const data = await res.json();
         const results = (data.data ?? []).map((c: any) => ({
           id: c.id,
@@ -126,7 +127,7 @@ export default function UploadDocumentos() {
     }
     (async () => {
       try {
-        const res = await fetch(`/api/admin/documentos/preview-code?cliente_id=${selectedCliente.id}`);
+        const res = await adminFetch(`/api/admin/documentos/preview-code?cliente_id=${selectedCliente.id}`);
         const data = await res.json();
         if (res.ok) setCodePreview(data.codigo_documento);
       } catch {
@@ -225,7 +226,7 @@ export default function UploadDocumentos() {
 
     try {
       // Get storage path from server
-      const urlRes = await fetch('/api/admin/documentos/upload-url', {
+      const urlRes = await adminFetch('/api/admin/documentos/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: f.file.name, filesize: f.file.size }),
@@ -264,7 +265,7 @@ export default function UploadDocumentos() {
   const classifySingleDoc = async (u: { id: string; docId: string }) => {
     updateFile(u.id, { status: 'analizando' });
     try {
-      const res = await fetch('/api/admin/documentos/classify', {
+      const res = await adminFetch('/api/admin/documentos/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documento_id: u.docId }),
@@ -328,7 +329,7 @@ export default function UploadDocumentos() {
     for (let i = 0; i < uploaded.length; i += 20) {
       const batch = uploaded.slice(i, i + 20);
       try {
-        const regRes = await fetch('/api/admin/documentos/upload', {
+        const regRes = await adminFetch('/api/admin/documentos/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

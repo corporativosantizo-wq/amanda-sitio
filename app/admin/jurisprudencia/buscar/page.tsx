@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
 import { useFetch } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -326,7 +327,7 @@ export default function BuscarJurisprudenciaPage() {
     setExpandedFichaIds(new Set());
 
     try {
-      const res = await fetch('/api/admin/jurisprudencia/generar-fichas', {
+      const res = await adminFetch('/api/admin/jurisprudencia/generar-fichas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -383,7 +384,7 @@ export default function BuscarJurisprudenciaPage() {
     setShowFichasModal(false);
 
     try {
-      const res = await fetch('/api/admin/jurisprudencia/buscar', {
+      const res = await adminFetch('/api/admin/jurisprudencia/buscar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: query.trim(), threshold, limit: 10 }),
@@ -404,7 +405,7 @@ export default function BuscarJurisprudenciaPage() {
   };
 
   const handleViewTomo = async (tomoId: string) => {
-    const res = await fetch(`/api/admin/jurisprudencia/${tomoId}`);
+    const res = await adminFetch(`/api/admin/jurisprudencia/${tomoId}`);
     const data = await res.json();
     if (data.signed_url) {
       safeWindowOpen(data.signed_url);

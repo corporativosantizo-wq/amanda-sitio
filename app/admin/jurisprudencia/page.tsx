@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
@@ -117,7 +118,7 @@ export default function JurisprudenciaPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 min
 
-      const res = await fetch('/api/admin/jurisprudencia/procesar', {
+      const res = await adminFetch('/api/admin/jurisprudencia/procesar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tomo_id: tomoId }),
@@ -178,7 +179,7 @@ export default function JurisprudenciaPage() {
   // ── View/Download handler ─────────────────────────────────────────────────
 
   const handleView = async (id: string) => {
-    const res = await fetch(`/api/admin/jurisprudencia/${id}`);
+    const res = await adminFetch(`/api/admin/jurisprudencia/${id}`);
     const data = await res.json();
     if (data.signed_url) {
       safeWindowOpen(data.signed_url);
@@ -500,7 +501,7 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
         setProgress({ current: i + 1, total: files.length });
 
         // 1. Get signed upload URL
-        const urlRes = await fetch('/api/admin/jurisprudencia/upload-url', {
+        const urlRes = await adminFetch('/api/admin/jurisprudencia/upload-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -527,7 +528,7 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
 
         // 3. Register tomo in DB
         const titulo = limpiarNombreArchivo(file.name);
-        const registerRes = await fetch('/api/admin/jurisprudencia', {
+        const registerRes = await adminFetch('/api/admin/jurisprudencia', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

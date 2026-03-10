@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { ArrowLeft, Pencil, X, Save, Plus, Trash2 } from 'lucide-react';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   type TramiteLaboralConCliente,
   type HistorialLaboral,
@@ -178,7 +179,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
       fd.append('tramite_id', id);
       fd.append('tipo', tipo);
 
-      const res = await fetch('/api/admin/cumplimiento/documentos', { method: 'POST', body: fd });
+      const res = await adminFetch('/api/admin/cumplimiento/documentos', { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Error al subir');
@@ -193,7 +194,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
 
   async function handleDownload(tipo: 'pdf' | 'docx') {
     try {
-      const res = await fetch(`/api/admin/cumplimiento/documentos/download?modulo=laboral&tramite_id=${id}&tipo=${tipo}`);
+      const res = await adminFetch(`/api/admin/cumplimiento/documentos/download?modulo=laboral&tramite_id=${id}&tipo=${tipo}`);
       if (!res.ok) throw new Error('Error al obtener URL');
       const { url } = await res.json();
       safeWindowOpen(url);
@@ -205,7 +206,7 @@ export default function LaboralDetallePage({ params }: { params: Promise<{ id: s
   async function handleDeleteArchivo(tipo: 'pdf' | 'docx') {
     if (!confirm('¿Eliminar este archivo?')) return;
     try {
-      const res = await fetch('/api/admin/cumplimiento/documentos', {
+      const res = await adminFetch('/api/admin/cumplimiento/documentos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modulo: 'laboral', tramite_id: id, tipo }),

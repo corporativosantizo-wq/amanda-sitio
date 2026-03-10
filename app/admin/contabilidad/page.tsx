@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 import type { CobroConCliente, Pago, RecordatorioCobro } from '@/lib/types'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -384,7 +385,7 @@ function CobroRapido({ onCreated, onOpenForm, mutate }: {
   const buscarCliente = useCallback(async (nombre: string): Promise<{ id: string; nombre: string } | null> => {
     if (!nombre || nombre.length < 2) return null
     try {
-      const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`)
+      const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(nombre)}&limit=1`)
       if (!res.ok) return null
       const json = await res.json()
       if (json.data && json.data.length > 0) {

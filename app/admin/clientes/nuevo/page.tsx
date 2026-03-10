@@ -9,6 +9,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { PageHeader } from '@/components/admin/ui';
 import type { CargoRepresentante } from '@/lib/types';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
@@ -64,7 +65,7 @@ export default function NuevoClientePage() {
     if (!valor.trim() || valor.trim().length < 2) { setter([]); showSetter(false); return; }
     timerRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/clientes/representantes?q=${encodeURIComponent(valor.trim())}`);
+        const res = await adminFetch(`/api/admin/clientes/representantes?q=${encodeURIComponent(valor.trim())}`);
         const json = await res.json();
         const reps = json.representantes ?? [];
         setter(reps);

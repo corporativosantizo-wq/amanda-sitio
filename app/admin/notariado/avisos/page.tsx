@@ -11,6 +11,7 @@ import { generarAvisoTrimestral } from '@/lib/generators/aviso-trimestral';
 import { generarAvisoGeneral, type TipoAviso } from '@/lib/generators/aviso-general';
 import { saveAs } from 'file-saver';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // ── Shared constants ────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ interface AvisoDoc {
 
 async function fetchMembrete() {
   try {
-    const res = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+    const res = await adminFetch('/api/admin/notariado/configuracion/membrete-base64');
     if (res.ok) {
       const json = await res.json();
       return json.membrete ?? undefined;
@@ -139,7 +140,7 @@ function TabTrimestrales() {
       const ultimoDia = new Date(anio, mesFin, 0).getDate();
       const fechaFin = `${anio}-${String(mesFin).padStart(2, '0')}-${ultimoDia}`;
 
-      const res = await fetch(`/api/admin/notariado/escrituras?anio=${anio}&limit=500`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras?anio=${anio}&limit=500`);
       if (!res.ok) throw new Error('Error al consultar escrituras');
 
       const { data: todas } = await res.json();
@@ -253,7 +254,7 @@ function TabGenerales() {
   const fetchAvisos = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/notariado/avisos-generales');
+      const res = await adminFetch('/api/admin/notariado/avisos-generales');
       if (res.ok) {
         const data = await res.json();
         setAvisos(data);
@@ -285,7 +286,7 @@ function TabGenerales() {
 
   const handleDownload = async (docId: string) => {
     try {
-      const res = await fetch(`/api/admin/notariado/escrituras/documentos/download?id=${docId}`);
+      const res = await adminFetch(`/api/admin/notariado/escrituras/documentos/download?id=${docId}`);
       if (!res.ok) { alert('Error al descargar'); return; }
       const { url } = await res.json();
       safeWindowOpen(url);
@@ -409,7 +410,7 @@ function NuevoAvisoGeneralModal({ onClose, onCreated }: { onClose: () => void; o
   useEffect(() => {
     const fetchEscrituras = async () => {
       try {
-        const res = await fetch(`/api/admin/notariado/escrituras?limit=500`);
+        const res = await adminFetch(`/api/admin/notariado/escrituras?limit=500`);
         if (res.ok) {
           const { data } = await res.json();
           setEscrituras(data ?? []);
@@ -482,7 +483,7 @@ function NuevoAvisoGeneralModal({ onClose, onCreated }: { onClose: () => void; o
       formData.append('subcategoria', tipoAviso);
       formData.append('notas', motivo || `Aviso de ${tipoLabel}`);
 
-      await fetch('/api/admin/notariado/avisos-generales', {
+      await adminFetch('/api/admin/notariado/avisos-generales', {
         method: 'POST',
         body: formData,
       });

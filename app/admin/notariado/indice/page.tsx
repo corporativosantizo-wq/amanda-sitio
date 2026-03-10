@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { generarIndiceProtocolo } from '@/lib/generators/indice-protocolo';
 import { saveAs } from 'file-saver';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 interface EscrituraIndice {
   id: string;
@@ -35,7 +36,7 @@ export default function IndicePage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/admin/notariado/indice?anio=${anio}`)
+    adminFetch(`/api/admin/notariado/indice?anio=${anio}`)
       .then((res) => res.json())
       .then((json) => setEscrituras(json.data ?? []))
       .catch(() => setEscrituras([]))
@@ -48,7 +49,7 @@ export default function IndicePage() {
       // Fetch membrete config
       let membrete;
       try {
-        const memRes = await fetch('/api/admin/notariado/configuracion/membrete-base64');
+        const memRes = await adminFetch('/api/admin/notariado/configuracion/membrete-base64');
         if (memRes.ok) {
           const memJson = await memRes.json();
           membrete = memJson.membrete ?? undefined;

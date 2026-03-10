@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ExcelJS from 'exceljs';
 import { Download, Scale, Shield, Building2, Plus, AlertTriangle } from 'lucide-react';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import { TableSkeleton, EmptyState } from '@/components/admin/ui';
 import {
@@ -93,7 +94,7 @@ export default function ExpedientesListPage() {
       exportParams.set('page', '1');
       exportParams.set('limit', '10000');
 
-      const res = await fetch(`/api/admin/expedientes?${exportParams}`);
+      const res = await adminFetch(`/api/admin/expedientes?${exportParams}`);
       const json = await res.json();
       const rows: ExpedienteConCliente[] = json.data ?? [];
 

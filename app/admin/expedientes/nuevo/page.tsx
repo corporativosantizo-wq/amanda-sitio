@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { useMutate } from '@/lib/hooks/use-fetch';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
@@ -141,7 +142,7 @@ export default function NuevoExpedientePage() {
 
     clienteTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/admin/clientes?q=${encodeURIComponent(clienteNombre)}&limit=8&activo=true`);
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteNombre)}&limit=8&activo=true`);
         const json = await res.json();
         setClienteSugerencias(json.data ?? []);
         setShowSugerencias(true);
@@ -168,7 +169,7 @@ export default function NuevoExpedientePage() {
         const params = new URLSearchParams({ q: tribunalNombre, limit: '10' });
         if (instancia) params.set('instancia', instancia);
         if (departamento) params.set('departamento', departamento);
-        const res = await fetch(`/api/admin/tribunales?${params}`);
+        const res = await adminFetch(`/api/admin/tribunales?${params}`);
         const json = await res.json();
         setTribunalSugerencias(json.data ?? []);
         setShowTribunalSug(true);
@@ -187,7 +188,7 @@ export default function NuevoExpedientePage() {
       try {
         const params = new URLSearchParams({ q: fiscalia, limit: '10' });
         if (departamento) params.set('departamento', departamento);
-        const res = await fetch(`/api/admin/fiscalias?${params}`);
+        const res = await adminFetch(`/api/admin/fiscalias?${params}`);
         const json = await res.json();
         setFiscaliaSugerencias(json.data ?? []);
         setShowFiscaliaSug(true);

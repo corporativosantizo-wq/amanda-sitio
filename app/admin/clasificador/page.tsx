@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { KPICard } from '@/components/admin/ui';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -159,7 +160,7 @@ export default function ClasificadorPage() {
 
   // Load clientes for dropdown
   useEffect(() => {
-    fetch('/api/admin/clientes?limit=200&activo=true')
+    adminFetch('/api/admin/clientes?limit=200&activo=true')
       .then((r: any) => r.json())
       .then((d: any) => setClientes(d.data ?? []))
       .catch(() => {});
@@ -228,7 +229,7 @@ export default function ClasificadorPage() {
     setPreviewDoc(doc);
     setPreviewUrl(null);
     try {
-      const res = await fetch(`/api/admin/documentos/${doc.id}`);
+      const res = await adminFetch(`/api/admin/documentos/${doc.id}`);
       const data = await res.json();
       if (data.signed_url) setPreviewUrl(data.signed_url);
     } catch { /* ignore */ }

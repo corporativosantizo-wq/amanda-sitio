@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 interface Bloqueo {
   id: string;
@@ -38,7 +39,7 @@ export default function BloqueosPage() {
   const fetchBloqueos = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/calendario/bloqueos');
+      const res = await adminFetch('/api/admin/calendario/bloqueos');
       const json = await res.json();
       setBloqueos(json.bloqueos ?? []);
     } catch {
@@ -59,7 +60,7 @@ export default function BloqueosPage() {
     setSaving(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/calendario/bloqueos', {
+      const res = await adminFetch('/api/admin/calendario/bloqueos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,7 +87,7 @@ export default function BloqueosPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar este bloqueo?')) return;
     try {
-      await fetch(`/api/admin/calendario/bloqueos?id=${id}`, { method: 'DELETE' });
+      await adminFetch(`/api/admin/calendario/bloqueos?id=${id}`, { method: 'DELETE' });
       fetchBloqueos();
     } catch {
       // silent

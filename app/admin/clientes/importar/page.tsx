@@ -7,6 +7,7 @@
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ export default function ImportarClientes() {
     try {
       const rows = getMappedRows().filter((r: MappedRow) => r.nombre.trim());
 
-      const res = await fetch('/api/admin/clientes/import', {
+      const res = await adminFetch('/api/admin/clientes/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows }),

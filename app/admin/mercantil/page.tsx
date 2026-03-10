@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import ExcelJS from 'exceljs';
 import { Download, Plus, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useFetch } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { TableSkeleton, EmptyState } from '@/components/admin/ui';
 import {
   type TramiteMercantilConCliente,
@@ -69,7 +70,7 @@ export default function MercantilListPage() {
       exportParams.set('page', '1');
       exportParams.set('limit', '10000');
 
-      const res = await fetch(`/api/admin/mercantil?${exportParams}`);
+      const res = await adminFetch(`/api/admin/mercantil?${exportParams}`);
       const json = await res.json();
       const rows: TramiteMercantilConCliente[] = json.data ?? [];
 

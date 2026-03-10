@@ -6,6 +6,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 
 interface CampoDetectado {
@@ -63,7 +64,7 @@ export default function NuevaPlantillaPage() {
       const formData = new FormData();
       formData.append('archivo', file);
 
-      const res = await fetch('/api/admin/plantillas/analizar', {
+      const res = await adminFetch('/api/admin/plantillas/analizar', {
         method: 'POST',
         body: formData,
       });
@@ -139,7 +140,7 @@ export default function NuevaPlantillaPage() {
     setStep('saving');
 
     try {
-      const res = await fetch('/api/admin/plantillas', {
+      const res = await adminFetch('/api/admin/plantillas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
