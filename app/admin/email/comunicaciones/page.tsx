@@ -230,8 +230,8 @@ function NuevoCorreoTab() {
             timeZone: 'America/Guatemala',
           })
         : val;
-      a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || `{${key}}`);
-      c = c.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || `{${key}}`);
+      a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
+      c = c.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
     }
     setAsunto(a);
     setCuerpo(c);
@@ -468,8 +468,12 @@ function NuevoCorreoTab() {
                 // If no template or no client, populate empty
                 if (!plantilla) { setPaso(3); return; }
                 if (!clienteId) {
-                  setAsunto(plantilla.asunto_template.replace(/\{nombre_cliente\}/g, clienteNombre || 'Cliente'));
-                  setCuerpo(plantilla.cuerpo_template.replace(/\{nombre_cliente\}/g, clienteNombre || 'Cliente'));
+                  setAsunto(plantilla.asunto_template
+                    .replace(/\{nombre_cliente\}/g, clienteNombre || 'Cliente')
+                    .replace(/\{nit\}/g, 'CF'));
+                  setCuerpo(plantilla.cuerpo_template
+                    .replace(/\{nombre_cliente\}/g, clienteNombre || 'Cliente')
+                    .replace(/\{nit\}/g, 'CF'));
                 }
                 setPaso(3);
               }}
@@ -607,7 +611,26 @@ function NuevoCorreoTab() {
           <div className="flex justify-between">
             <button onClick={() => setPaso(2)} className="text-sm text-slate-500 hover:text-slate-700">← Destinatario</button>
             <button
-              onClick={() => setPaso(4)}
+              onClick={() => {
+                // Auto-apply campos_extra before advancing to review
+                if (plantilla && plantilla.campos_extra.length > 0) {
+                  let a = asunto;
+                  let c = cuerpo;
+                  for (const [key, val] of Object.entries(camposExtra)) {
+                    const formatted = key.includes('fecha') && val
+                      ? new Date(val + 'T12:00:00').toLocaleDateString('es-GT', {
+                          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                          timeZone: 'America/Guatemala',
+                        })
+                      : val;
+                    a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
+                    c = c.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
+                  }
+                  setAsunto(a);
+                  setCuerpo(c);
+                }
+                setPaso(4);
+              }}
               className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1E40AF]/90"
             >
               Revisar y enviar →
