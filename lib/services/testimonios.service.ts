@@ -285,6 +285,41 @@ export async function regenerarTextoRazon(id: string): Promise<Testimonio> {
   return data as Testimonio;
 }
 
+// --- Backfill texto_razon para testimonios existentes ---
+
+/**
+ * Genera texto_razon para todos los testimonios que no lo tienen.
+ * Retorna resumen de cuántos se llenaron y cuáles fallaron.
+ */
+export async function backfillTextoRazon(): Promise<{
+  total: number;
+  exitosos: number;
+  errores: Array<{ id: string; error: string }>;
+}> {
+  const { data: sinTexto } = await db()
+    .from('testimonios')
+    .select('id')
+    .is('texto_razon', null);
+
+  if (!sinTexto || sinTexto.length === 0) {
+    return { total: 0, exitosos: 0, errores: [] };
+  }
+
+  let exitosos = 0;
+  const errores: Array<{ id: string; error: string }> = [];
+
+  for (const t of sinTexto) {
+    try {
+      await regenerarTextoRazon(t.id);
+      exitosos++;
+    } catch (e: any) {
+      errores.push({ id: t.id, error: e.message ?? String(e) });
+    }
+  }
+
+  return { total: sinTexto.length, exitosos, errores };
+}
+
 // --- Resumen para dashboard ---
 
 export async function resumenTestimonios() {
