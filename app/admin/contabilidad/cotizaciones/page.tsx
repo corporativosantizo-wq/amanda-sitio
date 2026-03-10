@@ -387,6 +387,7 @@ export default function CotizacionesPage() {
           cotizacion={reenviarCot}
           onClose={() => setReenviarCot(null)}
           onSent={() => { setReenviarCot(null); refetch(); }}
+          onScheduled={(msg) => { setReenviarCot(null); setToast({ type: 'success', message: msg }); }}
         />
       )}
 
@@ -700,10 +701,11 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
 
 // ── Modal: Reenviar cotización ──────────────────────────────────────────
 
-function ReenviarModal({ cotizacion, onClose, onSent }: {
+function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
   cotizacion: any;
   onClose: () => void;
   onSent: () => void;
+  onScheduled: (msg: string) => void;
 }) {
   const clienteNombre = cotizacion.cliente?.nombre ?? 'Estimado/a';
   const clienteEmail = cotizacion.cliente?.email ?? '';
@@ -718,6 +720,9 @@ function ReenviarModal({ cotizacion, onClose, onSent }: {
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [showProgramar, setShowProgramar] = useState(false);
+  const [programarFecha, setProgramarFecha] = useState('');
+  const [programarHora, setProgramarHora] = useState('09:00');
   const { mutate } = useMutate();
 
   const handleEnviar = async () => {
@@ -732,6 +737,36 @@ function ReenviarModal({ cotizacion, onClose, onSent }: {
         onError: (msg: string) => setError(msg),
       }
     );
+    setSending(false);
+  };
+
+  const handleProgramar = async () => {
+    if (!to.trim()) { setError('Ingresa un email de destino'); return; }
+    if (!programarFecha) { setError('Selecciona fecha de envío'); return; }
+    setSending(true);
+    setError('');
+    const programadoPara = new Date(`${programarFecha}T${programarHora}:00`).toISOString();
+    await mutate('/api/admin/comunicaciones', {
+      body: {
+        accion: 'programar',
+        cliente_id: cotizacion.cliente?.id || null,
+        destinatario_email: to,
+        destinatario_nombre: clienteNombre,
+        cuenta_envio: from,
+        asunto: subject,
+        cuerpo: mensaje,
+        adjuntos: [],
+        programado_para: programadoPara,
+      },
+      onSuccess: () => {
+        const fechaLabel = new Date(`${programarFecha}T${programarHora}:00`).toLocaleDateString('es-GT', {
+          weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+          timeZone: 'America/Guatemala',
+        });
+        onScheduled(`Reenvío programado para ${fechaLabel}`);
+      },
+      onError: (msg: string) => setError(msg),
+    });
     setSending(false);
   };
 
@@ -791,6 +826,41 @@ function ReenviarModal({ cotizacion, onClose, onSent }: {
               className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-cyan-500 resize-none font-mono leading-relaxed"
             />
           </div>
+
+          {/* Programar: date/time picker */}
+          {showProgramar && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-medium text-amber-700">Programar envío</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-amber-600">Fecha</label>
+                  <input
+                    type="date"
+                    value={programarFecha}
+                    onChange={e => setProgramarFecha(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full mt-1 px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:border-amber-400 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-amber-600">Hora</label>
+                  <input
+                    type="time"
+                    value={programarHora}
+                    onChange={e => setProgramarHora(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:border-amber-400 bg-white"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleProgramar}
+                disabled={sending || !to.trim() || !programarFecha}
+                className="w-full px-3 py-2 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sending ? 'Programando...' : 'Confirmar programación'}
+              </button>
+            </div>
+          )}
         </div>
 
         {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
@@ -798,6 +868,13 @@ function ReenviarModal({ cotizacion, onClose, onSent }: {
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
             Cancelar
+          </button>
+          <button
+            onClick={() => setShowProgramar(!showProgramar)}
+            disabled={sending}
+            className="px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+          >
+            Programar
           </button>
           <button
             onClick={handleEnviar}
