@@ -147,8 +147,8 @@ export default function PagosListPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pagos.map(p => (
-                  <tr key={p.id} onClick={() => router.push(`/admin/contabilidad/pagos/${p.id}`)}
-                    className="hover:bg-slate-50/50 cursor-pointer transition-colors">
+                  <tr key={p.id}
+                    className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-3 px-4 pl-5 text-sm text-slate-600">
                       {new Date(p.fecha_pago).toLocaleDateString('es-GT', { day: '2-digit', month: 'short' })}
                     </td>
