@@ -1131,6 +1131,7 @@ interface EditForm {
   fecha_autorizacion: string;
   lugar_autorizacion: string;
   departamento: string;
+  estado: string;
   hojas_protocolo: string;
   hojas_fotocopia: string;
   objeto_acto: string;
@@ -1162,6 +1163,7 @@ function EditarEscrituraModal({
     fecha_autorizacion: escritura.fecha_autorizacion,
     lugar_autorizacion: escritura.lugar_autorizacion,
     departamento: escritura.departamento,
+    estado: escritura.estado,
     hojas_protocolo: escritura.hojas_protocolo?.toString() ?? '',
     hojas_fotocopia: escritura.hojas_fotocopia?.toString() ?? '',
     objeto_acto: escritura.objeto_acto ?? '',
@@ -1217,6 +1219,7 @@ function EditarEscrituraModal({
         fecha_autorizacion: form.fecha_autorizacion,
         lugar_autorizacion: form.lugar_autorizacion,
         departamento: form.departamento,
+        estado: form.estado !== escritura.estado ? form.estado : undefined,
         comparecientes: validComps,
         objeto_acto: form.objeto_acto || null,
         valor_acto: form.valor_acto ? parseFloat(form.valor_acto) : null,
@@ -1302,6 +1305,18 @@ function EditarEscrituraModal({
                 {DEPARTAMENTOS.map((d: string) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* Estado */}
+          <div className="max-w-xs">
+            <label className="block text-xs font-medium text-slate-500 mb-1">Estado</label>
+            <select value={form.estado} onChange={e => updateField('estado', e.target.value)} className={inputCls}>
+              <option value="borrador">Borrador</option>
+              <option value="autorizada">Autorizada</option>
+              <option value="escaneada">Escaneada</option>
+              <option value="con_testimonio">Con Testimonio</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
           </div>
 
           {/* Hojas, Objeto, Valor */}
