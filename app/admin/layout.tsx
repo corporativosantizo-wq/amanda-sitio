@@ -7,6 +7,7 @@ import { AdminUserProvider, useAdminUser } from '@/lib/rbac/admin-user-context'
 import type { Modulo } from '@/lib/rbac/permissions'
 import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
 import { useActivityTracker } from '@/lib/hooks/use-activity-tracker'
+import { useSessionKeepAlive } from '@/lib/hooks/use-session-keep-alive'
 
 export default function AdminLayout({
   children,
@@ -551,12 +552,40 @@ function ChildrenList({
 
 // ── Inner layout ────────────────────────────────────────────────────────────
 
+function SessionExpiredModal({ onReconnect }: { onReconnect: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm mx-4 text-center space-y-4">
+        <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 flex items-center justify-center">
+          <svg className="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-slate-900">Tu sesión expiró</h3>
+        <p className="text-sm text-slate-500">
+          Por seguridad, tu sesión se cerró automáticamente. Haz clic para reconectarte.
+        </p>
+        <button
+          onClick={onReconnect}
+          className="w-full px-4 py-2.5 text-sm font-medium text-white rounded-xl transition-colors"
+          style={{ background: '#1E40AF' }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#1e3a8a')}
+          onMouseLeave={e => (e.currentTarget.style.background = '#1E40AF')}
+        >
+          Reconectarme
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const { user, loading, hasModule, isAdmin } = useAdminUser()
   useActivityTracker()
+  const { sessionExpired, handleReconnect } = useSessionKeepAlive()
 
   const isActive = useCallback((href: string) => {
     if (href === '/admin') return pathname === '/admin'
@@ -897,6 +926,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Session expired modal */}
+      {sessionExpired && <SessionExpiredModal onReconnect={handleReconnect} />}
+
       {/* Mobile hamburger button */}
       <div
         className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-4 py-3 md:hidden"
