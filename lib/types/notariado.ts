@@ -132,7 +132,12 @@ export interface EscrituraInsert {
 
 export interface EscrituraUpdate {
   estado?: EstadoEscritura;
+  tipo_instrumento?: TipoInstrumento;
+  tipo_instrumento_texto?: string;
   descripcion?: string | null;
+  fecha_autorizacion?: string;
+  lugar_autorizacion?: string;
+  departamento?: string;
   comparecientes?: Compareciente[];
   objeto_acto?: string | null;
   valor_acto?: number | null;

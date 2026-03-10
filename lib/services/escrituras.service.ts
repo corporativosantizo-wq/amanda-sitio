@@ -251,18 +251,18 @@ export async function actualizarEscritura(
     updated_at: new Date().toISOString(),
   };
 
-  // Campos editables solo en borrador
-  if (actual.estado === EstadoEscritura.BORRADOR) {
-    const camposBorrador = [
-      'descripcion', 'comparecientes', 'objeto_acto', 'valor_acto',
-      'hojas_protocolo', 'hojas_fotocopia',
-    ] as const;
-    for (const campo of camposBorrador) {
-      if (input[campo] !== undefined) updates[campo] = input[campo];
-    }
+  // Campos editables siempre (datos de la escritura)
+  const camposEditables = [
+    'tipo_instrumento', 'tipo_instrumento_texto', 'descripcion',
+    'fecha_autorizacion', 'lugar_autorizacion', 'departamento',
+    'comparecientes', 'objeto_acto', 'valor_acto',
+    'hojas_protocolo', 'hojas_fotocopia',
+  ] as const;
+  for (const campo of camposEditables) {
+    if (input[campo] !== undefined) updates[campo] = input[campo];
   }
 
-  // Campos editables siempre
+  // Campos de timbres editables siempre
   if (input.timbre_notarial !== undefined) {
     updates.timbre_notarial = input.timbre_notarial;
     updates.timbres_auto_calculados = false;

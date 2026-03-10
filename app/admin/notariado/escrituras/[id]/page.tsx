@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { generarAvisoGeneral, type TipoAviso } from '@/lib/generators/aviso-general';
 import { saveAs } from 'file-saver';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import { TipoInstrumento, TIPO_INSTRUMENTO_LABEL } from '@/lib/types/enums';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -25,8 +26,11 @@ interface Escritura {
   tipo_instrumento_texto: string;
   descripcion: string | null;
   estado: string;
-  comparecientes: Array<{ nombre: string; dpi?: string; calidad?: string; representacion?: string }>;
+  comparecientes: Array<{ nombre: string; dpi?: string; calidad?: string; representacion?: string; cliente_id?: string | null }>;
   hojas_protocolo: number | null;
+  hojas_fotocopia: number | null;
+  objeto_acto: string | null;
+  valor_acto: number | null;
   notas: string | null;
   protocolo: { id: string; anio: number };
   cliente: { id: string; nombre: string } | null;
@@ -53,6 +57,18 @@ const CARPETAS = [
   { key: 'aviso_trimestral', label: 'Avisos Trimestrales', icon: '📅', accept: '.pdf', desc: 'Archivos PDF' },
   { key: 'aviso_general', label: 'Avisos Generales', icon: '📋', accept: '.pdf,.docx', desc: 'Archivos PDF o DOCX' },
 ];
+
+const DEPARTAMENTOS = [
+  'Guatemala', 'Sacatepéquez', 'Chimaltenango', 'El Progreso',
+  'Escuintla', 'Santa Rosa', 'Sololá', 'Totonicapán',
+  'Quetzaltenango', 'Suchitepéquez', 'Retalhuleu', 'San Marcos',
+  'Huehuetenango', 'Quiché', 'Baja Verapaz', 'Alta Verapaz',
+  'Petén', 'Izabal', 'Zacapa', 'Chiquimula', 'Jalapa', 'Jutiapa',
+];
+
+const TIPO_OPTIONS = Object.entries(TIPO_INSTRUMENTO_LABEL).map(([value, label]) => ({
+  value, label,
+}));
 
 const SUBCATEGORIAS_AVISO = [
   { value: 'cancelacion', label: 'Cancelación' },
@@ -89,6 +105,7 @@ export default function EscrituraDetallePage() {
   const [testimonioEditando, setTestimonioEditando] = useState<string | null>(null);
   const [testimonioTexto, setTestimonioTexto] = useState('');
   const [testimonioSaving, setTestimonioSaving] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Archivos de la Escritura (PDF firmado + DOCX editable)
   const [archivoPdf, setArchivoPdf] = useState<Documento | null>(null);
@@ -433,6 +450,12 @@ export default function EscrituraDetallePage() {
           <p className="text-sm text-slate-500 mt-1">{escritura.tipo_instrumento_texto}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Editar
+          </button>
           <span className={`px-3 py-1 rounded-full text-xs font-medium ${ESTADO_BADGES[escritura.estado] ?? 'bg-slate-100'}`}>
             {escritura.estado}
           </span>
@@ -857,6 +880,18 @@ export default function EscrituraDetallePage() {
           }}
         />
       )}
+
+      {/* Editar Escritura Modal */}
+      {showEditModal && (
+        <EditarEscrituraModal
+          escritura={escritura}
+          onClose={() => setShowEditModal(false)}
+          onSaved={async () => {
+            setShowEditModal(false);
+            await refetchEscritura();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1080,6 +1115,280 @@ function AvisoGeneralModal({ escritura, onClose, onCreated }: { escritura: Escri
             className="px-4 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
           >
             Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Editar Escritura Modal ─────────────────────────────────────────────
+
+interface EditForm {
+  tipo_instrumento: string;
+  tipo_instrumento_texto: string;
+  descripcion: string;
+  fecha_autorizacion: string;
+  lugar_autorizacion: string;
+  departamento: string;
+  hojas_protocolo: string;
+  hojas_fotocopia: string;
+  objeto_acto: string;
+  valor_acto: string;
+  notas: string;
+}
+
+interface EditComp {
+  nombre: string;
+  dpi: string;
+  calidad: string;
+  representacion: string;
+  cliente_id: string | null;
+}
+
+function EditarEscrituraModal({
+  escritura,
+  onClose,
+  onSaved,
+}: {
+  escritura: Escritura;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<EditForm>({
+    tipo_instrumento: escritura.tipo_instrumento,
+    tipo_instrumento_texto: escritura.tipo_instrumento_texto,
+    descripcion: escritura.descripcion ?? '',
+    fecha_autorizacion: escritura.fecha_autorizacion,
+    lugar_autorizacion: escritura.lugar_autorizacion,
+    departamento: escritura.departamento,
+    hojas_protocolo: escritura.hojas_protocolo?.toString() ?? '',
+    hojas_fotocopia: escritura.hojas_fotocopia?.toString() ?? '',
+    objeto_acto: escritura.objeto_acto ?? '',
+    valor_acto: escritura.valor_acto?.toString() ?? '',
+    notas: escritura.notas ?? '',
+  });
+  const [comparecientes, setComparecientes] = useState<EditComp[]>(
+    escritura.comparecientes.map((c: any) => ({
+      nombre: c.nombre ?? '',
+      dpi: c.dpi ?? '',
+      calidad: c.calidad ?? 'otorgante',
+      representacion: c.representacion ?? '',
+      cliente_id: c.cliente_id ?? null,
+    }))
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const updateField = (key: keyof EditForm, value: string) =>
+    setForm(prev => ({ ...prev, [key]: value }));
+
+  const handleTipoChange = (value: string) => {
+    const label = TIPO_INSTRUMENTO_LABEL[value as TipoInstrumento] ?? '';
+    setForm(prev => ({ ...prev, tipo_instrumento: value, tipo_instrumento_texto: label }));
+  };
+
+  const addCompareciente = () =>
+    setComparecientes(prev => [...prev, { nombre: '', dpi: '', calidad: 'otorgante', representacion: '', cliente_id: null }]);
+
+  const removeCompareciente = (idx: number) => {
+    if (comparecientes.length <= 1) return;
+    setComparecientes(prev => prev.filter((_: EditComp, i: number) => i !== idx));
+  };
+
+  const updateComp = (idx: number, key: keyof EditComp, value: string) =>
+    setComparecientes(prev => prev.map((c: EditComp, i: number) => i === idx ? { ...c, [key]: value } : c));
+
+  const handleSave = async () => {
+    if (!form.tipo_instrumento) { setError('Selecciona tipo de instrumento'); return; }
+    if (!form.tipo_instrumento_texto.trim()) { setError('Ingresa la descripción del instrumento'); return; }
+    if (!form.fecha_autorizacion) { setError('Ingresa la fecha de autorización'); return; }
+
+    const validComps = comparecientes.filter((c: EditComp) => c.nombre.trim());
+    if (validComps.length === 0) { setError('Agrega al menos un compareciente'); return; }
+
+    setSaving(true);
+    setError('');
+    try {
+      const body: Record<string, any> = {
+        tipo_instrumento: form.tipo_instrumento,
+        tipo_instrumento_texto: form.tipo_instrumento_texto,
+        descripcion: form.descripcion || null,
+        fecha_autorizacion: form.fecha_autorizacion,
+        lugar_autorizacion: form.lugar_autorizacion,
+        departamento: form.departamento,
+        comparecientes: validComps,
+        objeto_acto: form.objeto_acto || null,
+        valor_acto: form.valor_acto ? parseFloat(form.valor_acto) : null,
+        hojas_protocolo: form.hojas_protocolo ? parseInt(form.hojas_protocolo) : null,
+        hojas_fotocopia: form.hojas_fotocopia ? parseInt(form.hojas_fotocopia) : null,
+        notas: form.notas || null,
+      };
+
+      const res = await fetch(`/api/admin/notariado/escrituras/${escritura.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        redirect: 'manual',
+        body: JSON.stringify(body),
+      });
+
+      if (res.type === 'opaqueredirect' || res.status === 401) {
+        setError('Sesión expirada. Recarga la página.');
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || 'Error al guardar');
+        return;
+      }
+      onSaved();
+    } catch {
+      setError('Error al guardar');
+    }
+    setSaving(false);
+  };
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2d6bcf]/20 focus:border-[#2d6bcf]';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 rounded-t-2xl z-10">
+          <h2 className="text-lg font-bold text-slate-900">Editar escritura {escritura.numero_texto}</h2>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Tipo de instrumento */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Tipo de instrumento</label>
+              <select value={form.tipo_instrumento} onChange={e => handleTipoChange(e.target.value)} className={inputCls}>
+                <option value="">Seleccionar...</option>
+                {TIPO_OPTIONS.map((t: { value: string; label: string }) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Descripción del instrumento</label>
+              <input type="text" value={form.tipo_instrumento_texto} onChange={e => updateField('tipo_instrumento_texto', e.target.value)} className={inputCls} />
+            </div>
+          </div>
+
+          {/* Descripción interna */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Descripción interna</label>
+            <input type="text" value={form.descripcion} onChange={e => updateField('descripcion', e.target.value)}
+              placeholder="Ej: Compraventa de inmueble zona 10" className={inputCls} />
+          </div>
+
+          {/* Fecha, Lugar, Departamento */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Fecha autorización</label>
+              <input type="date" value={form.fecha_autorizacion} onChange={e => updateField('fecha_autorizacion', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Lugar autorización</label>
+              <input type="text" value={form.lugar_autorizacion} onChange={e => updateField('lugar_autorizacion', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Departamento</label>
+              <select value={form.departamento} onChange={e => updateField('departamento', e.target.value)} className={inputCls}>
+                <option value="">Seleccionar...</option>
+                {DEPARTAMENTOS.map((d: string) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Hojas, Objeto, Valor */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Hojas protocolo</label>
+              <input type="number" min="0" value={form.hojas_protocolo} onChange={e => updateField('hojas_protocolo', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Hojas fotocopia</label>
+              <input type="number" min="0" value={form.hojas_fotocopia} onChange={e => updateField('hojas_fotocopia', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Valor del acto (Q)</label>
+              <input type="number" min="0" step="0.01" value={form.valor_acto} onChange={e => updateField('valor_acto', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Objeto del acto</label>
+              <input type="text" value={form.objeto_acto} onChange={e => updateField('objeto_acto', e.target.value)} className={inputCls} />
+            </div>
+          </div>
+
+          {/* Comparecientes */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-slate-500">Comparecientes</label>
+              <button onClick={addCompareciente} className="text-xs font-medium text-[#2d6bcf] hover:underline">+ Agregar</button>
+            </div>
+            <div className="space-y-3">
+              {comparecientes.map((c: EditComp, i: number) => (
+                <div key={i} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={c.nombre} onChange={e => updateComp(i, 'nombre', e.target.value)}
+                      placeholder="Nombre completo" className={`${inputCls} flex-1`} />
+                    {comparecientes.length > 1 && (
+                      <button onClick={() => removeCompareciente(i)} className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input type="text" value={c.dpi} onChange={e => updateComp(i, 'dpi', e.target.value)}
+                      placeholder="DPI" className={inputCls} />
+                    <select value={c.calidad} onChange={e => updateComp(i, 'calidad', e.target.value)} className={inputCls}>
+                      <option value="otorgante">Otorgante</option>
+                      <option value="comprador">Comprador</option>
+                      <option value="vendedor">Vendedor</option>
+                      <option value="mandante">Mandante</option>
+                      <option value="mandatario">Mandatario</option>
+                      <option value="donante">Donante</option>
+                      <option value="donatario">Donatario</option>
+                      <option value="arrendante">Arrendante</option>
+                      <option value="arrendatario">Arrendatario</option>
+                      <option value="mutuante">Mutuante</option>
+                      <option value="mutuario">Mutuario</option>
+                      <option value="poderdante">Poderdante</option>
+                      <option value="apoderado">Apoderado</option>
+                      <option value="representante_legal">Rep. Legal</option>
+                      <option value="testador">Testador</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                    <input type="text" value={c.representacion} onChange={e => updateComp(i, 'representacion', e.target.value)}
+                      placeholder="Representación (opcional)" className={inputCls} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Notas */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Notas internas</label>
+            <textarea value={form.notas} onChange={e => updateField('notas', e.target.value)}
+              rows={3} className={inputCls} />
+          </div>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-2 rounded-b-2xl">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-2 bg-[#2d6bcf] text-white text-sm font-semibold rounded-lg hover:bg-[#2558a8] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Guardando...' : 'Guardar cambios'}
           </button>
         </div>
       </div>
