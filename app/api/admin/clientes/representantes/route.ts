@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { buscarRepresentantes, RepresentanteError } from '@/lib/services/representantes.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,7 +19,9 @@ export async function GET(req: NextRequest) {
     const representantes = await buscarRepresentantes(q);
     return NextResponse.json({ representantes });
   } catch (err) {
-    const msg = err instanceof RepresentanteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof RepresentanteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/representantes');
   }
 }

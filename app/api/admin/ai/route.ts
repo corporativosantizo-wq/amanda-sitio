@@ -2828,6 +2828,21 @@ async function handleConsultarCatalogo(
 // ── API route ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  // Defense-in-depth: verify admin even if middleware is bypassed
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof Response) return session;
+
+  // Rate limit: 30 AI requests/min per user
+  const { checkAiRateLimit } = await import('@/lib/rate-limit');
+  const rl = checkAiRateLimit(session.userId);
+  if (!rl.success) {
+    return Response.json(
+      { error: 'Demasiadas solicitudes. Intenta en un minuto.' },
+      { status: 429 }
+    );
+  }
+
   try {
     const { messages, attachment } = await req.json();
     if (!messages || !Array.isArray(messages)) {

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   listarExpedientes, crearExpediente, ExpedienteError,
 } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,8 +25,10 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/GET');
   }
 }
 
@@ -46,7 +49,9 @@ export async function POST(req: NextRequest) {
     const expediente = await crearExpediente(body);
     return NextResponse.json({ expediente }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al crear expediente';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/POST');
   }
 }

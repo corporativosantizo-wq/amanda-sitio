@@ -31,7 +31,7 @@ export async function listarClientes(params: ListParams = {}) {
 
   let query = db()
     .from('clientes')
-    .select('*', { count: 'exact' })
+    .select('id, codigo, tipo, nombre, nit, email, telefono, activo, grupo_empresarial_id, created_at', { count: 'exact' })
     .order('nombre', { ascending: true })
     .range(offset, offset + limit - 1);
 

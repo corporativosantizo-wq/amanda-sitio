@@ -53,7 +53,13 @@ export async function listarCotizaciones(params: ListParams = {}) {
   let query = db()
     .from('cotizaciones')
     .select(`
-      *,
+      id, numero, cliente_id, expediente_id,
+      fecha_emision, fecha_vencimiento, estado,
+      subtotal, iva_monto, total,
+      requiere_anticipo, anticipo_porcentaje, anticipo_monto,
+      cc_emails, enviada_at, aceptada_at,
+      envio_programado, envio_programado_fecha,
+      created_at, updated_at,
       cliente:clientes!cliente_id (id, codigo, nombre, nit, email)
     `, { count: 'exact' })
     .order('created_at', { ascending: false })

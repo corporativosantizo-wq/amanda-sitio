@@ -13,6 +13,7 @@ import {
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { handleApiError } from '@/lib/api-error';
 import type { CotizacionUpdate } from '@/lib/types';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -72,9 +73,5 @@ function manejarError(error: unknown) {
     );
   }
 
-  console.error('Error inesperado en cotización:', error);
-  return NextResponse.json(
-    { error: 'Error interno del servidor' },
-    { status: 500 }
-  );
+  return handleApiError(error, 'contabilidad/cotizaciones/[id]');
 }

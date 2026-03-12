@@ -12,6 +12,7 @@ import {
   eliminarGasto,
   GastoError,
 } from '@/lib/services/gastos.service';
+import { handleApiError } from '@/lib/api-error';
 import type { GastoInsert } from '@/lib/types';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -55,6 +56,5 @@ function manejarError(error: unknown) {
       { status }
     );
   }
-  console.error('Error en gasto:', error);
-  return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+  return handleApiError(error, 'contabilidad/gastos/[id]');
 }

@@ -15,6 +15,7 @@ import {
   reenviarCotizacion,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
+import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -103,10 +104,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    console.error('Error en acción de cotización:', error);
-    return NextResponse.json(
-      { error: 'Error interno del servidor' },
-      { status: 500 }
-    );
+    return handleApiError(error, 'contabilidad/cotizaciones/acciones');
   }
 }

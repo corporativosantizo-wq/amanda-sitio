@@ -49,7 +49,14 @@ export async function listarTramitesLaborales(params: ListParams = {}) {
   let query = db()
     .from('tramites_laborales')
     .select(`
-      *,
+      id, cliente_id, categoria, estado,
+      nombre_empleado, puesto,
+      fecha_inicio, fecha_fin,
+      fecha_registro_igt, numero_registro_igt,
+      salario, moneda, es_temporal, duracion_meses,
+      alerta_dias_antes, descripcion, notas,
+      documento_url, archivo_pdf_url, archivo_pdf_nombre,
+      created_at, updated_at,
       cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre, nit)
     `, { count: 'exact' })
     .order(orderBy, { ascending: orderDir === 'asc', nullsFirst: false })
@@ -190,7 +197,14 @@ export async function crearHistorialLaboral(input: HistorialLaboralInsert): Prom
 export async function tramitesLaboralesPorCliente(clienteId: string) {
   const { data, error } = await db()
     .from('tramites_laborales')
-    .select('*')
+    .select(`
+      id, cliente_id, categoria, estado,
+      nombre_empleado, puesto,
+      fecha_inicio, fecha_fin,
+      numero_registro_igt, salario, moneda,
+      es_temporal, descripcion,
+      created_at, updated_at
+    `)
     .eq('cliente_id', clienteId)
     .order('updated_at', { ascending: false });
 
@@ -207,7 +221,9 @@ export async function tramitesLaboralesPorVencer(dias: number = 30) {
   const { data, error } = await db()
     .from('tramites_laborales')
     .select(`
-      *,
+      id, cliente_id, categoria, estado,
+      nombre_empleado, puesto, fecha_fin, descripcion,
+      created_at, updated_at,
       cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre)
     `)
     .in('estado', ['vigente', 'registrado', 'firmado'])
@@ -233,7 +249,9 @@ export async function tramitesLaboralesVencidos() {
   const { data, error } = await db()
     .from('tramites_laborales')
     .select(`
-      *,
+      id, cliente_id, categoria, estado,
+      nombre_empleado, puesto, fecha_fin, descripcion,
+      created_at, updated_at,
       cliente:clientes!tramites_laborales_cliente_id_fkey(id, codigo, nombre)
     `)
     .not('fecha_fin', 'is', null)

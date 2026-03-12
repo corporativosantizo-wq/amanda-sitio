@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   listarActuaciones, crearActuacion, ExpedienteError,
 } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,8 +17,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const actuaciones = await listarActuaciones(id);
     return NextResponse.json({ actuaciones });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/actuaciones/GET');
   }
 }
 
@@ -28,7 +31,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const actuacion = await crearActuacion({ ...body, expediente_id: id });
     return NextResponse.json({ actuacion }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al crear actuación';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/actuaciones/POST');
   }
 }

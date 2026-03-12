@@ -178,6 +178,29 @@ function NuevoCorreoTab() {
     [config, cuenta]
   );
 
+  // Auto-detect {placeholders} in template text and merge with campos_extra
+  const camposExtraCompletos = useMemo<CampoExtra[]>(() => {
+    if (!plantilla) return [];
+    const definedKeys = new Set(plantilla.campos_extra.map(c => c.key));
+    const hardcoded = new Set(['nombre_cliente', 'nit']);
+    const extra: CampoExtra[] = [...plantilla.campos_extra];
+    const pattern = /\{(\w+)\}/g;
+    const text = (plantilla.asunto_template || '') + ' ' + (plantilla.cuerpo_template || '');
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const key = match[1];
+      if (!definedKeys.has(key) && !hardcoded.has(key)) {
+        definedKeys.add(key);
+        extra.push({
+          key,
+          label: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+          type: 'text',
+        });
+      }
+    }
+    return extra;
+  }, [plantilla]);
+
   // Select plantilla → advance to step 2
   const seleccionarPlantilla = (id: string | null) => {
     setPlantillaId(id);
@@ -489,11 +512,11 @@ function NuevoCorreoTab() {
           </h3>
 
           {/* Campos extra de la plantilla */}
-          {plantilla && plantilla.campos_extra.length > 0 && (
+          {plantilla && camposExtraCompletos.length > 0 && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
               <p className="text-xs font-medium text-blue-700">Campos de la plantilla</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {plantilla.campos_extra.map((campo: CampoExtra) => (
+                {camposExtraCompletos.map((campo: CampoExtra) => (
                   <div key={campo.key}>
                     <label className="text-xs text-blue-600 font-medium">{campo.label}</label>
                     {campo.type === 'textarea' ? (
@@ -606,26 +629,7 @@ function NuevoCorreoTab() {
           <div className="flex justify-between">
             <button onClick={() => setPaso(2)} className="text-sm text-slate-500 hover:text-slate-700">← Destinatario</button>
             <button
-              onClick={() => {
-                // Auto-apply campos_extra before advancing to review
-                if (plantilla && plantilla.campos_extra.length > 0) {
-                  let a = asunto;
-                  let c = cuerpo;
-                  for (const [key, val] of Object.entries(camposExtra)) {
-                    const formatted = key.includes('fecha') && val
-                      ? new Date(val + 'T12:00:00').toLocaleDateString('es-GT', {
-                          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-                          timeZone: 'America/Guatemala',
-                        })
-                      : val;
-                    a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
-                    c = c.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
-                  }
-                  setAsunto(a);
-                  setCuerpo(c);
-                }
-                setPaso(4);
-              }}
+              onClick={() => { aplicarCampos(); setPaso(4); }}
               className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1E40AF]/90"
             >
               Revisar y enviar →

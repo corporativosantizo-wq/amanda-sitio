@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   listarPlazos, crearPlazo, actualizarPlazo, ExpedienteError,
 } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,8 +17,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const plazos = await listarPlazos(id);
     return NextResponse.json({ plazos });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/plazos/GET');
   }
 }
 
@@ -28,8 +31,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const plazo = await crearPlazo({ ...body, expediente_id: id });
     return NextResponse.json({ plazo }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al crear plazo';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/plazos/POST');
   }
 }
 
@@ -42,7 +47,9 @@ export async function PATCH(req: NextRequest) {
     const plazo = await actualizarPlazo(body.plazo_id, body.estado);
     return NextResponse.json({ plazo });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al actualizar plazo';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/plazos/PATCH');
   }
 }

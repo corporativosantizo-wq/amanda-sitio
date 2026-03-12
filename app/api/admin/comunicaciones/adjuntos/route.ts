@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { randomUUID } from 'crypto';
+import { handleApiError } from '@/lib/api-error';
 
 const db = () => createAdminClient();
 const BUCKET = 'adjuntos-correo';
@@ -51,8 +52,9 @@ export async function POST(req: NextRequest) {
       });
 
       if (error) {
+        console.error(`[comunicaciones/adjuntos] Upload error for ${file.name}:`, error.message);
         return NextResponse.json(
-          { error: `Error subiendo ${file.name}: ${error.message}` },
+          { error: `Error subiendo ${file.name}` },
           { status: 500 }
         );
       }
@@ -66,8 +68,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ adjuntos: results });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'comunicaciones/adjuntos/POST');
   }
 }
 
@@ -80,11 +82,12 @@ export async function DELETE(req: NextRequest) {
 
     const { error } = await db().storage.from(BUCKET).remove([path]);
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('[comunicaciones/adjuntos] Delete error:', error.message);
+      return NextResponse.json({ error: 'Error al eliminar adjunto' }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'comunicaciones/adjuntos/DELETE');
   }
 }

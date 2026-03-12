@@ -196,7 +196,14 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
 
   let query = db()
     .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email)', { count: 'exact' });
+    .select(`
+      id, cliente_id, expediente_id, tipo, titulo, descripcion,
+      fecha, hora_inicio, hora_fin, duracion_minutos,
+      estado, costo, categoria_outlook,
+      teams_link, outlook_event_id,
+      notas, created_at, updated_at,
+      cliente:clientes(id, codigo, nombre, email)
+    `, { count: 'exact' });
 
   if (params.fecha_inicio) query = query.gte('fecha', params.fecha_inicio);
   if (params.fecha_fin) query = query.lte('fecha', params.fecha_fin);
@@ -500,7 +507,7 @@ export async function listarBloqueos(params: {
 } = {}): Promise<BloqueoCalendario[]> {
   let query = db()
     .from('disponibilidad_bloqueos')
-    .select('*');
+    .select('id, fecha, hora_inicio, hora_fin, motivo, created_at');
 
   if (params.fecha_inicio) query = query.gte('fecha', params.fecha_inicio);
   if (params.fecha_fin) query = query.lte('fecha', params.fecha_fin);

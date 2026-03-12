@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -22,7 +23,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('[expedientes/documentos] Supabase error:', error.message);
+      return NextResponse.json({ error: 'Error al obtener documentos' }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
@@ -42,7 +44,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .update({ expediente_id: id, updated_at: new Date().toISOString() })
         .eq('id', body.documento_id);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) {
+        console.error('[expedientes/documentos] vincular error:', error.message);
+        return NextResponse.json({ error: 'Error al vincular documento' }, { status: 400 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -53,7 +58,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .eq('id', body.documento_id)
         .eq('expediente_id', id);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) {
+        console.error('[expedientes/documentos] desvincular error:', error.message);
+        return NextResponse.json({ error: 'Error al desvincular documento' }, { status: 400 });
+      }
       return NextResponse.json({ success: true });
     }
 

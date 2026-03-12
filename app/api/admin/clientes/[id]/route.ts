@@ -13,6 +13,7 @@ import {
 } from '@/lib/services/representantes.service';
 import { obtenerGrupo } from '@/lib/services/grupos.service';
 import { expedientesPorCliente } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -75,13 +76,19 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       grupo_empresarial,
     });
   } catch (err) {
-    const msg = err instanceof ClienteError ? err.message : 'Error interno';
-    const status = msg.includes('no encontrado') ? 404 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    if (err instanceof ClienteError) {
+      const status = err.message.includes('no encontrado') ? 404 : 500;
+      return NextResponse.json({ error: err.message }, { status });
+    }
+    return handleApiError(err, 'clientes/[id]/GET');
   }
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const { id } = await ctx.params;
     const body = await req.json();
@@ -98,21 +105,27 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     return NextResponse.json(cliente);
   } catch (err) {
-    const msg = err instanceof ClienteError ? err.message
-      : err instanceof RepresentanteError ? err.message
-      : 'Error al actualizar';
-    const status = msg.includes('Ya existe') ? 409 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    if (err instanceof ClienteError || err instanceof RepresentanteError) {
+      const status = err.message.includes('Ya existe') ? 409 : 500;
+      return NextResponse.json({ error: err.message }, { status });
+    }
+    return handleApiError(err, 'clientes/[id]/PATCH');
   }
 }
 
 export async function DELETE(_req: NextRequest, ctx: Ctx) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const { id } = await ctx.params;
     await desactivarCliente(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof ClienteError ? err.message : 'Error al desactivar';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ClienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/[id]/DELETE');
   }
 }

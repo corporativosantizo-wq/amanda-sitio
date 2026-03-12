@@ -10,6 +10,7 @@ import {
   enviarFactura,
   FacturaError,
 } from '@/lib/services/facturas.service';
+import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -51,7 +52,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 400 }
       );
     }
-    console.error('Error en acción de factura:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return handleApiError(error, 'contabilidad/facturas/acciones');
   }
 }

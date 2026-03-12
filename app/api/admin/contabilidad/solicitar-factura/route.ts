@@ -6,8 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerDatosPago, solicitarFacturaRE } from '@/lib/services/factura-re.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
+import { handleApiError } from '@/lib/api-error';
 
 export async function POST(request: NextRequest) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { pago_id } = body;
@@ -42,12 +47,8 @@ export async function POST(request: NextRequest) {
       success: true,
       mensaje: `Solicitud de factura enviada a RE para ${datos.cliente_nombre}`,
     });
-  } catch (error: any) {
-    console.error('[solicitar-factura] Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Error al solicitar factura' },
-      { status: 500 },
-    );
+  } catch (error) {
+    return handleApiError(error, 'solicitar-factura');
   }
 }
 

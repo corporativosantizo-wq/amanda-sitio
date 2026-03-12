@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   estadisticasExpedientes, plazosProximos, plazosVencidos, ExpedienteError,
 } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,7 +21,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ stats, plazos_proximos: proximos, plazos_vencidos: vencidos });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/stats');
   }
 }

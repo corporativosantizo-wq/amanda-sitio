@@ -12,6 +12,7 @@ import { solicitarFacturaRE } from '@/lib/services/factura-re.service';
 import { listarPagos, resumenPagos } from '@/lib/services/pagos.service';
 import { listarCobros, resumenCobros } from '@/lib/services/cobros.service';
 import { listarCotizaciones } from '@/lib/services/cotizaciones.service';
+import { handleApiError } from '@/lib/api-error';
 
 export const maxDuration = 120;
 
@@ -509,6 +510,21 @@ async function callWithRetry(
 // ── POST Handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  // Defense-in-depth: verify admin even if middleware is bypassed
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof Response) return session;
+
+  // Rate limit: 30 AI requests/min per user
+  const { checkAiRateLimit } = await import('@/lib/rate-limit');
+  const rl = checkAiRateLimit(session.userId);
+  if (!rl.success) {
+    return Response.json(
+      { error: 'Demasiadas solicitudes. Intenta en un minuto.' },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await req.json();
     const { messages } = body as { messages: Array<{ role: string; content: string }> };
@@ -587,8 +603,7 @@ export async function POST(req: Request) {
     return Response.json({ role: 'assistant', content: reply });
   } catch (error: any) {
     const status = error?.status ?? error?.error?.status;
-    const errorMsg = error?.message ?? error?.error?.message ?? String(error);
-    console.error('[ContableAI] Error:', status, errorMsg);
+    console.error('[ContableAI] Error:', status, error?.message ?? error);
 
     if (status === 429) {
       return Response.json(
@@ -604,16 +619,6 @@ export async function POST(req: Request) {
       );
     }
 
-    if (status === 400) {
-      return Response.json(
-        { error: `Error en la solicitud: ${errorMsg}` },
-        { status: 400 },
-      );
-    }
-
-    return Response.json(
-      { error: `Error del asistente contable: ${errorMsg}` },
-      { status: 500 },
-    );
+    return handleApiError(error, 'contabilidad/ai');
   }
 }

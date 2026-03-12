@@ -11,6 +11,7 @@ import {
   resumenCotizaciones,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
+import { handleApiError } from '@/lib/api-error';
 import type { EstadoCotizacion, CotizacionInsert } from '@/lib/types';
 
 // TODO: Agregar middleware de auth (Clerk) cuando se integre
@@ -97,9 +98,5 @@ function manejarError(error: unknown) {
     );
   }
 
-  console.error('Error inesperado en cotizaciones:', error);
-  return NextResponse.json(
-    { error: 'Error interno del servidor' },
-    { status: 500 }
-  );
+  return handleApiError(error, 'contabilidad/cotizaciones');
 }

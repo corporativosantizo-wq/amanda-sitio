@@ -36,7 +36,7 @@ export async function obtenerOCrearProtocolo(anio: number): Promise<ProtocoloAnu
   // Try to find existing protocol for the year (prefer 'abierto')
   const { data: rows } = await db()
     .from('protocolo_anual')
-    .select('*')
+    .select('id, anio, fecha_apertura, fecha_cierre, total_escrituras, created_at')
     .eq('anio', anio)
     .order('created_at', { ascending: false });
 
@@ -500,7 +500,7 @@ async function calcularTimbresEscritura(
 ) {
   const { data: regla } = await db()
     .from('reglas_timbres')
-    .select('*')
+    .select('id, tipo_instrumento, exento, base_calculo, timbre_fijo, timbre_porcentaje, activo')
     .eq('tipo_instrumento', tipo)
     .eq('activo', true)
     .limit(1)

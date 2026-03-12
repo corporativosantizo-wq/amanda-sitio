@@ -161,7 +161,7 @@ export async function aprobarDocumento(
     // Generate sequential document code
     const { count } = await db()
       .from('documentos')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('cliente_id', clienteId)
       .not('codigo_documento', 'is', null);
 
@@ -214,7 +214,15 @@ export async function listarDocumentos(params: ListParams = {}) {
 
   let query = db()
     .from('documentos')
-    .select('*, cliente:clientes!cliente_id(id, codigo, nombre)', { count: 'exact' })
+    .select(`
+      id, codigo_documento, titulo, tipo, estado,
+      nombre_archivo, nombre_original, archivo_url, archivo_tamano,
+      fecha_documento, numero_documento, descripcion,
+      cliente_id, expediente_id, cliente_nombre_detectado,
+      confianza_ia, notas,
+      created_at, updated_at,
+      cliente:clientes!cliente_id(id, codigo, nombre)
+    `, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -415,7 +423,7 @@ export async function previewCodigoDocumento(clienteId: string, tipo: string): P
 
   const { count } = await db()
     .from('documentos')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('cliente_id', clienteId)
     .not('codigo_documento', 'is', null);
 
@@ -516,10 +524,10 @@ export async function extraerYGuardarTexto(docId: string, archivoUrl: string): P
 
 export async function obtenerStatsClasificador() {
   const [sinCliente, pendientes, clasificados, total] = await Promise.all([
-    db().from('documentos').select('*', { count: 'exact', head: true }).is('cliente_id', null),
-    db().from('documentos').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
-    db().from('documentos').select('*', { count: 'exact', head: true }).eq('estado', 'clasificado'),
-    db().from('documentos').select('*', { count: 'exact', head: true }),
+    db().from('documentos').select('id', { count: 'exact', head: true }).is('cliente_id', null),
+    db().from('documentos').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+    db().from('documentos').select('id', { count: 'exact', head: true }).eq('estado', 'clasificado'),
+    db().from('documentos').select('id', { count: 'exact', head: true }),
   ]);
 
   return {

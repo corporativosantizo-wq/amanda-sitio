@@ -113,7 +113,7 @@ export async function crearOBuscarRepresentante(
 ): Promise<RepresentanteLegal> {
   const { data: existente } = await db()
     .from('representantes_legales')
-    .select('*')
+    .select('id, nombre_completo, email, telefono, created_at, updated_at')
     .ilike('nombre_completo', nombre.trim())
     .limit(1)
     .maybeSingle();
@@ -155,7 +155,7 @@ export async function sincronizarRepresentantes(
         ? await (async () => {
             const { data } = await db()
               .from('representantes_legales')
-              .select('*')
+              .select('id, nombre_completo, email, telefono, created_at, updated_at')
               .eq('id', input.representante_id)
               .single();
             return data as RepresentanteLegal;

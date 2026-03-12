@@ -51,7 +51,12 @@ export async function listarTestimonios(params: ListParams = {}) {
   let query = db()
     .from('testimonios')
     .select(`
-      *,
+      id, escritura_id, tipo, estado, destinatario,
+      hojas_fotocopia, hojas_detalle,
+      timbre_razon, timbres_adicionales, timbre_notas,
+      fecha_emision, fecha_entrega,
+      texto_editado, notas,
+      created_at, updated_at,
       escritura:escrituras!escritura_id (
         id, numero, numero_texto, fecha_autorizacion,
         lugar_autorizacion, departamento,

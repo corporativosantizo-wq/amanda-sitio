@@ -10,6 +10,7 @@ import {
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
+import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -33,7 +34,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (err instanceof CotizacionError) {
       return NextResponse.json({ error: err.message }, { status: 404 });
     }
-    console.error('[Cotización PDF] Error:', err);
-    return NextResponse.json({ error: 'Error al generar PDF' }, { status: 500 });
+    return handleApiError(err, 'contabilidad/cotizaciones/pdf');
   }
 }

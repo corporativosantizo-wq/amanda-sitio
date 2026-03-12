@@ -39,7 +39,11 @@ export async function listarCobros(params: ListCobrosParams = {}) {
   let query = db()
     .from('cobros')
     .select(`
-      *,
+      id, numero_cobro, cliente_id, expediente_id, cotizacion_id,
+      concepto, descripcion, monto, monto_pagado, saldo_pendiente, moneda,
+      estado, fecha_emision, fecha_vencimiento, dias_credito, notas,
+      factura_solicitada, factura_solicitada_at, factura_numero, factura_serie,
+      created_at, updated_at,
       cliente:clientes!cliente_id (id, nombre, email)
     `, { count: 'exact' })
     .order('fecha_vencimiento', { ascending: true, nullsFirst: false })

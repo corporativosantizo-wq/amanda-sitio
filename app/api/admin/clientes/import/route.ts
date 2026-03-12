@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { handleApiError } from '@/lib/api-error';
 
 interface ImportRow {
   codigo_cliente?: string;
@@ -219,11 +220,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(result);
-  } catch (error: any) {
-    console.error('[Import Clientes] Error:', error);
-    return NextResponse.json(
-      { error: error.message ?? 'Error interno del servidor.' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'clientes/import');
   }
 }

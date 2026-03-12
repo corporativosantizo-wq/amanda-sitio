@@ -36,7 +36,7 @@ export async function checkDescansoNotifications(): Promise<number> {
 
   const { data: notifs, error } = await db()
     .from('notificaciones_programadas')
-    .select('*')
+    .select('id, tipo, usuario_email, hora_envio, mensaje, ultima_enviada, activo')
     .eq('activo', true);
 
   if (error || !notifs) return 0;

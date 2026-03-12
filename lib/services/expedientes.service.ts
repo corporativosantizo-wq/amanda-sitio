@@ -47,7 +47,14 @@ export async function listarExpedientes(params: ListParams = {}) {
   let query = db()
     .from('expedientes')
     .select(`
-      *,
+      id, numero_expediente, numero_mp, numero_administrativo,
+      cliente_id, origen, tipo_proceso, subtipo, fase_actual, estado,
+      instancia, tribunal_nombre, departamento, fiscalia, agente_fiscal,
+      entidad_administrativa, dependencia,
+      actor, demandado, rol_cliente,
+      fecha_inicio, fecha_ultima_actuacion,
+      monto_pretension, moneda,
+      created_at, updated_at,
       cliente:clientes!expedientes_cliente_id_fkey(id, codigo, nombre, nit)
     `, { count: 'exact' })
     .order(orderBy, { ascending: orderDir === 'asc', nullsFirst: false })
@@ -414,7 +421,15 @@ export async function estadisticasExpedientes() {
 export async function expedientesPorCliente(clienteId: string) {
   const { data, error } = await db()
     .from('expedientes')
-    .select('*')
+    .select(`
+      id, numero_expediente, numero_mp, numero_administrativo,
+      origen, tipo_proceso, fase_actual, estado,
+      instancia, tribunal_nombre, departamento, fiscalia,
+      entidad_administrativa, dependencia,
+      actor, demandado, rol_cliente,
+      fecha_inicio, fecha_ultima_actuacion,
+      created_at
+    `)
     .eq('cliente_id', clienteId)
     .order('fecha_ultima_actuacion', { ascending: false, nullsFirst: false });
 
@@ -438,7 +453,13 @@ export async function expedientesPorGrupo(grupoId: string) {
   const { data, error } = await db()
     .from('expedientes')
     .select(`
-      *,
+      id, numero_expediente, numero_mp, numero_administrativo,
+      cliente_id, origen, tipo_proceso, fase_actual, estado,
+      instancia, tribunal_nombre, departamento, fiscalia,
+      entidad_administrativa, dependencia,
+      actor, demandado, rol_cliente,
+      fecha_inicio, fecha_ultima_actuacion,
+      created_at, updated_at,
       cliente:clientes!expedientes_cliente_id_fkey(id, codigo, nombre)
     `)
     .in('cliente_id', clienteIds)

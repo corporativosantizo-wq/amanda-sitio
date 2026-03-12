@@ -62,7 +62,7 @@ export async function removerEmpresaDeGrupo(empresaId: string) {
 export async function obtenerGrupo(grupoId: string): Promise<GrupoEmpresarial & { empresas: any[] }> {
   const { data, error } = await db()
     .from('grupos_empresariales')
-    .select('*')
+    .select('id, nombre, created_at, updated_at')
     .eq('id', grupoId)
     .single();
 
@@ -84,7 +84,7 @@ export async function obtenerGrupo(grupoId: string): Promise<GrupoEmpresarial & 
 export async function listarGrupos() {
   const { data, error } = await db()
     .from('grupos_empresariales')
-    .select('*')
+    .select('id, nombre, created_at, updated_at')
     .order('nombre');
 
   if (error) throw new GrupoError('Error al listar grupos', error);

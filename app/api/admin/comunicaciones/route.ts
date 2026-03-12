@@ -14,6 +14,7 @@ import {
   enviarCorreoAhora,
   cancelarCorreo,
 } from '@/lib/services/comunicaciones.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
   try {
@@ -35,12 +36,26 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'tipo requerido: plantillas | correos' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'comunicaciones/GET');
   }
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit email sending: 10/min per user
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
+  const { checkEmailRateLimit } = await import('@/lib/rate-limit');
+  const rl = checkEmailRateLimit(session.userId);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'Límite de envío alcanzado. Intenta en un minuto.' },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await req.json();
     const { accion } = body;
@@ -93,7 +108,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Acción inválida' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'comunicaciones/POST');
   }
 }

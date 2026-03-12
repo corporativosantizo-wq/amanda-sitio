@@ -9,9 +9,10 @@ import {
   validateWebhookSecret,
   answerCallbackQuery,
   sendTelegramMessage,
+  editMessageReplyMarkup,
   isAuthorizedChat,
 } from '@/lib/molly/telegram';
-import { approveDraft, rejectDraft, listPendingDrafts, getStats, getAgenda, getAvailability, getDayView, getWeekView, getMultiDayAvailability } from '@/lib/services/molly.service';
+import { approveDraft, rejectDraft, postponeDraft, listPendingDrafts, getStats, getAgenda, getAvailability, getDayView, getWeekView, getMultiDayAvailability } from '@/lib/services/molly.service';
 import { createCalendarEvent } from '@/lib/services/outlook.service';
 import { crearTarea, listarTareas, completarTarea, migrarTarea, resumenTareas } from '@/lib/services/tareas.service';
 import { HORARIOS, CategoriaTarea, EstadoTarea } from '@/lib/types';
@@ -207,15 +208,45 @@ async function handleCallbackQuery(query: any): Promise<void> {
         break;
       }
       case 'edit': {
+        const draftId = data.split(':')[1];
         await answerCallbackQuery(query.id, 'Editar en dashboard');
+        // Fetch draft context for the message
+        let contexto = '';
+        try {
+          const { data: draft } = await (await import('@/lib/supabase/admin')).createAdminClient()
+            .from('email_drafts')
+            .select('subject, to_email')
+            .eq('id', draftId)
+            .single();
+          if (draft) {
+            contexto = `\n<b>Asunto:</b> ${escapeHtml(draft.subject)}\n<b>Para:</b> ${escapeHtml(draft.to_email)}`;
+          }
+        } catch { /* best effort */ }
         await sendTelegramMessage(
-          `\u270F\uFE0F Para editar, visita el dashboard:\nhttps://papeleo.legal/admin/email`,
+          `\u270F\uFE0F Abrí el borrador en el dashboard para que lo edites:${contexto}\n\nhttps://papeleo.legal/admin/email?draft=${draftId}`,
+          { parse_mode: 'HTML' },
         );
+        // Mark original message as "editing in dashboard"
+        const msgId = query.message?.message_id;
+        if (msgId) {
+          await editMessageReplyMarkup(msgId, {
+            inline_keyboard: [[{ text: '\u270F\uFE0F Editando en dashboard', callback_data: 'noop' }]],
+          });
+        }
         break;
       }
       case 'postpone': {
-        await answerCallbackQuery(query.id, 'Pospuesto');
-        await sendTelegramMessage(`\u23F0 Borrador pospuesto — queda pendiente`);
+        const draftId = data.split(':')[1];
+        await answerCallbackQuery(query.id, 'Pospuesto 2h');
+        const horaReenvio = await postponeDraft(draftId);
+        await sendTelegramMessage(`\u23F0 Borrador pospuesto. Te lo reenvío a las ${horaReenvio}.`);
+        // Disable buttons on original message
+        const msgId = query.message?.message_id;
+        if (msgId) {
+          await editMessageReplyMarkup(msgId, {
+            inline_keyboard: [[{ text: `\u23F0 Pospuesto hasta ${horaReenvio}`, callback_data: 'noop' }]],
+          });
+        }
         break;
       }
       default:

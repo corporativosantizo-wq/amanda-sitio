@@ -10,6 +10,7 @@ import {
   sendTelegramMessage,
   buildEmailNotification,
   buildUrgentAlert,
+  buildSchedulingNotification,
 } from '@/lib/molly/telegram';
 import {
   getCalendarEvents,
@@ -29,6 +30,7 @@ import type {
   EmailThread,
   EmailMessage,
   EmailDraft,
+  EmailSchedulingIntent,
   GraphMailMessage,
   MollyClassification,
   ApprovedVia,
@@ -216,6 +218,58 @@ async function processOneEmail(
 
   // Try to match contact to client
   await matchContactToClient(fromEmail, classification.cliente_probable);
+
+  // Handle scheduling intent (if detected, create intent record + notify)
+  if (classification.scheduling_intent && classification.event_type && classification.suggested_date) {
+    try {
+      const targetDate = new Date(classification.suggested_date + 'T12:00:00');
+      const durationMin = classification.event_type === 'consulta_nueva' ? 60 : 30;
+
+      // If suggested date is in the past or today, find next business day
+      const now = new Date();
+      let searchDate = targetDate;
+      if (targetDate <= now) {
+        const nextDays = getNextBusinessDays(now, 1);
+        searchDate = nextDays[0] || targetDate;
+      }
+
+      const slots = await findFreeSlots(searchDate, durationMin);
+
+      const { data: intent } = await db()
+        .from('email_scheduling_intents')
+        .insert({
+          thread_id: thread.id,
+          message_id: emailMsg.id,
+          from_email: fromEmail,
+          event_type: classification.event_type,
+          suggested_date: classification.suggested_date,
+          suggested_time: classification.suggested_time,
+          available_slots: slots,
+          status: 'pendiente',
+        })
+        .select()
+        .single();
+
+      if (intent) {
+        const dateLabel = formatDateSpanish(searchDate);
+        const notification = buildSchedulingNotification(
+          intent as EmailSchedulingIntent,
+          emailMsg as EmailMessage,
+          classification,
+          slots,
+          dateLabel,
+        );
+        await sendTelegramMessage(notification.text, {
+          parse_mode: 'HTML',
+          reply_markup: notification.reply_markup,
+        });
+        console.log(`[molly] Scheduling intent creado para ${fromEmail}, fecha ${classification.suggested_date}`);
+      }
+    } catch (err: any) {
+      console.error('[molly] Error procesando scheduling intent:', err.message);
+      // Non-fatal: email draft will still be generated below
+    }
+  }
 
   // Filter spam/publicidad/notificacion_sistema with high confidence
   if (isFilterable(classification.tipo) && classification.confianza > 0.9) {
@@ -519,6 +573,96 @@ export async function rejectDraft(draftId: string): Promise<void> {
 
   if (error) throw new MollyError('Error rechazando borrador', error);
   console.log(`[molly] Borrador ${draftId} rechazado`);
+}
+
+// ── Postpone ──────────────────────────────────────────────────────────────
+
+export async function postponeDraft(draftId: string): Promise<string> {
+  // 2 hours from now in Guatemala timezone
+  const pospuestoHasta = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+  const { error } = await db()
+    .from('email_drafts')
+    .update({
+      status: 'pospuesto',
+      pospuesto_hasta: pospuestoHasta.toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', draftId);
+
+  if (error) throw new MollyError('Error posponiendo borrador', error);
+
+  const horaGt = pospuestoHasta.toLocaleTimeString('es-GT', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Guatemala',
+  });
+
+  console.log(`[molly] Borrador ${draftId} pospuesto hasta ${pospuestoHasta.toISOString()}`);
+  return horaGt;
+}
+
+export async function reenviarPospuestos(): Promise<number> {
+  const { data: drafts, error } = await db()
+    .from('email_drafts')
+    .select('*, email_threads!inner(id, account, subject, clasificacion, urgencia), email_messages!inner(id, from_email, from_name, subject)')
+    .eq('status', 'pospuesto')
+    .lte('pospuesto_hasta', new Date().toISOString());
+
+  if (error) {
+    console.error('[molly] Error buscando borradores pospuestos:', error);
+    return 0;
+  }
+
+  if (!drafts || drafts.length === 0) return 0;
+
+  let reenviados = 0;
+
+  for (const draft of drafts) {
+    try {
+      const thread = (draft as any).email_threads as EmailThread;
+      const message = (draft as any).email_messages as EmailMessage;
+
+      // Rebuild notification with original buttons
+      const classification: MollyClassification = {
+        tipo: thread.clasificacion || 'legal',
+        urgencia: thread.urgencia ?? 1,
+        resumen: draft.subject,
+        requiere_respuesta: true,
+        confianza: 1,
+        cliente_probable: null,
+        scheduling_intent: false,
+        suggested_date: null,
+        suggested_time: null,
+        event_type: null,
+      };
+
+      const notification = buildEmailNotification(thread, message, classification, draft as EmailDraft);
+
+      await sendTelegramMessage(
+        `\u23F0 <b>Recordatorio (pospuesto)</b>\n\n${notification.text}`,
+        { parse_mode: 'HTML', reply_markup: notification.reply_markup },
+      );
+
+      // Reset to pendiente
+      await db()
+        .from('email_drafts')
+        .update({
+          status: 'pendiente',
+          pospuesto_hasta: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', draft.id);
+
+      reenviados++;
+      console.log(`[molly] Borrador pospuesto ${draft.id} reenviado a Telegram`);
+    } catch (err: any) {
+      console.error(`[molly] Error reenviando borrador pospuesto ${draft.id}:`, err.message);
+    }
+  }
+
+  return reenviados;
 }
 
 // ── List / Query ───────────────────────────────────────────────────────────

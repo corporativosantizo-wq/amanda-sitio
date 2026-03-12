@@ -13,6 +13,7 @@ import {
   resumenPagos,
   PagoError,
 } from '@/lib/services/pagos.service';
+import { handleApiError } from '@/lib/api-error';
 import type { EstadoPago, TipoPago, PagoInsert } from '@/lib/types';
 
 export async function GET(request: NextRequest) {
@@ -49,6 +50,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
 
@@ -84,6 +89,5 @@ function manejarError(error: unknown) {
       { status }
     );
   }
-  console.error('Error en pagos:', error);
-  return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+  return handleApiError(error, 'contabilidad/pagos');
 }

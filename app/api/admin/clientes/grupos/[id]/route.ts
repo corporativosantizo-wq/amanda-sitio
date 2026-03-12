@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   obtenerGrupo, agregarEmpresaAGrupo, removerEmpresaDeGrupo, GrupoError,
 } from '@/lib/services/grupos.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,9 +17,11 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const grupo = await obtenerGrupo(id);
     return NextResponse.json({ grupo });
   } catch (err) {
-    const msg = err instanceof GrupoError ? err.message : 'Error interno';
-    const status = msg.includes('no encontrado') ? 404 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    if (err instanceof GrupoError) {
+      const status = err.message.includes('no encontrado') ? 404 : 500;
+      return NextResponse.json({ error: err.message }, { status });
+    }
+    return handleApiError(err, 'clientes/grupos/[id]/GET');
   }
 }
 
@@ -38,7 +41,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const grupo = await obtenerGrupo(id);
     return NextResponse.json({ grupo });
   } catch (err) {
-    const msg = err instanceof GrupoError ? err.message : 'Error al actualizar grupo';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof GrupoError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/grupos/[id]/PATCH');
   }
 }

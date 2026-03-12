@@ -28,7 +28,7 @@ export async function listarProveedores(params: ListParams = {}) {
 
   let query = db()
     .from('proveedores')
-    .select('*', { count: 'exact' })
+    .select('id, codigo, nombre, tipo, especialidad, nit, email, telefono, tarifa_hora, activo, created_at', { count: 'exact' })
     .order('nombre', { ascending: true })
     .range(offset, offset + limit - 1);
 

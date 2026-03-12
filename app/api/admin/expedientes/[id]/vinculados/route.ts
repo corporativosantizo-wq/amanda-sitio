@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   crearVinculo, eliminarVinculo, ExpedienteError,
 } from '@/lib/services/expedientes.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -27,8 +28,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
     return NextResponse.json({ vinculo }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al vincular';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/vinculados/POST');
   }
 }
 
@@ -41,7 +44,9 @@ export async function DELETE(req: NextRequest) {
     await eliminarVinculo(body.vinculo_id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof ExpedienteError ? err.message : 'Error al eliminar vínculo';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ExpedienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'expedientes/vinculados/DELETE');
   }
 }

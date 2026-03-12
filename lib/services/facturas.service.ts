@@ -48,7 +48,12 @@ export async function listarFacturas(params: ListParams = {}) {
   let query = db()
     .from('facturas')
     .select(`
-      *,
+      id, numero, cotizacion_id, cliente_id, expediente_id,
+      fecha_emision, fecha_vencimiento, estado,
+      razon_social, nit, subtotal, iva_monto, total,
+      aplica_retencion, retencion_monto, monto_a_recibir,
+      fel_uuid, enviada_at,
+      created_at, updated_at,
       cliente:clientes!cliente_id (id, codigo, nombre, email)
     `, { count: 'exact' })
     .order('created_at', { ascending: false })
@@ -206,9 +211,9 @@ export async function crearFacturaDesdeCotizacion(cotizacionId: string): Promise
   const { data: cot, error: cotError } = await db()
     .from('cotizaciones')
     .select(`
-      *,
-      cliente:clientes!cliente_id (*),
-      items:cotizacion_items (*)
+      id, numero, cliente_id, expediente_id, estado, total,
+      cliente:clientes!cliente_id (id, nombre, nit, razon_social_facturacion, nit_facturacion, direccion, direccion_facturacion),
+      items:cotizacion_items (id, descripcion, cantidad, precio_unitario, orden)
     `)
     .eq('id', cotizacionId)
     .single();

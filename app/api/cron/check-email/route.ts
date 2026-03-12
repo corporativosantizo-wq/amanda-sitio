@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { checkAndProcessEmails } from '@/lib/services/molly.service';
+import { checkAndProcessEmails, reenviarPospuestos } from '@/lib/services/molly.service';
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 
 export async function GET(req: NextRequest) {
@@ -13,8 +13,11 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const result = await checkAndProcessEmails();
-    return NextResponse.json({ ok: true, ...result });
+    const [result, reenviados] = await Promise.all([
+      checkAndProcessEmails(),
+      reenviarPospuestos(),
+    ]);
+    return NextResponse.json({ ok: true, ...result, reenviados });
   } catch (err: any) {
     console.error('[Cron check-email] Error:', err);
     return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });

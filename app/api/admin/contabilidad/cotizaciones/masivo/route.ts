@@ -9,6 +9,7 @@ import {
   aceptarCotizacionesMasivo,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
+import { handleApiError } from '@/lib/api-error';
 
 type Accion = 'enviar_masivo' | 'aceptar_masivo';
 
@@ -57,7 +58,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error('Error en acción masiva de cotizaciones:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return handleApiError(error, 'contabilidad/cotizaciones/masivo');
   }
 }

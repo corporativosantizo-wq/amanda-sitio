@@ -35,7 +35,7 @@ interface ListParams {
 export async function listarCategorias(): Promise<CategoriaGasto[]> {
   const { data, error } = await db()
     .from('categorias_gastos')
-    .select('*')
+    .select('id, nombre, descripcion, activo, created_at')
     .eq('activo', true)
     .order('nombre', { ascending: true });
 
@@ -58,7 +58,12 @@ export async function listarGastos(params: ListParams = {}) {
   let query = db()
     .from('gastos')
     .select(`
-      *,
+      id, numero, categoria_id, expediente_id,
+      fecha, descripcion, proveedor, monto,
+      iva_incluido, iva_monto,
+      tiene_factura, numero_factura, nit_proveedor,
+      comprobante_url, es_deducible, notas,
+      created_at, updated_at,
       categoria:categorias_gastos!categoria_id (id, nombre)
     `, { count: 'exact' })
     .order('fecha', { ascending: false })

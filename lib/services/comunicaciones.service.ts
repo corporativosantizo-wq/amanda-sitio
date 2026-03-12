@@ -65,7 +65,7 @@ export interface PieConfidencialidad {
 export async function listarPlantillas(): Promise<PlantillaCorreo[]> {
   const { data, error } = await db()
     .from('plantillas_correo')
-    .select('*')
+    .select('id, nombre, slug, icono, categoria, asunto_template, cuerpo_template, cuenta_default, campos_extra, activo, orden')
     .eq('activo', true)
     .order('orden');
 
@@ -79,7 +79,7 @@ export async function listarPlantillas(): Promise<PlantillaCorreo[]> {
 export async function obtenerPlantilla(id: string): Promise<PlantillaCorreo | null> {
   const { data, error } = await db()
     .from('plantillas_correo')
-    .select('*')
+    .select('id, nombre, slug, icono, categoria, asunto_template, cuerpo_template, cuenta_default, campos_extra, activo, orden')
     .eq('id', id)
     .single();
 
@@ -106,7 +106,7 @@ export async function obtenerPieConfidencialidad(cuenta: string): Promise<string
 export async function listarPiesConfidencialidad(): Promise<PieConfidencialidad[]> {
   const { data } = await db()
     .from('pie_confidencialidad')
-    .select('*')
+    .select('id, cuenta_email, texto, activo')
     .eq('activo', true);
   return (data ?? []) as PieConfidencialidad[];
 }
@@ -160,7 +160,11 @@ export async function listarCorreos(params: {
   let query = db()
     .from('correos_programados')
     .select(`
-      *,
+      id, plantilla_id, cliente_id,
+      destinatario_email, destinatario_nombre, cc_emails,
+      cuenta_envio, asunto, cuerpo,
+      estado, programado_para, enviado_at, error_mensaje,
+      created_at, updated_at,
       plantilla:plantillas_correo!plantilla_id (nombre, icono),
       cliente:clientes!cliente_id (nombre)
     `, { count: 'exact' })
@@ -217,7 +221,7 @@ export async function cancelarCorreo(id: string): Promise<void> {
 export async function enviarCorreoAhora(id: string): Promise<void> {
   const { data: correo, error } = await db()
     .from('correos_programados')
-    .select('*')
+    .select('id, destinatario_email, destinatario_nombre, cc_emails, cuenta_envio, asunto, cuerpo, adjuntos, estado')
     .eq('id', id)
     .single();
 

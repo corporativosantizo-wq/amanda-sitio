@@ -24,6 +24,7 @@ export interface SolicitudFacturaParams {
   monto: number;
   fecha_pago: string;
   referencia_bancaria: string | null;
+  detalle_servicios?: string[];
 }
 
 // ── Notificación (se llama automáticamente al confirmar pago) ───────────────
@@ -180,13 +181,17 @@ export async function solicitarFacturaRE(params: SolicitudFacturaParams): Promis
 
   const asunto = `Solicitud de factura — ${cliente_nombre} — ${concepto}`;
 
+  const detalleHtml = params.detalle_servicios?.length
+    ? `\n  <tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top;">Detalle de servicios:</td><td>${params.detalle_servicios.map(s => `&bull; ${escapeHtml(s)}`).join('<br>')}</td></tr>`
+    : '';
+
   const htmlBody = `
 <p>Estimados,</p>
 <p>Por medio de la presente solicito la emisión de factura electrónica con los siguientes datos:</p>
 <table style="border-collapse:collapse;margin:16px 0;">
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Cliente:</td><td>${escapeHtml(cliente_nombre)}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">NIT:</td><td>${escapeHtml(nit)}</td></tr>
-  <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Concepto:</td><td>${escapeHtml(concepto)}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Concepto:</td><td>${escapeHtml(concepto)}</td></tr>${detalleHtml}
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Monto:</td><td>${montoFmt}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Fecha de pago:</td><td>${fecha_pago}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Referencia:</td><td>${escapeHtml(referenciaTexto)}</td></tr>
@@ -263,7 +268,7 @@ export async function obtenerDatosPago(pagoId: string): Promise<SolicitudFactura
   const { data: pago, error } = await db()
     .from('pagos')
     .select(`
-      id, monto, fecha_pago, referencia_bancaria, notas, cobro_id,
+      id, monto, fecha_pago, referencia_bancaria, notas, cobro_id, cotizacion_id,
       cliente:clientes!cliente_id (id, nombre, nit)
     `)
     .eq('id', pagoId)
@@ -288,6 +293,34 @@ export async function obtenerDatosPago(pagoId: string): Promise<SolicitudFactura
     if (cobro?.concepto) concepto = cobro.concepto;
   }
 
+  // Obtener detalle de servicios de la cotización vinculada
+  let detalle_servicios: string[] | undefined;
+  let cotizacionId = pago.cotizacion_id;
+
+  if (!cotizacionId && pago.cobro_id) {
+    const { data: cobro } = await db()
+      .from('cobros')
+      .select('cotizacion_id')
+      .eq('id', pago.cobro_id)
+      .single();
+    cotizacionId = cobro?.cotizacion_id;
+  }
+
+  if (cotizacionId) {
+    const { data: items } = await db()
+      .from('cotizacion_items')
+      .select('descripcion, cantidad, precio_unitario, total')
+      .eq('cotizacion_id', cotizacionId)
+      .order('orden', { ascending: true });
+
+    if (items && items.length > 0) {
+      detalle_servicios = items.map((item: any) => {
+        const totalFmt = `Q${item.total.toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+        return `${item.descripcion} (${totalFmt})`;
+      });
+    }
+  }
+
   return {
     pago_id: pagoId,
     cliente_nombre: cliente.nombre,
@@ -296,6 +329,7 @@ export async function obtenerDatosPago(pagoId: string): Promise<SolicitudFactura
     monto: pago.monto,
     fecha_pago: pago.fecha_pago,
     referencia_bancaria: pago.referencia_bancaria,
+    detalle_servicios,
   };
 }
 

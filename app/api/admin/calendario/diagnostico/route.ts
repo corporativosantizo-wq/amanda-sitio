@@ -6,8 +6,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { decrypt } from '@/lib/crypto';
+import { requireAdmin } from '@/lib/auth/api-auth';
 
 export async function GET() {
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   const diag: Record<string, any> = {
     timestamp: new Date().toISOString(),
     env: {},

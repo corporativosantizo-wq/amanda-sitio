@@ -8,6 +8,7 @@ import { resumenCotizaciones } from '@/lib/services/cotizaciones.service';
 import { resumenFacturas } from '@/lib/services/facturas.service';
 import { resumenPagos } from '@/lib/services/pagos.service';
 import { resumenGastos } from '@/lib/services/gastos.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,8 +42,7 @@ export async function GET(request: NextRequest) {
       alertas: generarAlertas(cotizaciones, facturas, pagos, gastos),
     });
   } catch (error) {
-    console.error('Error en dashboard contable:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return handleApiError(error, 'contabilidad/dashboard');
   }
 }
 

@@ -8,6 +8,7 @@ import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { obtenerPieConfidencialidad } from '@/lib/services/comunicaciones.service';
+import { handleApiError } from '@/lib/api-error';
 
 const db = () => createAdminClient();
 
@@ -22,6 +23,20 @@ interface EnvioItem {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit mass email: 5/min per user
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
+  const { checkMasivoRateLimit } = await import('@/lib/rate-limit');
+  const rl = checkMasivoRateLimit(session.userId);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'Límite de envío masivo alcanzado. Intenta en un minuto.' },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await req.json();
     const {
@@ -113,8 +128,7 @@ export async function POST(req: NextRequest) {
       errores,
       total: items.length,
     });
-  } catch (err: any) {
-    console.error('[Comunicaciones/Masivo] Error:', err);
-    return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'comunicaciones/masivo');
   }
 }

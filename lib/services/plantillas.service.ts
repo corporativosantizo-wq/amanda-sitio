@@ -83,7 +83,7 @@ export async function listarPlantillas(params: ListParams = {}) {
   const { activa, tipo, busqueda, page = 1, limit = 50 } = params;
   const offset = (page - 1) * limit;
 
-  let query = db().from('plantillas').select('*', { count: 'exact' });
+  let query = db().from('plantillas').select('id, nombre, tipo, descripcion, campos, activa, archivo_original, created_at, updated_at', { count: 'exact' });
 
   if (activa !== undefined) query = query.eq('activa', activa);
   if (tipo) query = query.eq('tipo', tipo);

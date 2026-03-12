@@ -183,6 +183,30 @@ export async function answerCallbackQuery(
   });
 }
 
+// ── Edit message reply markup (update/remove inline buttons) ───────────────
+
+export async function editMessageReplyMarkup(
+  messageId: number,
+  replyMarkup?: unknown,
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: CHAT_ID,
+      message_id: messageId,
+      reply_markup: replyMarkup ?? { inline_keyboard: [] },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('[telegram] Error editando reply markup:', res.status, errText.substring(0, 300));
+  }
+}
+
 // ── Build scheduling intent notification with inline "Agendar" buttons ────
 
 const EVENT_TYPE_LABELS: Record<string, string> = {

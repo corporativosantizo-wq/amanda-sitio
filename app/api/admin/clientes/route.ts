@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listarClientes, crearCliente, ClienteError } from '@/lib/services/clientes.service';
 import { sincronizarRepresentantes } from '@/lib/services/representantes.service';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
   try {
@@ -75,12 +76,18 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ...result, data: enriched });
   } catch (err) {
-    const msg = err instanceof ClienteError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof ClienteError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/GET');
   }
 }
 
 export async function POST(req: NextRequest) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await req.json();
     if (!body.nombre?.trim()) {
@@ -99,9 +106,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(cliente, { status: 201 });
   } catch (err) {
-    console.error('ERROR CREAR CLIENTE:', err);
-    const msg = err instanceof ClienteError ? err.message : 'Error al crear cliente';
-    const status = msg.includes('Ya existe') ? 409 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    if (err instanceof ClienteError) {
+      const status = err.message.includes('Ya existe') ? 409 : 500;
+      return NextResponse.json({ error: err.message }, { status });
+    }
+    return handleApiError(err, 'clientes/POST');
   }
 }

@@ -49,7 +49,13 @@ export async function listarTramitesMercantiles(params: ListParams = {}) {
   let query = db()
     .from('tramites_mercantiles')
     .select(`
-      *,
+      id, cliente_id, categoria, subtipo, estado,
+      numero_registro, numero_expediente_rm,
+      fecha_tramite, fecha_inscripcion, fecha_vencimiento,
+      es_recurrente, periodicidad_meses, alerta_dias_antes,
+      notario_responsable, descripcion, notas,
+      documento_url, archivo_pdf_url, archivo_pdf_nombre,
+      created_at, updated_at,
       cliente:clientes!tramites_mercantiles_cliente_id_fkey(id, codigo, nombre, nit)
     `, { count: 'exact' })
     .order(orderBy, { ascending: orderDir === 'asc', nullsFirst: false })
@@ -190,7 +196,13 @@ export async function crearHistorialMercantil(input: HistorialMercantilInsert): 
 export async function tramitesMercantilesPorCliente(clienteId: string) {
   const { data, error } = await db()
     .from('tramites_mercantiles')
-    .select('*')
+    .select(`
+      id, cliente_id, categoria, subtipo, estado,
+      numero_registro, numero_expediente_rm,
+      fecha_tramite, fecha_inscripcion, fecha_vencimiento,
+      es_recurrente, notario_responsable, descripcion,
+      created_at, updated_at
+    `)
     .eq('cliente_id', clienteId)
     .order('updated_at', { ascending: false });
 
@@ -207,7 +219,9 @@ export async function tramitesMercantilesPorVencer(dias: number = 30) {
   const { data, error } = await db()
     .from('tramites_mercantiles')
     .select(`
-      *,
+      id, cliente_id, categoria, subtipo, estado,
+      numero_registro, fecha_vencimiento, descripcion,
+      created_at, updated_at,
       cliente:clientes!tramites_mercantiles_cliente_id_fkey(id, codigo, nombre)
     `)
     .in('estado', ['vigente', 'inscrito'])
@@ -233,7 +247,9 @@ export async function tramitesMercantilesVencidos() {
   const { data, error } = await db()
     .from('tramites_mercantiles')
     .select(`
-      *,
+      id, cliente_id, categoria, subtipo, estado,
+      numero_registro, fecha_vencimiento, descripcion,
+      created_at, updated_at,
       cliente:clientes!tramites_mercantiles_cliente_id_fkey(id, codigo, nombre)
     `)
     .not('fecha_vencimiento', 'is', null)

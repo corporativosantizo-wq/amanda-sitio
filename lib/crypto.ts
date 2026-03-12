@@ -10,6 +10,9 @@ const ALGORITHM = 'aes-256-gcm';
 function getKey(): Buffer | null {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+      throw new Error('ENCRYPTION_KEY is required in production (64 hex chars)');
+    }
     console.warn('[Crypto] ENCRYPTION_KEY no configurada o inválida (se requieren 64 hex chars). Tokens se guardarán sin encriptar.');
     return null;
   }

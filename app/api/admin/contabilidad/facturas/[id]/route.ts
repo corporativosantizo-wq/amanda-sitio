@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerFactura, FacturaError } from '@/lib/services/facturas.service';
+import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -21,7 +22,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         { status }
       );
     }
-    console.error('Error en factura:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return handleApiError(error, 'contabilidad/facturas/[id]');
   }
 }

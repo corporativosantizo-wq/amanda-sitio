@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -125,6 +126,10 @@ function formatScheduledDate(isoStr: string): string {
 // ── Page component ─────────────────────────────────────────────────────────
 
 export default function MollyMailPage() {
+  const searchParams = useSearchParams()
+  const highlightDraftId = searchParams.get('draft')
+  const draftRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
   const [stats, setStats] = useState<Stats | null>(null)
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [scheduled, setScheduled] = useState<Draft[]>([])
@@ -173,6 +178,13 @@ export default function MollyMailPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Auto-scroll to draft from ?draft= query param
+  useEffect(() => {
+    if (highlightDraftId && !loading && draftRefs.current[highlightDraftId]) {
+      draftRefs.current[highlightDraftId]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [highlightDraftId, loading, drafts])
 
   const handleDraftAction = async (
     draftId: string,
@@ -378,7 +390,11 @@ export default function MollyMailPage() {
         ) : (
           <div className="space-y-4">
             {drafts.map((draft) => (
-              <div key={draft.id} className="bg-white rounded-xl shadow-sm p-5">
+              <div
+                key={draft.id}
+                ref={(el) => { draftRefs.current[draft.id] = el }}
+                className={`bg-white rounded-xl shadow-sm p-5${highlightDraftId === draft.id ? ' ring-2 ring-cyan ring-offset-2' : ''}`}
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">

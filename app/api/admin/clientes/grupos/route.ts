@@ -5,14 +5,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { listarGrupos, crearGrupo, GrupoError } from '@/lib/services/grupos.service';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET() {
   try {
     const grupos = await listarGrupos();
     return NextResponse.json({ grupos });
   } catch (err) {
-    const msg = err instanceof GrupoError ? err.message : 'Error interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof GrupoError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/grupos/GET');
   }
 }
 
@@ -26,7 +29,9 @@ export async function POST(req: NextRequest) {
     const grupo = await crearGrupo(body.nombre, body.empresa_ids ?? []);
     return NextResponse.json({ grupo }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof GrupoError ? err.message : 'Error al crear grupo';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (err instanceof GrupoError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+    return handleApiError(err, 'clientes/grupos/POST');
   }
 }
