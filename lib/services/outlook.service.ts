@@ -593,6 +593,16 @@ function parseEmailList(input: string | string[] | undefined): string[] {
   return input.split(',').map((e) => e.trim()).filter(Boolean);
 }
 
+const LARGE_ATTACHMENT_THRESHOLD = 4 * 1024 * 1024; // 4MB — Graph API inline limit
+const UPLOAD_CHUNK_SIZE = 3.5 * 1024 * 1024; // 3.5MB per chunk
+
+/** Estimate raw byte size from a base64 string */
+function base64ByteSize(base64: string): number {
+  // base64 encodes 3 bytes into 4 chars; padding '=' reduces by 1 byte each
+  const padding = (base64.match(/=+$/) || [''])[0].length;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 export async function sendMail(params: {
   from: MailboxAlias;
   to: string;
@@ -615,20 +625,14 @@ export async function sendMail(params: {
   const appToken = await getAppToken();
   console.log(`[sendMail] App token obtenido OK`);
 
-  const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
-  console.log('[sendMail] POST', url);
-
-  const message: any = {
-    subject: params.subject,
-    body: { contentType: 'HTML', content: params.htmlBody },
-    toRecipients: toList.map((addr) => ({ emailAddress: { address: addr } })),
-  };
+  // Build recipient lists
+  const toRecipients = toList.map((addr: string) => ({ emailAddress: { address: addr } }));
 
   const ccList = parseEmailList(params.cc);
-  if (ccList.length > 0) {
-    message.ccRecipients = ccList.map((addr) => ({ emailAddress: { address: addr } }));
-    console.log('[sendMail] cc:', ccList.join(', '));
-  }
+  const ccRecipients = ccList.length > 0
+    ? ccList.map((addr: string) => ({ emailAddress: { address: addr } }))
+    : undefined;
+  if (ccList.length > 0) console.log('[sendMail] cc:', ccList.join(', '));
 
   // Auto-BCC amanda@ when sending from asistente@ or contador@
   const AUTO_BCC_SENDERS = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
@@ -637,41 +641,209 @@ export async function sendMail(params: {
   if (AUTO_BCC_SENDERS.includes(params.from) && !bccList.includes(AUTO_BCC_ADDR)) {
     bccList.push(AUTO_BCC_ADDR);
   }
-  if (bccList.length > 0) {
-    message.bccRecipients = bccList.map((addr) => ({ emailAddress: { address: addr } }));
-    console.log('[sendMail] bcc:', bccList.join(', '));
-  }
+  const bccRecipients = bccList.length > 0
+    ? bccList.map((addr: string) => ({ emailAddress: { address: addr } }))
+    : undefined;
+  if (bccList.length > 0) console.log('[sendMail] bcc:', bccList.join(', '));
 
-  if (params.attachments?.length) {
-    message.attachments = params.attachments.map((att) => ({
-      '@odata.type': '#microsoft.graph.fileAttachment',
-      name: att.name,
-      contentType: att.contentType,
-      contentBytes: att.contentBytes,
-    }));
-    console.log('[sendMail]', params.attachments.length, 'adjunto(s):', params.attachments.map((a) => a.name).join(', '));
-  }
-
-  const payload = { message, saveToSentItems: true };
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${appToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
+  // Check attachment sizes to decide inline vs upload session
+  const attachments = params.attachments ?? [];
+  const hasLargeAttachment = attachments.some((att: { name: string; contentType: string; contentBytes: string }) => {
+    const rawSize = base64ByteSize(att.contentBytes);
+    console.log(`[sendMail] Adjunto: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB) — ${rawSize < LARGE_ATTACHMENT_THRESHOLD ? 'inline' : 'upload session'}`);
+    return rawSize >= LARGE_ATTACHMENT_THRESHOLD;
   });
 
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error(`[sendMail] ── ERROR ──`);
-    console.error('[sendMail] status:', res.status);
-    console.error('[sendMail] body:', errBody.substring(0, 500));
-    throw new OutlookError(`Error al enviar email: ${res.status}`, errBody);
+  if (hasLargeAttachment && attachments.length > 0) {
+    // ── Large attachment flow: draft → upload session → send ──
+    await sendMailWithUploadSession(params.from, appToken, {
+      subject: params.subject,
+      body: { contentType: 'HTML', content: params.htmlBody },
+      toRecipients,
+      ...(ccRecipients ? { ccRecipients } : {}),
+      ...(bccRecipients ? { bccRecipients } : {}),
+    }, attachments);
+  } else {
+    // ── Standard inline flow (< 4MB) ──
+    const message: any = {
+      subject: params.subject,
+      body: { contentType: 'HTML', content: params.htmlBody },
+      toRecipients,
+    };
+    if (ccRecipients) message.ccRecipients = ccRecipients;
+    if (bccRecipients) message.bccRecipients = bccRecipients;
+
+    if (attachments.length > 0) {
+      message.attachments = attachments.map((att: { name: string; contentType: string; contentBytes: string }) => ({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: att.name,
+        contentType: att.contentType,
+        contentBytes: att.contentBytes,
+      }));
+      console.log('[sendMail]', attachments.length, 'adjunto(s) inline:', attachments.map((a: { name: string }) => a.name).join(', '));
+    }
+
+    const url = `https://graph.microsoft.com/v1.0/users/${params.from}/sendMail`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${appToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message, saveToSentItems: true }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error(`[sendMail] ── ERROR ──`);
+      console.error('[sendMail] status:', res.status);
+      console.error('[sendMail] body:', errBody.substring(0, 500));
+      throw new OutlookError(`Error al enviar email: ${res.status}`, errBody);
+    }
+
+    console.log('[sendMail] ── ÉXITO — email enviado (' + res.status + ') ──');
+  }
+}
+
+// ── Large attachment flow via draft + upload session ─────────────────────────
+
+async function sendMailWithUploadSession(
+  from: MailboxAlias,
+  appToken: string,
+  messagePayload: any,
+  attachments: Array<{ name: string; contentType: string; contentBytes: string }>,
+): Promise<void> {
+  const graphBase = `https://graph.microsoft.com/v1.0/users/${from}`;
+  const headers = {
+    Authorization: `Bearer ${appToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  // Step 1: Create draft message (without attachments)
+  console.log('[sendMail] Creando draft para adjuntos grandes...');
+  const draftRes = await fetch(`${graphBase}/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(messagePayload),
+  });
+
+  if (!draftRes.ok) {
+    const errBody = await draftRes.text();
+    console.error('[sendMail] Error creando draft:', draftRes.status, errBody.substring(0, 500));
+    throw new OutlookError(`Error al crear draft: ${draftRes.status}`, errBody);
   }
 
-  console.log('[sendMail] ── ÉXITO — email enviado (' + res.status + ') ──');
+  const draft = await draftRes.json();
+  const draftId = draft.id;
+  console.log('[sendMail] Draft creado:', draftId.substring(0, 30) + '...');
+
+  try {
+    // Step 2: Add each attachment (small inline, large via upload session)
+    for (const att of attachments) {
+      const rawSize = base64ByteSize(att.contentBytes);
+
+      if (rawSize < LARGE_ATTACHMENT_THRESHOLD) {
+        // Small attachment — add inline to draft
+        console.log(`[sendMail] Adjuntando inline: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB)`);
+        const addRes = await fetch(`${graphBase}/messages/${draftId}/attachments`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: att.name,
+            contentType: att.contentType,
+            contentBytes: att.contentBytes,
+          }),
+        });
+        if (!addRes.ok) {
+          const errBody = await addRes.text();
+          console.error(`[sendMail] Error adjuntando ${att.name}:`, addRes.status, errBody.substring(0, 300));
+          throw new OutlookError(`Error al adjuntar ${att.name}: ${addRes.status}`, errBody);
+        }
+      } else {
+        // Large attachment — use upload session
+        console.log(`[sendMail] Upload session para: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB)`);
+
+        // Create upload session
+        const sessionRes = await fetch(`${graphBase}/messages/${draftId}/attachments/createUploadSession`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            AttachmentItem: {
+              attachmentType: 'file',
+              name: att.name,
+              size: rawSize,
+            },
+          }),
+        });
+
+        if (!sessionRes.ok) {
+          const errBody = await sessionRes.text();
+          console.error(`[sendMail] Error creando upload session para ${att.name}:`, sessionRes.status, errBody.substring(0, 300));
+          throw new OutlookError(`Error upload session ${att.name}: ${sessionRes.status}`, errBody);
+        }
+
+        const session = await sessionRes.json();
+        const uploadUrl = session.uploadUrl;
+        console.log(`[sendMail] Upload session creada, subiendo en chunks de ${(UPLOAD_CHUNK_SIZE / 1024 / 1024).toFixed(1)} MB...`);
+
+        // Decode base64 to buffer for chunked upload
+        const fileBuffer = Buffer.from(att.contentBytes, 'base64');
+
+        // Upload in chunks
+        for (let offset = 0; offset < fileBuffer.length; offset += UPLOAD_CHUNK_SIZE) {
+          const end = Math.min(offset + UPLOAD_CHUNK_SIZE, fileBuffer.length);
+          const chunk = fileBuffer.subarray(offset, end);
+
+          const chunkRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Range': `bytes ${offset}-${end - 1}/${fileBuffer.length}`,
+              'Content-Type': 'application/octet-stream',
+            },
+            body: chunk,
+          });
+
+          if (!chunkRes.ok && chunkRes.status !== 200 && chunkRes.status !== 201) {
+            const errBody = await chunkRes.text();
+            console.error(`[sendMail] Error subiendo chunk ${offset}-${end - 1}/${fileBuffer.length}:`, chunkRes.status, errBody.substring(0, 300));
+            throw new OutlookError(`Error subiendo chunk de ${att.name}: ${chunkRes.status}`, errBody);
+          }
+
+          console.log(`[sendMail] Chunk ${offset}-${end - 1}/${fileBuffer.length} subido OK`);
+        }
+
+        console.log(`[sendMail] Upload completo para ${att.name}`);
+      }
+    }
+
+    // Step 3: Send the draft
+    console.log('[sendMail] Enviando draft...');
+    const sendRes = await fetch(`${graphBase}/messages/${draftId}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${appToken}` },
+    });
+
+    if (!sendRes.ok) {
+      const errBody = await sendRes.text();
+      console.error('[sendMail] Error enviando draft:', sendRes.status, errBody.substring(0, 500));
+      throw new OutlookError(`Error al enviar draft: ${sendRes.status}`, errBody);
+    }
+
+    console.log('[sendMail] ── ÉXITO — email con adjuntos grandes enviado ──');
+  } catch (err) {
+    // Clean up: try to delete the draft if sending failed
+    try {
+      await fetch(`${graphBase}/messages/${draftId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${appToken}` },
+      });
+      console.log('[sendMail] Draft eliminado tras error');
+    } catch {
+      // Best-effort cleanup
+    }
+    throw err;
+  }
 }
 
 /** @deprecated Use sendMail() with explicit `from` parameter instead */
