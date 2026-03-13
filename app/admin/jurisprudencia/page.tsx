@@ -25,18 +25,28 @@ interface Carpeta {
   orden: number | null;
 }
 
+type Fuente = 'CSJ' | 'CC';
+type FuenteFilter = Fuente | 'TODAS';
+
 interface Tomo {
   id: string;
   titulo: string;
   nombre_archivo: string;
   archivo_url: string;
   carpeta_id: string | null;
+  fuente: Fuente;
   procesado: boolean;
   num_paginas: number | null;
   total_fragmentos: number | null;
   created_at: string;
   carpeta: { id: string; nombre: string } | null;
 }
+
+const FUENTE_TABS: { key: FuenteFilter; label: string; full: string }[] = [
+  { key: 'CSJ', label: 'CSJ', full: 'Corte Suprema de Justicia' },
+  { key: 'CC', label: 'CC', full: 'Corte de Constitucionalidad' },
+  { key: 'TODAS', label: 'Todas', full: 'Todas las fuentes' },
+];
 
 interface ListResponse {
   data: Tomo[];
@@ -77,11 +87,31 @@ function formatFecha(iso: string): string {
   });
 }
 
+// ── CC Gaceta helpers ───────────────────────────────────────────────────────
+
+const TRIMESTRE_LABELS = ['Ene–Mar', 'Abr–Jun', 'Jul–Sep', 'Oct–Dic'];
+
+/** Extract gaceta number from filename like "Gaceta-CC-119-SUMARIO.pdf" → 119 */
+function extractGacetaNumber(filename: string): number | null {
+  const match = filename.match(/(\d{2,3})/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/** Gaceta 119 = Q1 2016, each 4 numbers = 1 year */
+function gacetaMetadata(num: number): { anio: number; trimestre: string } {
+  const offset = num - 119;
+  const anio = 2016 + Math.floor(offset / 4);
+  const q = ((offset % 4) + 4) % 4; // handle negative modulo
+  return { anio, trimestre: TRIMESTRE_LABELS[q] };
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function JurisprudenciaPage() {
   const [page, setPage] = useState(1);
+  const [fuenteFilter, setFuenteFilter] = useState<FuenteFilter>('CSJ');
   const [showModal, setShowModal] = useState(false);
+  const [showBulkCC, setShowBulkCC] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Processing state
@@ -96,8 +126,15 @@ export default function JurisprudenciaPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
   };
 
-  // Data
-  const listUrl = `/api/admin/jurisprudencia?page=${page}&limit=20`;
+  // Reset page when switching fuente
+  const handleFuenteChange = (f: FuenteFilter) => {
+    setFuenteFilter(f);
+    setPage(1);
+  };
+
+  // Data — only pass fuente param when filtering by specific source
+  const fuenteParam = fuenteFilter !== 'TODAS' ? `&fuente=${fuenteFilter}` : '';
+  const listUrl = `/api/admin/jurisprudencia?page=${page}&limit=20${fuenteParam}`;
   const { data: listData, loading, refetch } = useFetch<ListResponse>(listUrl);
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
     '/api/admin/jurisprudencia?carpetas=true'
@@ -189,10 +226,12 @@ export default function JurisprudenciaPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Jurisprudencia — Tomos</h1>
-          <p className="text-sm text-slate-500 mt-1">Gestión de tomos de jurisprudencia para consulta con IA</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {FUENTE_TABS.find((t) => t.key === fuenteFilter)?.full} — Gestión de tomos para consulta con IA
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {pendingTomos.length > 0 && (
@@ -204,6 +243,17 @@ export default function JurisprudenciaPage() {
               {processingAll ? 'Procesando...' : `Procesar Todos (${pendingTomos.length})`}
             </button>
           )}
+          {(fuenteFilter === 'CC' || fuenteFilter === 'TODAS') && (
+            <button
+              onClick={() => setShowBulkCC(true)}
+              className="px-4 py-2.5 text-sm rounded-lg border border-cyan-200 text-cyan-700 font-medium hover:bg-cyan-50 transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Subida masiva CC
+            </button>
+          )}
           <button
             onClick={() => setShowModal(true)}
             className="px-4 py-2.5 text-sm rounded-lg bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white font-medium hover:shadow-lg hover:shadow-blue-900/20 transition-all flex items-center gap-2"
@@ -212,6 +262,26 @@ export default function JurisprudenciaPage() {
             Subir Tomo
           </button>
         </div>
+      </div>
+
+      {/* Fuente Tabs */}
+      <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
+        {FUENTE_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => handleFuenteChange(tab.key)}
+            className={`px-4 py-2 text-sm rounded-md font-medium transition-all ${
+              fuenteFilter === tab.key
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab.label}
+            <span className="ml-1.5 text-xs font-normal hidden sm:inline">
+              {tab.key !== 'TODAS' ? tab.full : ''}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
@@ -233,6 +303,7 @@ export default function JurisprudenciaPage() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="text-left px-5 py-3 font-medium text-slate-500">Título</th>
+                  <th className="text-center px-5 py-3 font-medium text-slate-500">Fuente</th>
                   <th className="text-left px-5 py-3 font-medium text-slate-500">Materia</th>
                   <th className="text-center px-5 py-3 font-medium text-slate-500">Páginas</th>
                   <th className="text-center px-5 py-3 font-medium text-slate-500">Estado</th>
@@ -246,6 +317,15 @@ export default function JurisprudenciaPage() {
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900 truncate max-w-xs">{tomo.titulo}</div>
                       <div className="text-xs text-slate-400 truncate max-w-xs">{tomo.nombre_archivo}</div>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${
+                        tomo.fuente === 'CC'
+                          ? 'bg-cyan-50 text-cyan-700'
+                          : 'bg-blue-50 text-blue-700'
+                      }`}>
+                        {tomo.fuente}
+                      </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600">
                       {tomo.carpeta?.nombre ?? '—'}
@@ -390,9 +470,23 @@ export default function JurisprudenciaPage() {
       {showModal && (
         <UploadModal
           carpetas={carpetas}
+          defaultFuente={fuenteFilter !== 'TODAS' ? fuenteFilter : 'CSJ'}
           onClose={() => setShowModal(false)}
           onDone={() => {
             setShowModal(false);
+            refetch();
+          }}
+        />
+      )}
+
+      {/* ── Bulk Upload CC Modal ──────────────────────────────────────────── */}
+      {showBulkCC && (
+        <BulkUploadCCModal
+          carpetas={carpetas}
+          onClose={() => setShowBulkCC(false)}
+          onDone={() => {
+            setShowBulkCC(false);
+            if (fuenteFilter !== 'CC') handleFuenteChange('CC');
             refetch();
           }}
         />
@@ -405,13 +499,15 @@ export default function JurisprudenciaPage() {
 
 interface UploadModalProps {
   carpetas: Carpeta[];
+  defaultFuente: Fuente;
   onClose: () => void;
   onDone: () => void;
 }
 
-function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
+function UploadModal({ carpetas, defaultFuente, onClose, onDone }: UploadModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [fuente, setFuente] = useState<Fuente>(defaultFuente);
   const [categoriaId, setCategoriaId] = useState('');
   const [subcategoriaId, setSubcategoriaId] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -425,11 +521,6 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
   const subcategorias = categoriaId
     ? carpetas.filter((c) => c.padre_id === categoriaId)
     : [];
-
-  console.log('[Jurisprudencia] Carpetas cargadas:', carpetas.length, carpetas);
-  console.log('[Jurisprudencia] Categorías (padre_id=null):', categorias.length, categorias.map(c => `${c.id} ${c.nombre}`));
-  console.log('[Jurisprudencia] Categoría seleccionada:', categoriaId);
-  console.log('[Jurisprudencia] Subcarpetas filtradas (padre_id===categoriaId):', subcategorias.length, subcategorias.map(c => `${c.id} ${c.nombre} padre=${c.padre_id}`));
 
   const categoriaSeleccionada = categorias.find((c) => c.id === categoriaId);
 
@@ -536,6 +627,7 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
             nombre_archivo: file.name,
             archivo_url: urlData.storage_path,
             carpeta_id: carpetaFinal,
+            fuente,
           }),
         });
         const registerData = await registerRes.json();
@@ -568,6 +660,30 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
         </div>
 
         <div className="p-6 space-y-5">
+          {/* Fuente Selector */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Fuente</label>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              {(['CSJ', 'CC'] as Fuente[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => { setFuente(f); setCategoriaId(''); setSubcategoriaId(''); }}
+                  disabled={uploading}
+                  className={`flex-1 px-3 py-1.5 text-sm rounded-md font-medium transition-all disabled:opacity-50 ${
+                    fuente === f
+                      ? f === 'CC'
+                        ? 'bg-white text-cyan-700 shadow-sm'
+                        : 'bg-white text-blue-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {f === 'CSJ' ? 'CSJ — Corte Suprema' : 'CC — Constitucionalidad'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Drag & Drop Zone */}
           <div
             onDragOver={handleDragOver}
@@ -731,6 +847,335 @@ function UploadModal({ carpetas, onClose, onDone }: UploadModalProps) {
               ? `Subiendo ${progress.current}/${progress.total}...`
               : `Subir ${files.length > 0 ? files.length : ''} archivo${files.length !== 1 ? 's' : ''}`}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Bulk Upload CC Modal ────────────────────────────────────────────────────
+
+interface BulkCCProps {
+  carpetas: Carpeta[];
+  onClose: () => void;
+  onDone: () => void;
+}
+
+interface GacetaFile {
+  file: File;
+  numero: number | null;
+  anio: number | null;
+  trimestre: string | null;
+  titulo: string;
+}
+
+function BulkUploadCCModal({ carpetas, onClose, onDone }: BulkCCProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [gacetas, setGacetas] = useState<GacetaFile[]>([]);
+  const [subcategoriaId, setSubcategoriaId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, currentFile: '' });
+  const [results, setResults] = useState<{ ok: string[]; errors: string[] }>({ ok: [], errors: [] });
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // CC parent folder
+  const ccCarpeta = carpetas.find((c: Carpeta) => c.padre_id === null && c.nombre === 'Gacetas CC');
+  const ccSubcategorias = ccCarpeta
+    ? carpetas.filter((c: Carpeta) => c.padre_id === ccCarpeta.id)
+    : [];
+
+  const slugify = (name: string) =>
+    name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  const addFiles = useCallback((fileList: File[]) => {
+    const pdfs = fileList.filter((f: File) => f.name.toLowerCase().endsWith('.pdf'));
+    const newGacetas: GacetaFile[] = pdfs.map((file: File) => {
+      const num = extractGacetaNumber(file.name);
+      const meta = num !== null ? gacetaMetadata(num) : null;
+      return {
+        file,
+        numero: num,
+        anio: meta?.anio ?? null,
+        trimestre: meta?.trimestre ?? null,
+        titulo: num !== null && meta
+          ? `Gaceta CC No. ${num} — ${meta.trimestre} ${meta.anio}`
+          : limpiarNombreArchivo(file.name),
+      };
+    });
+    setGacetas((prev: GacetaFile[]) => [...prev, ...newGacetas]);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragging(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragging(false); }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(Array.from(e.dataTransfer.files));
+  }, [addFiles]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addFiles(Array.from(e.target.files ?? []));
+    e.target.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setGacetas((prev: GacetaFile[]) => prev.filter((_: GacetaFile, i: number) => i !== index));
+  };
+
+  // ── Bulk Upload Flow ───────────────────────────────────────────────────
+
+  const handleUpload = async () => {
+    if (gacetas.length === 0) return;
+    setUploading(true);
+    setError(null);
+    setResults({ ok: [], errors: [] });
+    setProgress({ current: 0, total: gacetas.length, currentFile: '' });
+
+    const ok: string[] = [];
+    const errors: string[] = [];
+
+    // Determine carpeta_id and storage path
+    const carpetaId = subcategoriaId || ccCarpeta?.id || null;
+    const subFolder = subcategoriaId
+      ? ccSubcategorias.find((c: Carpeta) => c.id === subcategoriaId)
+      : null;
+    const basePath = ccCarpeta
+      ? subFolder
+        ? `${slugify(ccCarpeta.nombre)}/${slugify(subFolder.nombre)}`
+        : slugify(ccCarpeta.nombre)
+      : 'cc';
+
+    for (let i = 0; i < gacetas.length; i++) {
+      const g = gacetas[i];
+      setProgress({ current: i + 1, total: gacetas.length, currentFile: g.titulo });
+
+      try {
+        // Build storage path: CC/{anio}/{filename}
+        const yearPath = g.anio ? `${basePath}/${g.anio}` : basePath;
+
+        // 1. Get signed upload URL
+        const urlRes = await adminFetch('/api/admin/jurisprudencia/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: g.file.name,
+            filesize: g.file.size,
+            carpeta_path: yearPath,
+          }),
+        });
+        const urlData = await urlRes.json();
+        if (!urlRes.ok) throw new Error(urlData.error ?? 'Error URL de subida');
+
+        // 2. Upload file
+        const uploadRes = await signedUrlUpload(urlData.signed_url, g.file, 'application/pdf');
+        if (!uploadRes.ok) throw new Error('Error al subir archivo');
+
+        // 3. Register tomo in DB
+        const registerRes = await adminFetch('/api/admin/jurisprudencia', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            titulo: g.titulo,
+            nombre_archivo: g.file.name,
+            archivo_url: urlData.storage_path,
+            carpeta_id: carpetaId,
+            fuente: 'CC',
+          }),
+        });
+        const registerData = await registerRes.json();
+        if (!registerRes.ok) throw new Error(registerData.error ?? 'Error al registrar');
+
+        ok.push(g.titulo);
+      } catch (err: any) {
+        errors.push(`${g.file.name}: ${err.message}`);
+      }
+    }
+
+    setResults({ ok, errors });
+    setUploading(false);
+
+    if (errors.length === 0) {
+      // All succeeded — auto-close after brief delay
+      setTimeout(() => onDone(), 1500);
+    }
+  };
+
+  const done = results.ok.length > 0 || results.errors.length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Subida masiva — Gacetas CC</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Corte de Constitucionalidad — detecta No., trimestre y año automáticamente</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={uploading}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Drag & Drop Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+              dragging
+                ? 'border-cyan-400 bg-cyan-50 scale-[1.02]'
+                : 'border-slate-300 hover:border-cyan-300 hover:bg-slate-50'
+            }`}
+          >
+            <svg className={`w-8 h-8 mx-auto mb-2 ${dragging ? 'text-cyan-400' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-sm font-medium text-slate-700">Arrastra todas las gacetas CC aquí</p>
+            <p className="text-xs text-slate-400 mt-1">PDFs con formato: Gaceta-CC-119-SUMARIO.pdf</p>
+            <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={handleFileSelect} className="hidden" />
+          </div>
+
+          {/* Subcategory selector */}
+          {ccSubcategorias.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de resolución (opcional)</label>
+              <select
+                value={subcategoriaId}
+                onChange={(e) => setSubcategoriaId(e.target.value)}
+                disabled={uploading}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 disabled:opacity-50"
+              >
+                <option value="">General (sin clasificar)</option>
+                {ccSubcategorias.map((c: Carpeta) => (
+                  <option key={c.id} value={c.id}>{c.icono ? `${c.icono} ` : ''}{c.nombre}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* File list with detected metadata */}
+          {gacetas.length > 0 && !done && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">
+                  {gacetas.length} gaceta{gacetas.length !== 1 ? 's' : ''} detectada{gacetas.length !== 1 ? 's' : ''}
+                </p>
+                {!uploading && (
+                  <button
+                    onClick={() => setGacetas([])}
+                    className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                  >
+                    Limpiar todo
+                  </button>
+                )}
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-1.5 border border-slate-100 rounded-lg p-2">
+                {gacetas.map((g: GacetaFile, i: number) => (
+                  <div key={`${g.file.name}-${i}`} className="flex items-center gap-3 px-3 py-2 bg-slate-50 rounded-lg">
+                    <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
+                      g.numero !== null ? 'bg-cyan-50 text-cyan-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {g.numero !== null ? `No. ${g.numero}` : '?'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-700 truncate">{g.titulo}</p>
+                      <p className="text-xs text-slate-400">
+                        {g.trimestre && g.anio ? `${g.trimestre} ${g.anio}` : g.file.name}
+                        {' — '}
+                        {(g.file.size / (1024 * 1024)).toFixed(1)} MB
+                      </p>
+                    </div>
+                    {!uploading && (
+                      <button
+                        onClick={() => removeFile(i)}
+                        className="shrink-0 p-1 text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Progress */}
+          {uploading && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600 truncate max-w-xs">{progress.currentFile}</span>
+                <span className="font-medium text-slate-900 shrink-0">{progress.current}/{progress.total}</span>
+              </div>
+              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 text-center">
+                Subiendo {progress.current} de {progress.total} gacetas...
+              </p>
+            </div>
+          )}
+
+          {/* Results */}
+          {done && (
+            <div className="space-y-3">
+              {results.ok.length > 0 && (
+                <div className="px-4 py-3 bg-emerald-50 text-emerald-700 text-sm rounded-lg border border-emerald-200">
+                  {results.ok.length} gaceta{results.ok.length !== 1 ? 's' : ''} subida{results.ok.length !== 1 ? 's' : ''} correctamente
+                </div>
+              )}
+              {results.errors.length > 0 && (
+                <div className="px-4 py-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 space-y-1">
+                  <p className="font-medium">{results.errors.length} error{results.errors.length !== 1 ? 'es' : ''}:</p>
+                  {results.errors.map((err: string, i: number) => (
+                    <p key={i} className="text-xs">{err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="px-4 py-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100">
+          <button
+            onClick={done ? onDone : onClose}
+            disabled={uploading}
+            className="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {done ? 'Cerrar' : 'Cancelar'}
+          </button>
+          {!done && (
+            <button
+              onClick={handleUpload}
+              disabled={uploading || gacetas.length === 0}
+              className="px-4 py-2 text-sm rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white font-medium hover:shadow-lg hover:shadow-cyan-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading
+                ? `Subiendo ${progress.current}/${progress.total}...`
+                : `Subir ${gacetas.length} gaceta${gacetas.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
         </div>
       </div>
     </div>

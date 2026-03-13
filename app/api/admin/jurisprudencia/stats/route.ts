@@ -3,22 +3,33 @@
 // Estadísticas de tomos procesados y fragmentos indexados
 // ============================================================================
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const supabase = createAdminClient();
+    const fuente = req.nextUrl.searchParams.get('fuente');
 
-    const [tomosRes, fragmentosRes] = await Promise.all([
-      supabase
-        .from('jurisprudencia_tomos')
-        .select('*', { count: 'exact', head: true })
-        .eq('procesado', true),
-      supabase
+    let tomosQuery = supabase
+      .from('jurisprudencia_tomos')
+      .select('*', { count: 'exact', head: true })
+      .eq('procesado', true);
+    if (fuente) tomosQuery = tomosQuery.eq('fuente', fuente);
+
+    // For fragments, join through tomos to filter by fuente
+    let fragmentosQuery = supabase
+      .from('jurisprudencia_fragmentos')
+      .select('*, tomo:jurisprudencia_tomos!tomo_id(fuente)', { count: 'exact', head: true });
+    if (fuente) {
+      // Use inner join filter: only count fragments whose tomo has matching fuente
+      fragmentosQuery = supabase
         .from('jurisprudencia_fragmentos')
-        .select('*', { count: 'exact', head: true }),
-    ]);
+        .select('*, tomo:jurisprudencia_tomos!inner(fuente)', { count: 'exact', head: true })
+        .eq('tomo.fuente', fuente);
+    }
+
+    const [tomosRes, fragmentosRes] = await Promise.all([tomosQuery, fragmentosQuery]);
 
     return NextResponse.json({
       tomos_procesados: tomosRes.count ?? 0,

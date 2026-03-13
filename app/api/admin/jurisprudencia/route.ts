@@ -21,9 +21,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ carpetas });
     }
 
+    const fuente = s.get('fuente') as 'CSJ' | 'CC' | null;
     const result = await listarTomos({
       carpeta_id: s.get('carpeta_id') ?? undefined,
       procesado: s.has('procesado') ? s.get('procesado') === 'true' : undefined,
+      fuente: fuente ?? undefined,
       q: s.get('q') ?? undefined,
       page: parseInt(s.get('page') ?? '1'),
       limit: parseInt(s.get('limit') ?? '20'),
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { titulo, nombre_archivo, archivo_url, carpeta_id } = body;
+    const { titulo, nombre_archivo, archivo_url, carpeta_id, fuente } = body;
 
     if (!titulo || !nombre_archivo || !archivo_url) {
       return NextResponse.json(
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tomo = await crearTomo({ titulo, nombre_archivo, archivo_url, carpeta_id });
+    const tomo = await crearTomo({ titulo, nombre_archivo, archivo_url, carpeta_id, fuente });
     return NextResponse.json(tomo, { status: 201 });
   } catch (err: any) {
     const msg = err instanceof JurisprudenciaError ? err.message : 'Error interno';

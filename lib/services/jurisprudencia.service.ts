@@ -18,16 +18,20 @@ function storageClient() {
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
+export type Fuente = 'CSJ' | 'CC';
+
 export interface TomoInsert {
   titulo: string;
   nombre_archivo: string;
   archivo_url: string;
   carpeta_id?: string | null;
+  fuente?: Fuente;
 }
 
 interface ListParams {
   carpeta_id?: string;
   procesado?: boolean;
+  fuente?: Fuente;
   q?: string;
   page?: number;
   limit?: number;
@@ -44,7 +48,7 @@ export interface Carpeta {
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function listarTomos(params: ListParams = {}) {
-  const { carpeta_id, procesado, q, page = 1, limit = 20 } = params;
+  const { carpeta_id, procesado, fuente, q, page = 1, limit = 20 } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
@@ -53,6 +57,7 @@ export async function listarTomos(params: ListParams = {}) {
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
+  if (fuente) query = query.eq('fuente', fuente);
   if (carpeta_id) query = query.eq('carpeta_id', carpeta_id);
   if (procesado !== undefined) query = query.eq('procesado', procesado);
   if (q) {
@@ -88,6 +93,7 @@ export async function crearTomo(input: TomoInsert) {
     nombre_archivo: input.nombre_archivo,
     archivo_url: input.archivo_url,
     procesado: false,
+    fuente: input.fuente ?? 'CSJ',
   };
   if (input.carpeta_id) payload.carpeta_id = input.carpeta_id;
 

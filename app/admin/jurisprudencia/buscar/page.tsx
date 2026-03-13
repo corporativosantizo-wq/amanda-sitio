@@ -9,6 +9,15 @@ import { safeWindowOpen } from '@/lib/utils/validate-url';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+type Fuente = 'CSJ' | 'CC';
+type FuenteFilter = Fuente | 'TODAS';
+
+const FUENTE_TABS: { key: FuenteFilter; label: string; full: string }[] = [
+  { key: 'CSJ', label: 'CSJ', full: 'Corte Suprema de Justicia' },
+  { key: 'CC', label: 'CC', full: 'Corte de Constitucionalidad' },
+  { key: 'TODAS', label: 'Ambas', full: 'Todas las fuentes' },
+];
+
 interface Stats {
   tomos_procesados: number;
   fragmentos_indexados: number;
@@ -26,6 +35,7 @@ interface Fragmento {
   tomo_titulo: string;
   tomo_archivo: string;
   carpeta_nombre: string | null;
+  tomo_fuente?: Fuente;
 }
 
 interface SearchResponse {
@@ -291,7 +301,9 @@ async function downloadFichasDocx(query: string, fichas: Ficha[]) {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function BuscarJurisprudenciaPage() {
-  const { data: stats } = useFetch<Stats>('/api/admin/jurisprudencia/stats');
+  const [fuenteFilter, setFuenteFilter] = useState<FuenteFilter>('CSJ');
+  const fuenteParam = fuenteFilter !== 'TODAS' ? `?fuente=${fuenteFilter}` : '';
+  const { data: stats } = useFetch<Stats>(`/api/admin/jurisprudencia/stats${fuenteParam}`);
 
   const [query, setQuery] = useState('');
   const [threshold, setThreshold] = useState(0.35);
@@ -387,7 +399,12 @@ export default function BuscarJurisprudenciaPage() {
       const res = await adminFetch('/api/admin/jurisprudencia/buscar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim(), threshold, limit: 10 }),
+        body: JSON.stringify({
+          query: query.trim(),
+          threshold,
+          limit: 10,
+          ...(fuenteFilter !== 'TODAS' && { fuente: fuenteFilter }),
+        }),
       });
       const data = await res.json();
 
@@ -422,11 +439,31 @@ export default function BuscarJurisprudenciaPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold text-slate-900">Buscador de Jurisprudencia</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Búsqueda semántica con IA sobre los tomos procesados
+          Búsqueda semántica con IA — {FUENTE_TABS.find((t) => t.key === fuenteFilter)?.full}
         </p>
+      </div>
+
+      {/* Fuente Tabs */}
+      <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
+        {FUENTE_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setFuenteFilter(tab.key); setResult(null); setError(null); }}
+            className={`px-4 py-2 text-sm rounded-md font-medium transition-all ${
+              fuenteFilter === tab.key
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab.label}
+            {tab.key !== 'TODAS' && (
+              <span className="ml-1.5 text-xs font-normal hidden sm:inline">{tab.full}</span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Stats */}
@@ -595,6 +632,15 @@ export default function BuscarJurisprudenciaPage() {
                       </svg>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {frag.tomo_fuente && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              frag.tomo_fuente === 'CC'
+                                ? 'bg-cyan-50 text-cyan-700'
+                                : 'bg-blue-50 text-blue-700'
+                            }`}>
+                              {frag.tomo_fuente}
+                            </span>
+                          )}
                           <span className="font-medium text-sm text-slate-900 truncate">
                             {frag.tomo_titulo}
                           </span>

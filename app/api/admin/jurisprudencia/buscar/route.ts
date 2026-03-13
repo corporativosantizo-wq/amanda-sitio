@@ -13,7 +13,7 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { query, threshold, limit } = body;
+    const { query, threshold, limit, fuente } = body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return NextResponse.json(
@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
         query: query.trim(),
         ...(threshold !== undefined && { threshold }),
         ...(limit !== undefined && { limit }),
+        ...(fuente && { fuente }),
       }),
     });
 
