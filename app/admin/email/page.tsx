@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 
@@ -125,7 +125,7 @@ function formatScheduledDate(isoStr: string): string {
 
 // ── Page component ─────────────────────────────────────────────────────────
 
-export default function MollyMailPage() {
+function MollyMailContent() {
   const searchParams = useSearchParams()
   const highlightDraftId = searchParams.get('draft')
   const draftRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -720,5 +720,13 @@ export default function MollyMailPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function MollyMailPage() {
+  return (
+    <Suspense fallback={<div className="p-8"><div className="animate-pulse space-y-6"><div className="h-8 bg-gray-200 rounded w-48" /><div className="grid grid-cols-3 gap-4">{[1, 2, 3].map((i) => (<div key={i} className="h-24 bg-gray-200 rounded-xl" />))}</div><div className="h-64 bg-gray-200 rounded-xl" /></div></div>}>
+      <MollyMailContent />
+    </Suspense>
   )
 }
