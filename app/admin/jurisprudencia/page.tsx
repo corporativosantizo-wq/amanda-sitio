@@ -155,7 +155,7 @@ export default function JurisprudenciaPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 min
 
-      const res = await adminFetch('/api/admin/jurisprudencia/procesar', {
+      const res = await fetch('/api/admin/jurisprudencia/procesar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tomo_id: tomoId }),
@@ -166,7 +166,8 @@ export default function JurisprudenciaPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        addToast('error', data.error ?? 'Error al procesar tomo');
+        const source = data.source === 'edge_function' ? 'Supabase' : 'API';
+        addToast('error', `[${source}] ${data.error ?? `Error ${res.status}`}`);
         return;
       }
 
