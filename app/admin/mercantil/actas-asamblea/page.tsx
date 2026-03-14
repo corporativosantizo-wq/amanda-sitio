@@ -156,7 +156,7 @@ export default function ActasAsambleaPage() {
         puntos: puntos.filter((p: PuntoAgenda) => p.titulo.trim()),
       };
 
-      const res = await adminFetch('/api/admin/mercantil/generar-acta-asamblea', {
+      const res = await adminFetch('/api/admin/mercantil/generar-acta-libro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
