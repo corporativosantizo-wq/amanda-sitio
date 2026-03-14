@@ -149,15 +149,33 @@ export default function JurisprudenciaPage() {
 
   // ── Process handler ─────────────────────────────────────────────────────
 
+  // Cache the Edge Function credentials (fetched once per session)
+  const edgeCredentials = useRef<{ edge_url: string; token: string } | null>(null);
+
+  const getEdgeCredentials = async () => {
+    if (edgeCredentials.current) return edgeCredentials.current;
+    const res = await adminFetch('/api/admin/jurisprudencia/procesar-token');
+    const data = await res.json();
+    edgeCredentials.current = data;
+    return data as { edge_url: string; token: string };
+  };
+
   const handleProcesar = async (tomoId: string) => {
     setProcessingIds((prev) => new Set(prev).add(tomoId));
     try {
+      // 1. Get Edge Function URL + token (instant, cached)
+      const { edge_url, token } = await getEdgeCredentials();
+
+      // 2. Call Edge Function directly from browser (no Vercel timeout)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 min
 
-      const res = await fetch('/api/admin/jurisprudencia/procesar', {
+      const res = await fetch(edge_url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ tomo_id: tomoId }),
         signal: controller.signal,
       });
@@ -166,15 +184,14 @@ export default function JurisprudenciaPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const source = data.source === 'edge_function' ? 'Supabase' : 'API';
-        addToast('error', `[${source}] ${data.error ?? `Error ${res.status}`}`);
+        addToast('error', `[Edge Function ${res.status}] ${data.error ?? 'Error al procesar'}`);
         return;
       }
 
       if (data.warning) {
         addToast('warning', data.warning);
       } else {
-        const msg = `Procesado: ${data.pages ?? '?'} págs, ${data.fragmentos ?? '?'} fragmentos, ${data.embeddings ?? '?'} embeddings`;
+        const msg = `Procesado: ${data.pages ?? '?'} págs, ${data.fragmentos ?? '?'} fragmentos`;
         addToast('success', msg);
       }
 
