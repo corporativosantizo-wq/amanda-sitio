@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -34,6 +34,21 @@ interface DatosExtraidos {
   notas: string | null;
 }
 
+interface BulkItem {
+  file: File;
+  status: 'pending' | 'extracting' | 'done' | 'error';
+  datos: DatosExtraidos | null;
+  error?: string;
+  // Editable fields per item (for generation)
+  requirenteNombre: string;
+  requirenteDpi: string;
+  requirenteCalidad: string;
+  fechaCertificacion: string;
+  lugarCertificacion: string;
+  horaCertificacion: string;
+  puntosSeleccionados: Set<number>;
+}
+
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2] bg-white';
@@ -45,10 +60,11 @@ const BTN_SECONDARY = 'px-4 py-2 text-sm font-semibold rounded-lg border border-
 
 export default function CertificacionActasPage() {
   // Step management
-  const [step, setStep] = useState<'upload' | 'form' | 'generating'>('upload');
+  const [step, setStep] = useState<'upload' | 'form' | 'generating' | 'bulk' | 'bulk-edit'>('upload');
 
   // Upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -83,6 +99,11 @@ export default function CertificacionActasPage() {
   // Puntos
   const [puntos, setPuntos] = useState<PuntoActa[]>([]);
   const [puntosSeleccionados, setPuntosSeleccionados] = useState<Set<number>>(new Set());
+
+  // Bulk upload state
+  const [bulkItems, setBulkItems] = useState<BulkItem[]>([]);
+  const [bulkEditIndex, setBulkEditIndex] = useState<number | null>(null);
+  const [generatingAll, setGeneratingAll] = useState(false);
 
   // Generation
   const [generating, setGenerating] = useState(false);
@@ -139,6 +160,207 @@ export default function CertificacionActasPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // ── Bulk Upload & Extract ────────────────────────────────────────────
+
+  const extractDatos = useCallback(async (file: File): Promise<DatosExtraidos> => {
+    const formData = new FormData();
+    formData.append('archivo', file);
+    const res = await adminFetch('/api/admin/mercantil/extraer-acta', {
+      method: 'POST',
+      body: formData,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? 'Error al extraer datos');
+    return json.datos;
+  }, []);
+
+  const handleBulkSelect = async (files: FileList) => {
+    const today = new Date().toISOString().split('T')[0];
+    const items: BulkItem[] = Array.from(files).map((file: File) => ({
+      file,
+      status: 'pending' as const,
+      datos: null,
+      requirenteNombre: '',
+      requirenteDpi: '',
+      requirenteCalidad: '',
+      fechaCertificacion: today,
+      lugarCertificacion: 'la ciudad de Guatemala',
+      horaCertificacion: 'las diez horas',
+      puntosSeleccionados: new Set<number>(),
+    }));
+    setBulkItems(items);
+    setStep('bulk');
+
+    // Process each file sequentially to avoid overwhelming the API
+    for (let i = 0; i < items.length; i++) {
+      setBulkItems((prev: BulkItem[]) =>
+        prev.map((item: BulkItem, idx: number) =>
+          idx === i ? { ...item, status: 'extracting' } : item
+        )
+      );
+      try {
+        const datos = await extractDatos(items[i].file);
+        const allNums = new Set((datos.puntos ?? []).map((p: PuntoActa) => p.numero));
+        setBulkItems((prev: BulkItem[]) =>
+          prev.map((item: BulkItem, idx: number) =>
+            idx === i
+              ? {
+                  ...item,
+                  status: 'done',
+                  datos,
+                  puntosSeleccionados: allNums,
+                  requirenteNombre: datos.presidente_asamblea ?? '',
+                  requirenteCalidad: datos.presidente_asamblea ? 'Representante Legal' : '',
+                }
+              : item
+          )
+        );
+      } catch (err: any) {
+        setBulkItems((prev: BulkItem[]) =>
+          prev.map((item: BulkItem, idx: number) =>
+            idx === i ? { ...item, status: 'error', error: err.message } : item
+          )
+        );
+      }
+    }
+  };
+
+  const handleGenerarTodos = async () => {
+    const readyItems = bulkItems.filter(
+      (item: BulkItem) =>
+        item.status === 'done' &&
+        item.datos &&
+        item.requirenteNombre &&
+        item.requirenteCalidad &&
+        item.puntosSeleccionados.size > 0
+    );
+    if (readyItems.length === 0) return;
+
+    setGeneratingAll(true);
+    for (const item of readyItems) {
+      const d = item.datos!;
+      const puntosACertificar = (d.puntos ?? [])
+        .filter((p: PuntoActa) => item.puntosSeleccionados.has(p.numero))
+        .map((p: PuntoActa) => ({
+          numero: p.numero,
+          titulo: p.titulo,
+          contenido_literal: p.contenido_literal,
+        }));
+
+      const payload = {
+        entidad: d.entidad,
+        tipo_entidad: d.tipo_entidad || undefined,
+        tipo_asamblea: d.tipo_asamblea || undefined,
+        numero_acta: d.numero_acta,
+        fecha_acta: d.fecha_acta,
+        hora_acta: d.hora_acta || undefined,
+        lugar_acta: d.lugar_acta || undefined,
+        presidente_asamblea: d.presidente_asamblea || undefined,
+        secretario_asamblea: d.secretario_asamblea || undefined,
+        convocatoria: d.convocatoria || undefined,
+        puntos_certificar: puntosACertificar,
+        requirente: {
+          nombre: item.requirenteNombre,
+          dpi: item.requirenteDpi || undefined,
+          calidad: item.requirenteCalidad,
+        },
+        fecha_certificacion: item.fechaCertificacion,
+        lugar_certificacion: item.lugarCertificacion,
+        hora_certificacion: item.horaCertificacion,
+      };
+
+      try {
+        const res = await adminFetch('/api/admin/mercantil/generar-certificacion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          throw new Error(json.error ?? 'Error al generar');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Certificacion-Acta-${d.numero_acta || 'SN'}-${d.entidad.substring(0, 30)}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch {
+        // Individual errors are silently skipped in bulk generation
+      }
+    }
+    setGeneratingAll(false);
+  };
+
+  const handleBulkEditItem = (index: number) => {
+    const item = bulkItems[index];
+    if (!item.datos) return;
+    const d = item.datos;
+    setBulkEditIndex(index);
+
+    // Populate form fields from bulk item
+    setEntidad(d.entidad ?? '');
+    setTipoEntidad(d.tipo_entidad ?? '');
+    setNumeroActa(d.numero_acta?.toString() ?? '');
+    setFechaActa(d.fecha_acta ?? '');
+    setHoraActa(d.hora_acta ?? '');
+    setLugarActa(d.lugar_acta ?? '');
+    setPresidenteAsamblea(d.presidente_asamblea ?? '');
+    setSecretarioAsamblea(d.secretario_asamblea ?? '');
+    setConvocatoria(d.convocatoria ?? '');
+    setTipoAsamblea(d.tipo_asamblea ?? '');
+    setPuntos(d.puntos ?? []);
+    setPuntosSeleccionados(new Set(item.puntosSeleccionados));
+    setRequirenteNombre(item.requirenteNombre);
+    setRequirenteDpi(item.requirenteDpi);
+    setRequirenteCalidad(item.requirenteCalidad);
+    setFechaCertificacion(item.fechaCertificacion);
+    setLugarCertificacion(item.lugarCertificacion);
+    setHoraCertificacion(item.horaCertificacion);
+    setPdfFile(item.file);
+    setDatos(d);
+    setStep('bulk-edit');
+  };
+
+  const handleSaveBulkEdit = () => {
+    if (bulkEditIndex === null) return;
+    // Save edited fields back to bulk item
+    setBulkItems((prev: BulkItem[]) =>
+      prev.map((item: BulkItem, idx: number) => {
+        if (idx !== bulkEditIndex) return item;
+        return {
+          ...item,
+          datos: {
+            ...item.datos!,
+            entidad,
+            tipo_entidad: tipoEntidad || null,
+            tipo_asamblea: tipoAsamblea || null,
+            numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
+            fecha_acta: fechaActa,
+            hora_acta: horaActa || null,
+            lugar_acta: lugarActa || null,
+            presidente_asamblea: presidenteAsamblea || null,
+            secretario_asamblea: secretarioAsamblea || null,
+            convocatoria: convocatoria || null,
+            puntos,
+          },
+          requirenteNombre,
+          requirenteDpi,
+          requirenteCalidad,
+          fechaCertificacion,
+          lugarCertificacion,
+          horaCertificacion,
+          puntosSeleccionados: new Set(puntosSeleccionados),
+        };
+      })
+    );
+    setBulkEditIndex(null);
+    setStep('bulk');
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -266,12 +488,22 @@ export default function CertificacionActasPage() {
             Certificación de Actas
           </h1>
           <p className="text-slate-500 mt-1">
-            Sube un acta en PDF, revisa los datos extraídos y genera la certificación notarial
+            Sube el acta en PDF o DOCX, revisa los datos extraídos y genera la certificación notarial
           </p>
         </div>
         {step === 'form' && (
           <button onClick={handleReset} className={BTN_SECONDARY}>
             Nueva acta
+          </button>
+        )}
+        {step === 'bulk' && (
+          <button onClick={() => { setBulkItems([]); setStep('upload'); }} className={BTN_SECONDARY}>
+            Nueva subida
+          </button>
+        )}
+        {step === 'bulk-edit' && (
+          <button onClick={handleSaveBulkEdit} className={BTN_SECONDARY}>
+            Volver a lista
           </button>
         )}
       </div>
@@ -330,11 +562,121 @@ export default function CertificacionActasPage() {
               {uploadError}
             </div>
           )}
+
+          {/* Bulk upload button */}
+          <div className="mt-4 flex items-center justify-center">
+            <button
+              onClick={() => bulkInputRef.current?.click()}
+              className={BTN_SECONDARY + ' flex items-center gap-2'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Subida masiva
+            </button>
+            <input
+              ref={bulkInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              multiple
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files && files.length > 0) handleBulkSelect(files);
+                e.target.value = '';
+              }}
+              className="hidden"
+            />
+          </div>
         </div>
       )}
 
-      {/* ── Step 2: Form ── */}
-      {step === 'form' && datos && (
+      {/* ── Bulk: Processing List ── */}
+      {step === 'bulk' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-[#0F172A]">
+              Archivos procesados ({bulkItems.filter((i: BulkItem) => i.status === 'done').length}/{bulkItems.length})
+            </h2>
+            <button
+              onClick={handleGenerarTodos}
+              disabled={generatingAll || bulkItems.filter((i: BulkItem) => i.status === 'done').length === 0}
+              className={BTN_PRIMARY + ' flex items-center gap-2'}
+            >
+              {generatingAll ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                `Generar todos (${bulkItems.filter((i: BulkItem) => i.status === 'done').length})`
+              )}
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left">
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400">Archivo</th>
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400">Entidad</th>
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400">Acta</th>
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400">Fecha</th>
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400">Estado</th>
+                  <th className="py-2 px-3 text-xs font-medium text-slate-400"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {bulkItems.map((item: BulkItem, idx: number) => (
+                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="py-2.5 px-3 text-slate-700 font-medium truncate max-w-[200px]">
+                      {item.file.name}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600">
+                      {item.datos?.entidad ?? '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600">
+                      {item.datos?.numero_acta ?? '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600">
+                      {item.datos?.fecha_acta ?? '—'}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {item.status === 'pending' && (
+                        <span className="text-xs text-slate-400">Pendiente</span>
+                      )}
+                      {item.status === 'extracting' && (
+                        <span className="flex items-center gap-1.5 text-xs text-[#0891B2]">
+                          <span className="w-3 h-3 border-2 border-[#0891B2] border-t-transparent rounded-full animate-spin" />
+                          Extrayendo...
+                        </span>
+                      )}
+                      {item.status === 'done' && (
+                        <span className="text-xs text-green-600 font-medium">Listo</span>
+                      )}
+                      {item.status === 'error' && (
+                        <span className="text-xs text-red-500" title={item.error}>Error</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {item.status === 'done' && (
+                        <button
+                          onClick={() => handleBulkEditItem(idx)}
+                          className="text-xs text-[#0891B2] hover:underline font-medium"
+                        >
+                          Ver / Editar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Form (also used for bulk-edit) ── */}
+      {(step === 'form' || step === 'bulk-edit') && datos && (
         <div className="space-y-6">
           {/* PDF badge */}
           {pdfFile && (
@@ -551,23 +893,35 @@ export default function CertificacionActasPage() {
 
           {/* ── Actions ── */}
           <div className="flex items-center justify-between pt-2">
-            <button onClick={handleReset} className={BTN_SECONDARY}>
-              Cancelar
-            </button>
-            <button
-              onClick={handleGenerar}
-              disabled={generating || !entidad || !requirenteNombre || !requirenteCalidad || puntosSeleccionados.size === 0}
-              className={BTN_PRIMARY}
-            >
-              {generating ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Generando...
-                </span>
-              ) : (
-                `Generar certificación (${puntosSeleccionados.size} punto${puntosSeleccionados.size !== 1 ? 's' : ''})`
-              )}
-            </button>
+            {step === 'bulk-edit' ? (
+              <button onClick={handleSaveBulkEdit} className={BTN_SECONDARY}>
+                Volver a lista
+              </button>
+            ) : (
+              <button onClick={handleReset} className={BTN_SECONDARY}>
+                Cancelar
+              </button>
+            )}
+            {step === 'bulk-edit' ? (
+              <button onClick={handleSaveBulkEdit} className={BTN_PRIMARY}>
+                Guardar cambios
+              </button>
+            ) : (
+              <button
+                onClick={handleGenerar}
+                disabled={generating || !entidad || !requirenteNombre || !requirenteCalidad || puntosSeleccionados.size === 0}
+                className={BTN_PRIMARY}
+              >
+                {generating ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Generando...
+                  </span>
+                ) : (
+                  `Generar certificación (${puntosSeleccionados.size} punto${puntosSeleccionados.size !== 1 ? 's' : ''})`
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}
