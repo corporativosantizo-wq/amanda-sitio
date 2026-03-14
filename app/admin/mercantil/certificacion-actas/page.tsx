@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ const BTN_SECONDARY = 'px-4 py-2 text-sm font-semibold rounded-lg border border-
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function CertificacionActasPage() {
+  const router = useRouter();
+
   // Step management
   const [step, setStep] = useState<'upload' | 'form' | 'generating' | 'bulk' | 'bulk-edit'>('upload');
 
@@ -108,6 +111,56 @@ export default function CertificacionActasPage() {
   // Generation
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+
+  // ── Load precargados from Generador 1 (sessionStorage) ──────────────
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('precargados_certificacion');
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      sessionStorage.removeItem('precargados_certificacion');
+
+      if (d.entidad) setEntidad(d.entidad);
+      if (d.tipo_asamblea) setTipoAsamblea(d.tipo_asamblea);
+      if (d.numero_acta != null) setNumeroActa(d.numero_acta.toString());
+      if (d.fecha_acta) setFechaActa(d.fecha_acta);
+      if (d.hora_acta) setHoraActa(d.hora_acta);
+      if (d.lugar_acta) setLugarActa(d.lugar_acta);
+      if (d.presidente_asamblea) {
+        setPresidenteAsamblea(d.presidente_asamblea);
+        setRequirenteNombre(d.presidente_asamblea);
+        setRequirenteCalidad('Representante Legal');
+      }
+      if (d.secretario_asamblea) setSecretarioAsamblea(d.secretario_asamblea);
+      if (d.puntos && d.puntos.length > 0) {
+        const pts: PuntoActa[] = d.puntos.map((p: any) => ({
+          numero: p.numero,
+          titulo: p.titulo,
+          contenido_literal: p.contenido_literal,
+        }));
+        setPuntos(pts);
+        setPuntosSeleccionados(new Set(pts.map((p: PuntoActa) => p.numero)));
+        setDatos({
+          entidad: d.entidad ?? '',
+          tipo_entidad: null,
+          tipo_asamblea: d.tipo_asamblea ?? null,
+          numero_acta: d.numero_acta ?? null,
+          fecha_acta: d.fecha_acta ?? '',
+          hora_acta: d.hora_acta ?? null,
+          lugar_acta: d.lugar_acta ?? null,
+          presidente_asamblea: d.presidente_asamblea ?? null,
+          secretario_asamblea: d.secretario_asamblea ?? null,
+          asistentes: [],
+          puntos: pts,
+          quorum: null,
+          convocatoria: null,
+          notas: null,
+        });
+        setStep('form');
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Upload & Extract ───────────────────────────────────────────────────
 
@@ -898,9 +951,38 @@ export default function CertificacionActasPage() {
                 Volver a lista
               </button>
             ) : (
-              <button onClick={handleReset} className={BTN_SECONDARY}>
-                Cancelar
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleReset} className={BTN_SECONDARY}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    const datosNombramiento = {
+                      entidad,
+                      tipo_entidad: tipoEntidad,
+                      numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
+                      fecha_acta: fechaActa,
+                      tipo_asamblea: tipoAsamblea,
+                      punto_resolutivo: puntos
+                        .filter((p: PuntoActa) => puntosSeleccionados.has(p.numero))
+                        .map((p: PuntoActa) => p.contenido_literal)
+                        .join(' '),
+                      requirente_nombre: requirenteNombre,
+                      requirente_calidad: requirenteCalidad,
+                      requirente_dpi: requirenteDpi,
+                    };
+                    sessionStorage.setItem('precargados_nombramiento', JSON.stringify(datosNombramiento));
+                    router.push('/admin/mercantil/nombramientos?precargados=1');
+                  }}
+                  disabled={!entidad || puntosSeleccionados.size === 0}
+                  className={BTN_SECONDARY + ' flex items-center gap-1.5'}
+                >
+                  Generar nombramiento
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
+              </div>
             )}
             {step === 'bulk-edit' ? (
               <button onClick={handleSaveBulkEdit} className={BTN_PRIMARY}>
