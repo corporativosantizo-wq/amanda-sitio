@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import EntidadSelector, { type EntidadOption } from '@/components/admin/entidad-selector';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,9 @@ export default function CertificacionActasPage() {
   const [bulkEditIndex, setBulkEditIndex] = useState<number | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
 
+  // Entidad vinculada
+  const [entidadSeleccionada, setEntidadSeleccionada] = useState<EntidadOption | null>(null);
+
   // Generation
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -161,6 +165,33 @@ export default function CertificacionActasPage() {
     } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Handle entity selection ────────────────────────────────────────────
+  const handleEntidadChange = (ent: EntidadOption | null) => {
+    setEntidadSeleccionada(ent);
+    if (ent) {
+      setEntidad(ent.nombre);
+    }
+  };
+
+  // ── Create document record in entidad ─────────────────────────────────
+  const registrarDocumento = async () => {
+    if (!entidadSeleccionada) return;
+    try {
+      await adminFetch(`/api/admin/mercantil/entidades/${entidadSeleccionada.id}/documentos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'certificacion_acta',
+          titulo: `Certificación Acta ${numeroActa || 'S/N'}`,
+          fecha_documento: fechaCertificacion,
+          numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
+          tipo_asamblea: tipoAsamblea || undefined,
+          estado: 'generado',
+        }),
+      });
+    } catch { /* silent */ }
+  };
 
   // ── Upload & Extract ───────────────────────────────────────────────────
 
@@ -498,6 +529,9 @@ export default function CertificacionActasPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Auto-register in entity docs
+      await registrarDocumento();
     } catch (err: any) {
       setGenError(err.message ?? 'Error al generar la certificación');
     } finally {
@@ -560,6 +594,18 @@ export default function CertificacionActasPage() {
           </button>
         )}
       </div>
+
+      {/* ── Entidad selector (visible in upload & form steps) ── */}
+      {(step === 'upload' || step === 'form') && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
+          <EntidadSelector value={entidadSeleccionada} onChange={handleEntidadChange} />
+          {entidadSeleccionada && (
+            <p className="text-xs text-slate-400 mt-2">
+              Al generar, se registrará automáticamente en el expediente de esta entidad.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── Step 1: Upload ── */}
       {step === 'upload' && (

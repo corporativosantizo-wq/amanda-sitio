@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import EntidadSelector, { type EntidadOption } from '@/components/admin/entidad-selector';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,9 @@ const ORDINALES = ['PRIMERO', 'SEGUNDO', 'TERCERO', 'CUARTO', 'QUINTO', 'SEXTO',
 export default function ActasAsambleaPage() {
   const router = useRouter();
 
+  // Entidad vinculada
+  const [entidadSeleccionada, setEntidadSeleccionada] = useState<EntidadOption | null>(null);
+
   // Entidad
   const [entidad, setEntidad] = useState('');
   const [tipoAsamblea, setTipoAsamblea] = useState('Asamblea General Ordinaria');
@@ -67,6 +71,36 @@ export default function ActasAsambleaPage() {
   // Generation
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+
+  // ── Handle entity selection ────────────────────────────────────────────
+  const handleEntidadChange = (ent: EntidadOption | null) => {
+    setEntidadSeleccionada(ent);
+    if (ent) {
+      setEntidad(ent.nombre);
+      if (ent.representante_legal_nombre && !presidente) {
+        setPresidente(ent.representante_legal_nombre);
+      }
+    }
+  };
+
+  // ── Create document record in entidad ─────────────────────────────────
+  const registrarDocumento = async () => {
+    if (!entidadSeleccionada) return;
+    try {
+      await adminFetch(`/api/admin/mercantil/entidades/${entidadSeleccionada.id}/documentos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'acta_asamblea',
+          titulo: `Acta ${numeroActa || 'S/N'} — ${tipoAsamblea}`,
+          fecha_documento: fecha,
+          numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
+          tipo_asamblea: tipoAsamblea,
+          estado: 'generado',
+        }),
+      });
+    } catch { /* silent — non-critical */ }
+  };
 
   // ── Extract from escritura ──────────────────────────────────────────────
 
@@ -176,6 +210,9 @@ export default function ActasAsambleaPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Auto-register in entity docs
+      await registrarDocumento();
     } catch (err: any) {
       setGenError(err.message ?? 'Error al generar el acta');
     } finally {
@@ -222,6 +259,16 @@ export default function ActasAsambleaPage() {
       </div>
 
       <div className="space-y-6">
+        {/* ── Entidad selector ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <EntidadSelector value={entidadSeleccionada} onChange={handleEntidadChange} />
+          {entidadSeleccionada && (
+            <p className="text-xs text-slate-400 mt-2">
+              Al generar, se registrará automáticamente en el expediente de esta entidad.
+            </p>
+          )}
+        </div>
+
         {/* ── Escritura constitutiva (opcional) ── */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-sm font-semibold text-[#0F172A] mb-3 flex items-center gap-2">

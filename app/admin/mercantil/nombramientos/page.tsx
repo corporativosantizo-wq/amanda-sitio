@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import EntidadSelector, { type EntidadOption } from '@/components/admin/entidad-selector';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,9 @@ export default function NombramientosPage() {
   const [lugarCert, setLugarCert] = useState('la ciudad de Guatemala');
   const [horaCert, setHoraCert] = useState('las diez horas');
 
+  // Entidad vinculada
+  const [entidadSeleccionada, setEntidadSeleccionada] = useState<EntidadOption | null>(null);
+
   // Generation
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -103,6 +107,37 @@ export default function NombramientosPage() {
       if (datos.requirente_dpi) setReqDpi(datos.requirente_dpi);
     } catch { /* ignore */ }
   }, []);
+
+  // ── Handle entity selection ────────────────────────────────────────────
+  const handleEntidadChange = (ent: EntidadOption | null) => {
+    setEntidadSeleccionada(ent);
+    if (ent) {
+      setEntidad(ent.nombre);
+      if (ent.representante_legal_nombre && !reqNombre) {
+        setReqNombre(ent.representante_legal_nombre);
+        setReqCalidad(ent.representante_legal_cargo ?? 'Representante Legal');
+      }
+    }
+  };
+
+  // ── Create document record in entidad ─────────────────────────────────
+  const registrarDocumento = async () => {
+    if (!entidadSeleccionada) return;
+    try {
+      await adminFetch(`/api/admin/mercantil/entidades/${entidadSeleccionada.id}/documentos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'nombramiento',
+          titulo: `Nombramiento ${cargoNombrado} — ${nombreNombrado || 'sin nombre'}`,
+          fecha_documento: fechaCert,
+          numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
+          tipo_asamblea: tipoAsamblea || undefined,
+          estado: 'generado',
+        }),
+      });
+    } catch { /* silent */ }
+  };
 
   // ── Step 1: Extract escritura ──────────────────────────────────────────
 
@@ -242,6 +277,9 @@ export default function NombramientosPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Auto-register in entity docs
+      await registrarDocumento();
     } catch (err: any) {
       setGenError(err.message ?? 'Error al generar el nombramiento');
     } finally {
@@ -300,6 +338,16 @@ export default function NombramientosPage() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* ── Entidad selector (always visible) ── */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
+        <EntidadSelector value={entidadSeleccionada} onChange={handleEntidadChange} />
+        {entidadSeleccionada && (
+          <p className="text-xs text-slate-400 mt-2">
+            Al generar, se registrará automáticamente en el expediente de esta entidad.
+          </p>
+        )}
       </div>
 
       {/* ═══════════ Step 1: Escritura Constitutiva ═══════════ */}
