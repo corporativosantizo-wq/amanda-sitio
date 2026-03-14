@@ -20,6 +20,7 @@ interface PuntoActa {
 interface DatosExtraidos {
   entidad: string;
   tipo_entidad: string | null;
+  tipo_asamblea: string | null;
   numero_acta: number | null;
   fecha_acta: string;
   hora_acta: string | null;
@@ -65,6 +66,7 @@ export default function CertificacionActasPage() {
   const [presidenteAsamblea, setPresidenteAsamblea] = useState('');
   const [secretarioAsamblea, setSecretarioAsamblea] = useState('');
   const [convocatoria, setConvocatoria] = useState('');
+  const [tipoAsamblea, setTipoAsamblea] = useState('');
 
   // Requirente
   const [requirenteNombre, setRequirenteNombre] = useState('');
@@ -118,6 +120,7 @@ export default function CertificacionActasPage() {
       setPresidenteAsamblea(d.presidente_asamblea ?? '');
       setSecretarioAsamblea(d.secretario_asamblea ?? '');
       setConvocatoria(d.convocatoria ?? '');
+      setTipoAsamblea(d.tipo_asamblea ?? '');
       setPuntos(d.puntos ?? []);
 
       // Auto-select all points
@@ -132,7 +135,7 @@ export default function CertificacionActasPage() {
 
       setStep('form');
     } catch (err: any) {
-      setUploadError(err.message ?? 'Error al procesar el PDF');
+      setUploadError(err.message ?? 'Error al procesar el archivo');
     } finally {
       setUploading(false);
     }
@@ -141,7 +144,7 @@ export default function CertificacionActasPage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file && file.type === 'application/pdf') {
+    if (file && (file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.pdf') || file.name.endsWith('.docx'))) {
       handleFileSelect(file);
     }
   };
@@ -180,6 +183,7 @@ export default function CertificacionActasPage() {
       const payload = {
         entidad,
         tipo_entidad: tipoEntidad || undefined,
+        tipo_asamblea: tipoAsamblea || undefined,
         numero_acta: numeroActa ? parseInt(numeroActa, 10) : null,
         fecha_acta: fechaActa,
         hora_acta: horaActa || undefined,
@@ -243,6 +247,7 @@ export default function CertificacionActasPage() {
     setPresidenteAsamblea('');
     setSecretarioAsamblea('');
     setConvocatoria('');
+    setTipoAsamblea('');
     setRequirenteNombre('');
     setRequirenteDpi('');
     setRequirenteCalidad('');
@@ -300,17 +305,17 @@ export default function CertificacionActasPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <p className="text-sm font-medium text-slate-700">
-                  Arrastra el PDF del acta aquí o haz clic para seleccionar
+                  Arrastra el acta aquí o haz clic para seleccionar (PDF o DOCX)
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Se extraerán automáticamente: entidad, número de acta, fecha, asistentes y puntos
+                  Se extraerán automáticamente: entidad, tipo de asamblea, número de acta, fecha, asistentes y puntos
                 </p>
               </>
             )}
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.docx"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) handleFileSelect(file);
@@ -361,6 +366,18 @@ export default function CertificacionActasPage() {
                   <option value="Sociedad de Responsabilidad Limitada">Sociedad de Responsabilidad Limitada</option>
                   <option value="Asociación">Asociación</option>
                   <option value="Fundación">Fundación</option>
+                </select>
+              </div>
+              <div>
+                <label className={LABEL_CLASS}>Tipo de asamblea</label>
+                <select className={INPUT_CLASS} value={tipoAsamblea} onChange={(e) => setTipoAsamblea(e.target.value)}>
+                  <option value="">Sin especificar</option>
+                  <option value="Asamblea General Ordinaria">Asamblea General Ordinaria</option>
+                  <option value="Asamblea General Extraordinaria">Asamblea General Extraordinaria</option>
+                  <option value="Asamblea Ordinaria">Asamblea Ordinaria</option>
+                  <option value="Asamblea Extraordinaria">Asamblea Extraordinaria</option>
+                  <option value="Junta Directiva">Junta Directiva</option>
+                  <option value="Sesión de Junta Directiva">Sesión de Junta Directiva</option>
                 </select>
               </div>
               <div>

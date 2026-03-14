@@ -1,7 +1,7 @@
 // ============================================================================
 // lib/templates/certificacion-acta.ts
 // Certificación Notarial de Punto de Acta — JSZip template approach
-// Unpack base DOCX → replace <w:body> content → repack
+// Código de Notariado de Guatemala Art. 60-63: texto corrido, sin espacios
 // ============================================================================
 
 import JSZip from 'jszip';
@@ -21,6 +21,7 @@ export interface PuntoCertificar {
 export interface DatosCertificacionActa {
   entidad: string;
   tipo_entidad?: string;
+  tipo_asamblea?: string; // "Asamblea General Ordinaria", "Asamblea General Extraordinaria", etc.
   numero_acta: number | null;
   fecha_acta: string;
   hora_acta?: string;
@@ -96,6 +97,18 @@ function emptyPara(): string {
   return `<w:p><w:pPr><w:spacing w:line="480" w:lineRule="exact"/></w:pPr></w:p>`;
 }
 
+// ── Build title ────────────────────────────────────────────────────────────
+
+function buildTitle(datos: DatosCertificacionActa): string {
+  const tipoAsamblea = datos.tipo_asamblea ?? 'ASAMBLEA GENERAL';
+  const puntosCount = datos.puntos_certificar.length;
+  const puntoStr = puntosCount === 1 ? 'PUNTO' : 'PUNTOS';
+  const entidadUpper = datos.entidad.toUpperCase();
+  const tipoEntidadUpper = datos.tipo_entidad ? `, ${datos.tipo_entidad.toUpperCase()}` : '';
+
+  return `ACTA NOTARIAL QUE CONTIENE CERTIFICACIÓN DE ${puntoStr} DE ACTA DE ${tipoAsamblea.toUpperCase()} DE LA ENTIDAD DENOMINADA ${entidadUpper}${tipoEntidadUpper}`;
+}
+
 // ── Document body builder ──────────────────────────────────────────────────
 
 function buildDocumentBody(datos: DatosCertificacionActa): string {
@@ -105,88 +118,66 @@ function buildDocumentBody(datos: DatosCertificacionActa): string {
 
   const parts: string[] = [];
 
-  // ── Título ──
-  parts.push(paraCenter(boldUnder('ACTA NOTARIAL DE CERTIFICACIÓN')));
-  parts.push(emptyPara());
+  // ── Título (centrado, bold+underline) ──
+  parts.push(paraCenter(boldUnder(buildTitle(datos))));
 
-  // ── Encabezado / Comparecencia ──
-  const requirenteDpiText = datos.requirente.dpi
-    ? run(', quien se identifica con Documento Personal de Identificación —DPI— con Código Único de Identificación —CUI— número: ')
-      + bold(dpiTextoLegal(datos.requirente.dpi))
-    : '';
+  // ── Cuerpo: UN SOLO párrafo continuo (Código de Notariado Art. 60-63) ──
+  const r: string[] = [];
 
-  parts.push(para(
-    run(`En ${lugarCert}, siendo ${horaCert} del día ${fechaATextoLegal(fechaCert)}, yo, `),
-    bold(NOTARIO_NOMBRE),
-    run(`, Notaria, con oficina profesional ubicada en ${NOTARIO_DIRECCION}, de esta ciudad, a requerimiento de `),
-    bold(datos.requirente.nombre.toUpperCase()),
-    requirenteDpiText,
-    run(', quien actúa en su calidad de '),
-    bold(datos.requirente.calidad),
-    run(' de la entidad denominada '),
-    boldUnder(datos.entidad.toUpperCase()),
-    datos.tipo_entidad ? run(`, ${datos.tipo_entidad}`) : '',
-    run(', procedo a dar fe de lo siguiente: '),
-  ));
+  // Comparecencia
+  r.push(run(`En ${lugarCert}, siendo ${horaCert} del día ${fechaATextoLegal(fechaCert)}, yo, `));
+  r.push(bold(NOTARIO_NOMBRE));
+  r.push(run(`, Notaria, con oficina profesional ubicada en ${NOTARIO_DIRECCION}, de esta ciudad, a requerimiento de `));
+  r.push(bold(datos.requirente.nombre.toUpperCase()));
 
-  // ── PRIMERO: Presentación del libro ──
+  if (datos.requirente.dpi) {
+    r.push(run(', quien se identifica con Documento Personal de Identificación —DPI— con Código Único de Identificación —CUI— número: '));
+    r.push(bold(dpiTextoLegal(datos.requirente.dpi)));
+  }
+
+  r.push(run(', quien actúa en su calidad de '));
+  r.push(bold(datos.requirente.calidad));
+  r.push(run(' de la entidad denominada '));
+  r.push(boldUnder(datos.entidad.toUpperCase()));
+  if (datos.tipo_entidad) r.push(run(`, ${datos.tipo_entidad}`));
+
+  // Presentación del libro + solicitud de certificación (texto corrido)
   const actaNumText = datos.numero_acta !== null
     ? `número ${datos.numero_acta}`
     : 'correspondiente';
 
-  parts.push(para(
-    under('PRIMERO:'),
-    run(' El requirente me presenta el Libro de Actas de '),
-    boldUnder(datos.entidad.toUpperCase()),
-    run(`, y me solicita que certifique el contenido del Acta ${actaNumText}, de fecha ${fechaATextoLegal(datos.fecha_acta)}`),
-    datos.hora_acta ? run(`, celebrada a ${datos.hora_acta}`) : '',
-    datos.lugar_acta ? run(`, en ${datos.lugar_acta}`) : '',
-    run('. '),
-  ));
+  r.push(run(', quien me presenta el Libro de Actas de la entidad, y me requiere que certifique el contenido del Acta '));
+  r.push(run(`${actaNumText}, de fecha ${fechaATextoLegal(datos.fecha_acta)}`));
+  if (datos.hora_acta) r.push(run(`, celebrada a ${datos.hora_acta}`));
+  if (datos.lugar_acta) r.push(run(`, en ${datos.lugar_acta}`));
 
-  // ── SEGUNDO: Transcripción literal ──
+  // Transcripción literal — TODO de corrido, sin "PUNTO X:"
   if (datos.puntos_certificar.length === 1) {
     const punto = datos.puntos_certificar[0];
-    parts.push(para(
-      under('SEGUNDO:'),
-      run(` El punto ${punto.numero} de la referida acta, relativo a `),
-      bold(punto.titulo),
-      run(', literalmente dice: '),
-      italic(`«${punto.contenido_literal}»`),
-      run('. '),
-    ));
+    r.push(run(', y que dicho punto literalmente dice: '));
+    r.push(italic(`«${punto.contenido_literal}»`));
   } else {
-    parts.push(para(
-      under('SEGUNDO:'),
-      run(' Los puntos solicitados de la referida acta, literalmente dicen: '),
-    ));
-
-    for (const punto of datos.puntos_certificar) {
-      parts.push(para(
-        bold(`PUNTO ${punto.numero}: `),
-        bold(punto.titulo),
-        run('. '),
-        italic(`«${punto.contenido_literal}»`),
-        run('. '),
-      ));
-    }
+    r.push(run(', y que los puntos solicitados literalmente dicen: '));
+    // Concatenar todos los puntos de corrido entre « »
+    const textoCompleto = datos.puntos_certificar
+      .map((p: PuntoCertificar) => p.contenido_literal)
+      .join(' ');
+    r.push(italic(`«${textoCompleto}»`));
   }
 
-  // ── TERCERO: DOY FE ──
-  parts.push(para(
-    under('TERCERO:'),
-    run(' Yo, la Notaria, '),
-    bold('DOY FE: '),
-    run('a) De todo lo expuesto; b) Que tuve a la vista el Libro de Actas de la entidad '),
-    boldUnder(datos.entidad.toUpperCase()),
-    run('; c) Que lo transcrito concuerda fielmente con su original; d) Que tuve a la vista el Documento Personal de Identificación del requirente. Leo lo escrito al requirente, quien enterado de su contenido, objeto, validez y efectos legales, lo acepta, ratifica y firma.'),
-  ));
+  // Cierre notarial — texto corrido, sin TERCERO ni DOY FE
+  r.push(run('. Yo, la Notaria, doy fe: a) que tuve a la vista el Libro de Actas de la entidad '));
+  r.push(boldUnder(datos.entidad.toUpperCase()));
+  r.push(run('; b) que lo transcrito es copia fiel de su original; c) que tuve a la vista el Documento Personal de Identificación del requirente. No habiendo más que hacer constar, se finaliza la presente en el mismo lugar y fecha de su inicio, quedando enterados de su contenido, objeto, validez y efectos legales, la aceptan, ratifican y firman.'));
 
-  parts.push(emptyPara());
-  parts.push(emptyPara());
-  parts.push(emptyPara());
+  // Emit the single body paragraph
+  parts.push(para(...r));
 
   // ── Firmas ──
+  parts.push(emptyPara());
+  parts.push(emptyPara());
+  parts.push(emptyPara());
+
   parts.push(paraCenter(run('f)_______________________________')));
   parts.push(paraCenter(bold(datos.requirente.nombre.toUpperCase())));
   parts.push(paraCenter(run(datos.requirente.calidad.toUpperCase())));
@@ -245,4 +236,28 @@ export async function generarCertificacionDocx(datos: DatosCertificacionActa): P
   });
 
   return output;
+}
+
+// ── DOCX text extraction (for DOCX upload → AI extraction) ─────────────────
+
+export async function extraerTextoDocx(buffer: ArrayBuffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const docXmlFile = zip.file('word/document.xml');
+  if (!docXmlFile) throw new Error('Archivo DOCX inválido: no contiene word/document.xml');
+
+  const xml = await docXmlFile.async('string');
+
+  // Strip XML tags, keeping text content. Replace paragraph breaks with newlines.
+  const text = xml
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return text;
 }
