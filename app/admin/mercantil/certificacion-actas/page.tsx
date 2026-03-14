@@ -305,10 +305,10 @@ export default function CertificacionActasPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <p className="text-sm font-medium text-slate-700">
-                  Arrastra el acta aquí o haz clic para seleccionar (PDF o DOCX)
+                  Arrastra el PDF o Word del acta aquí o haz clic para seleccionar
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Se extraerán automáticamente: entidad, tipo de asamblea, número de acta, fecha, asistentes y puntos
+                  Se extraerán automáticamente: entidad, número de acta, fecha, asistentes y puntos
                 </p>
               </>
             )}
