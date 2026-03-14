@@ -1,12 +1,11 @@
 // ============================================================================
 // POST /api/admin/mercantil/generar-certificacion
-// Genera DOCX de certificación de punto de acta
+// Genera DOCX de certificación de punto de acta (JSZip template approach)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/api-auth';
-import { Packer } from 'docx';
-import { generarCertificacionActa } from '@/lib/templates/certificacion-acta';
+import { generarCertificacionDocx } from '@/lib/templates/certificacion-acta';
 import type { DatosCertificacionActa } from '@/lib/templates/certificacion-acta';
 
 export async function POST(req: NextRequest) {
@@ -27,8 +26,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Se requieren los datos del requirente.' }, { status: 400 });
     }
 
-    const doc = generarCertificacionActa(datos);
-    const buffer = await Packer.toBuffer(doc);
+    const buffer = await generarCertificacionDocx(datos);
 
     const filename = `Certificacion-Acta-${datos.numero_acta ?? 'SN'}-${datos.entidad.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-')}.docx`;
 
@@ -42,7 +40,7 @@ export async function POST(req: NextRequest) {
     console.error('[Generar Certificación] Error:', error);
     return NextResponse.json(
       { error: error.message ?? 'Error al generar la certificación.' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
