@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch } from '@/lib/hooks/use-fetch';
+import { adminFetch } from '@/lib/utils/admin-fetch';
 import { EmptyState, TableSkeleton } from '@/components/admin/ui';
 
 const TIPO_LABELS: Record<string, string> = {
@@ -42,6 +43,13 @@ export default function EntidadesListPage() {
   const [newTipo, setNewTipo] = useState('sociedad_anonima');
   const [creating, setCreating] = useState(false);
 
+  // Import Excel
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    creadas: number; duplicadas: number; errores: { fila: number; error: string }[];
+  } | null>(null);
+
   const params = new URLSearchParams();
   if (search) params.set('q', search);
   params.set('page', String(page));
@@ -71,6 +79,27 @@ export default function EntidadesListPage() {
     }
   };
 
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('archivo', file);
+      const res = await adminFetch('/api/admin/mercantil/entidades/importar', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Error al importar');
+      setImportResult(json);
+      if (json.creadas > 0) refetch();
+    } catch (err: any) {
+      setImportResult({ creadas: 0, duplicadas: 0, errores: [{ fila: 0, error: err.message }] });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -78,12 +107,54 @@ export default function EntidadesListPage() {
           <h1 className="text-xl font-bold text-slate-900">Entidades Mercantiles</h1>
           <p className="text-sm text-slate-500 mt-0.5">{data?.total ?? 0} entidades activas</p>
         </div>
-        <button
-          onClick={() => setShowNew(!showNew)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all"
-        >
-          + Nueva entidad
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/templates/plantilla-entidades-mercantiles.xlsx"
+            download
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Plantilla
+          </a>
+          <button
+            onClick={() => importRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {importing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-[#0891B2] border-t-transparent rounded-full animate-spin" />
+                Importando...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Importar Excel
+              </>
+            )}
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleImport(file);
+              e.target.value = '';
+            }}
+            className="hidden"
+          />
+          <button
+            onClick={() => setShowNew(!showNew)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all"
+          >
+            + Nueva entidad
+          </button>
+        </div>
       </div>
 
       {/* Quick create */}
@@ -125,6 +196,47 @@ export default function EntidadesListPage() {
           >
             Cancelar
           </button>
+        </div>
+      )}
+
+      {/* Import result */}
+      {importResult && (
+        <div className={`rounded-xl border p-5 ${
+          importResult.errores.length === 0
+            ? 'bg-green-50 border-green-200'
+            : importResult.creadas > 0
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-slate-800">Resultado de importación</h3>
+            <button
+              onClick={() => setImportResult(null)}
+              className="text-slate-400 hover:text-slate-600 p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex gap-4 text-sm mb-2">
+            <span className="text-green-700 font-medium">{importResult.creadas} creadas</span>
+            {importResult.duplicadas > 0 && (
+              <span className="text-amber-700 font-medium">{importResult.duplicadas} duplicadas</span>
+            )}
+            {importResult.errores.length > 0 && (
+              <span className="text-red-700 font-medium">{importResult.errores.length} errores</span>
+            )}
+          </div>
+          {importResult.errores.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+              {importResult.errores.map((e: { fila: number; error: string }, idx: number) => (
+                <div key={idx} className="text-xs text-red-600">
+                  {e.fila > 0 ? `Fila ${e.fila}: ` : ''}{e.error}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
