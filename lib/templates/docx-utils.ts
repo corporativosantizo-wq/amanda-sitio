@@ -49,6 +49,11 @@ export function boldRun(text: string): TextRun {
   return new TextRun(runOpts({ text, bold: true }));
 }
 
+/** Bold + underline (para ordinales: PRIMERO, SEGUNDO, etc.) */
+export function boldUnderRun(text: string): TextRun {
+  return new TextRun(runOpts({ text, bold: true, underline: { type: 'single' } }));
+}
+
 /** Nombre legal en MAYÚSCULAS NEGRITAS */
 export function legalName(name: string): TextRun {
   return new TextRun(runOpts({ text: name.toUpperCase(), bold: true }));

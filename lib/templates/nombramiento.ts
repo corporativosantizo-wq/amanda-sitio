@@ -166,7 +166,7 @@ function buildDocumentBody(datos: DatosNombramiento): string {
   let ordinalIdx = 0;
 
   if (datos.clausulas_transcritas.length > 0) {
-    r.push(bold(`${ORDINALES[ordinalIdx]}: `));
+    r.push(boldUnder(`${ORDINALES[ordinalIdx]}: `));
     ordinalIdx++;
     r.push(run(`Que la entidad `));
     r.push(boldUnder(datos.entidad.toUpperCase()));
@@ -197,7 +197,7 @@ function buildDocumentBody(datos: DatosNombramiento): string {
 
   // ── TERCERO (optional): Cancelación ──
   if (datos.cancelacion) {
-    r.push(bold(`${ORDINALES[ordinalIdx]}: `));
+    r.push(boldUnder(`${ORDINALES[ordinalIdx]}: `));
     ordinalIdx++;
     r.push(run('Que para los efectos legales correspondientes, se solicita la cancelación de la inscripción del señor '));
     r.push(bold(datos.cancelacion.nombre_anterior.toUpperCase()));

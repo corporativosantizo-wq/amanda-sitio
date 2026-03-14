@@ -14,6 +14,7 @@ import {
   signatureBlock,
   normalRun,
   boldRun,
+  boldUnderRun,
   buildDocument,
 } from './docx-utils';
 import { fechaATextoLegal } from '@/lib/utils/fechas-letras';
@@ -99,7 +100,7 @@ export async function generarActaAsambleaDocx(datos: DatosActaAsamblea): Promise
   for (let i = 0; i < datos.puntos.length; i++) {
     const ordinal = ORDINALES[i] ?? `PUNTO ${i + 1}`;
     children.push(mixedParagraph([
-      boldRun(`${ordinal}: `),
+      boldUnderRun(`${ordinal}: `),
       normalRun(datos.puntos[i].titulo),
     ]));
   }
@@ -116,7 +117,8 @@ export async function generarActaAsambleaDocx(datos: DatosActaAsamblea): Promise
     const punto = datos.puntos[i];
 
     children.push(mixedParagraph([
-      boldRun(`${ordinal}: ${punto.titulo}. `),
+      boldUnderRun(`${ordinal}: `),
+      boldRun(`${punto.titulo}. `),
       normalRun(punto.resolucion),
     ]));
 
