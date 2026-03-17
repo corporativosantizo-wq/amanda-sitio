@@ -848,6 +848,9 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
   const router = useRouter();
   const [downloading, setDownloading] = useState(false);
   const [downloadingGrupo, setDownloadingGrupo] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [filterTipo, setFilterTipo] = useState('');
+  const [filterEstado, setFilterEstado] = useState('');
 
   async function buildExcel(
     rows: (ExpedienteRow & { empresa?: string })[],
@@ -935,11 +938,48 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
     }
   }
 
+  async function handleDownloadPdf() {
+    setDownloadingPdf(true);
+    try {
+      const res = await adminFetch('/api/admin/expedientes/reporte-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          tipo_proceso: filterTipo || undefined,
+          estado: filterEstado || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `Error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const tipoSlug = filterTipo ? `_${TIPO_PROCESO_LABEL[filterTipo as keyof typeof TIPO_PROCESO_LABEL] ?? filterTipo}` : '';
+      a.download = `Expedientes${tipoSlug}_${clienteNombre.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al generar PDF:', err);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
   if (!expedientes.length) return (
     <EmptyState icon="⚖️" title="Sin expedientes" description="Este cliente no tiene expedientes registrados"
       action={{ label: '+ Nuevo Expediente', onClick: () => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`) }} />
   );
 
+  // Apply frontend filters
+  const filtered = expedientes.filter(e => {
+    if (filterTipo && e.tipo_proceso !== filterTipo) return false;
+    if (filterEstado && e.estado !== filterEstado) return false;
+    return true;
+  });
   const activos = expedientes.filter(e => e.estado === 'activo').length;
 
   return (
@@ -950,7 +990,7 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
           <button onClick={handleDownload} disabled={downloading}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all">
             <Download size={14} />
-            {downloading ? 'Descargando…' : 'Descargar'}
+            {downloading ? 'Descargando…' : 'Excel'}
           </button>
           {grupoEmpresas && grupoEmpresas.length > 1 && (
             <button onClick={handleDownloadGrupo} disabled={downloadingGrupo}
@@ -959,6 +999,11 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
               {downloadingGrupo ? 'Descargando…' : 'Grupo'}
             </button>
           )}
+          <button onClick={handleDownloadPdf} disabled={downloadingPdf || filtered.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#1E40AF] bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-40 transition-all">
+            <Download size={14} />
+            {downloadingPdf ? 'Generando PDF…' : `PDF (${filtered.length})`}
+          </button>
           <button onClick={() => router.push(`/admin/expedientes/nuevo?cliente_id=${clienteId}`)}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
             + Nuevo
@@ -966,7 +1011,39 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
         </div>
       </div>
 
-      <Section title={`Expedientes (${expedientes.length})`} noPadding>
+      {/* Filters */}
+      <div className="flex items-center gap-3">
+        <select
+          value={filterTipo}
+          onChange={(e: any) => setFilterTipo(e.target.value)}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+        >
+          <option value="">Todos los tipos</option>
+          {Object.entries(TIPO_PROCESO_LABEL).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+        <select
+          value={filterEstado}
+          onChange={(e: any) => setFilterEstado(e.target.value)}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+        >
+          <option value="">Todos los estados</option>
+          {Object.entries(ESTADO_EXPEDIENTE_LABEL).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+        {(filterTipo || filterEstado) && (
+          <button
+            onClick={() => { setFilterTipo(''); setFilterEstado(''); }}
+            className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </div>
+
+      <Section title={`Expedientes (${filtered.length}${filtered.length !== expedientes.length ? ` de ${expedientes.length}` : ''})`} noPadding>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -977,7 +1054,7 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {expedientes.map(exp => (
+              {filtered.map(exp => (
                 <tr key={exp.id} onClick={() => router.push(`/admin/expedientes/${exp.id}`)}
                   className="hover:bg-slate-50/50 cursor-pointer transition-colors">
                   <td className="py-3 px-4 pl-5">
