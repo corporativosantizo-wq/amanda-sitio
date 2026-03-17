@@ -145,6 +145,14 @@ export default function DocumentosPage() {
   // Download all state
   const [downloadingZip, setDownloadingZip] = useState(false);
 
+  // Vincular expediente state
+  const [showVincularModal, setShowVincularModal] = useState(false);
+  const [vincularQuery, setVincularQuery] = useState('');
+  const [vincularResults, setVincularResults] = useState<any[]>([]);
+  const [vincularSearching, setVincularSearching] = useState(false);
+  const [vinculando, setVinculando] = useState(false);
+  const vincularTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Fetch folders
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
     tab === 'carpetas' && !carpetaAbierta ? '/api/admin/documentos?carpetas=true' : null
@@ -377,6 +385,46 @@ export default function DocumentosPage() {
       }]);
     } finally {
       setDownloadingZip(false);
+    }
+  };
+
+  // Vincular expediente handlers
+  const buscarExpedientes = (query: string) => {
+    setVincularQuery(query);
+    if (vincularTimeout.current) clearTimeout(vincularTimeout.current);
+    if (query.length < 2) { setVincularResults([]); return; }
+    vincularTimeout.current = setTimeout(async () => {
+      setVincularSearching(true);
+      try {
+        const res = await adminFetch(`/api/admin/expedientes?q=${encodeURIComponent(query)}&limit=10`);
+        const data = await res.json();
+        setVincularResults(data.data ?? []);
+      } catch { setVincularResults([]); }
+      finally { setVincularSearching(false); }
+    }, 300);
+  };
+
+  const vincularExpediente = async (expedienteId: string) => {
+    setVinculando(true);
+    try {
+      const ids = Array.from(selectedDocs);
+      const res = await adminFetch('/api/admin/documentos/vincular-expediente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documento_ids: ids, expediente_id: expedienteId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Error al vincular');
+      addToast(`${data.vinculados} documento(s) vinculados al expediente ${data.expediente}`, 'success');
+      setShowVincularModal(false);
+      setSelectedDocs(new Set());
+      setVincularQuery('');
+      setVincularResults([]);
+      refetch();
+    } catch (err: any) {
+      addToast(err.message ?? 'Error al vincular documentos', 'error');
+    } finally {
+      setVinculando(false);
     }
   };
 
@@ -1349,6 +1397,15 @@ export default function DocumentosPage() {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1E3A5F] text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-4">
           <span className="text-sm font-medium">{selectedDocs.size} documento(s) seleccionados</span>
           <button
+            onClick={() => setShowVincularModal(true)}
+            className="px-4 py-1.5 text-sm font-medium bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Vincular a expediente
+          </button>
+          <button
             onClick={transcribirSeleccionados}
             className="px-4 py-1.5 text-sm font-medium bg-[#0891B2] rounded-lg hover:bg-[#0891B2]/80 transition-colors"
           >
@@ -1411,6 +1468,61 @@ export default function DocumentosPage() {
                 ) : (
                   'Eliminar'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vincular expediente modal */}
+      {showVincularModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Vincular a expediente</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {selectedDocs.size} documento(s) seleccionado(s)
+            </p>
+            <input
+              type="text"
+              value={vincularQuery}
+              onChange={(e: any) => buscarExpedientes(e.target.value)}
+              placeholder="Buscar por numero de expediente, cliente..."
+              autoFocus
+              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
+            />
+            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-lg">
+              {vincularSearching ? (
+                <div className="p-4 text-center">
+                  <div className="w-5 h-5 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin mx-auto" />
+                </div>
+              ) : vincularResults.length === 0 ? (
+                <p className="p-4 text-sm text-slate-400 text-center">
+                  {vincularQuery.length < 2 ? 'Escribe al menos 2 caracteres' : 'Sin resultados'}
+                </p>
+              ) : (
+                vincularResults.map((exp: any) => (
+                  <button
+                    key={exp.id}
+                    onClick={() => vincularExpediente(exp.id)}
+                    disabled={vinculando}
+                    className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors border-b border-slate-100 last:border-0 disabled:opacity-50"
+                  >
+                    <p className="text-sm font-medium text-slate-900 font-mono">
+                      {exp.numero_expediente ?? exp.numero_mp ?? exp.numero_administrativo ?? '-'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {exp.tipo_proceso} | {exp.estado} | {exp.cliente?.nombre ?? ''}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => { setShowVincularModal(false); setVincularQuery(''); setVincularResults([]); }}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
               </button>
             </div>
           </div>
