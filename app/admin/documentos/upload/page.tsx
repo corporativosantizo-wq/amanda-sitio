@@ -100,13 +100,25 @@ export default function UploadDocumentos() {
     searchTimeout.current = setTimeout(async () => {
       setSearchingClientes(true);
       try {
-        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteQuery)}&limit=8&activo=true`);
+        // Fetch more results to compensate for email-domain false positives,
+        // then sort name/codigo matches first and show top 10
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteQuery)}&limit=50&activo=true`);
         const data = await res.json();
-        const results = (data.data ?? []).map((c: any) => ({
-          id: c.id,
-          codigo: c.codigo ?? '',
-          nombre: c.nombre ?? '',
-        }));
+        const term = clienteQuery.toLowerCase();
+        const results = (data.data ?? [])
+          .map((c: any) => ({
+            id: c.id,
+            codigo: c.codigo ?? '',
+            nombre: c.nombre ?? '',
+            _nameMatch: (c.nombre ?? '').toLowerCase().includes(term) || (c.codigo ?? '').toLowerCase().includes(term),
+          }))
+          .sort((a: any, b: any) => {
+            // Name/codigo matches first, then alphabetical
+            if (a._nameMatch !== b._nameMatch) return a._nameMatch ? -1 : 1;
+            return a.nombre.localeCompare(b.nombre);
+          })
+          .slice(0, 10)
+          .map(({ _nameMatch, ...c }: any) => c);
         setClienteResults(results);
         setShowDropdown(results.length > 0);
       } catch {
