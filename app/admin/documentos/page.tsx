@@ -142,6 +142,9 @@ export default function DocumentosPage() {
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
   const { mutate } = useMutate();
 
+  // Download all state
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
   // Fetch folders
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
     tab === 'carpetas' && !carpetaAbierta ? '/api/admin/documentos?carpetas=true' : null
@@ -333,6 +336,48 @@ export default function DocumentosPage() {
         a.click();
       }
     } catch { /* ignore */ }
+  };
+
+  const descargarTodosZip = async (documentos: BuscarDocItem[]) => {
+    if (documentos.length === 0 || downloadingZip) return;
+    setDownloadingZip(true);
+    try {
+      const ids = documentos.map((d: BuscarDocItem) => d.id);
+      // Build a descriptive ZIP name from the search query
+      const querySlug = (debouncedQuery || 'documentos')
+        .replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+        .substring(0, 50);
+      const zipName = `${querySlug}_${new Date().toISOString().slice(0, 10)}`;
+
+      const res = await adminFetch('/api/admin/documentos/descargar-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documento_ids: ids, zip_name: zipName }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: `Error HTTP ${res.status}` }));
+        throw new Error(errData.error ?? 'Error al generar ZIP');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${zipName}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setToasts((prev) => [...prev, {
+        id: Date.now().toString(),
+        type: 'error' as const,
+        message: err.message ?? 'Error al descargar ZIP',
+      }]);
+    } finally {
+      setDownloadingZip(false);
+    }
   };
 
   const cambiarCliente = async (docId: string, clienteId: string) => {
@@ -710,6 +755,31 @@ export default function DocumentosPage() {
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              {/* Download all bar */}
+              <div className="flex items-center justify-between px-5 py-2.5 bg-slate-50/80 border-b border-slate-200">
+                <p className="text-sm text-slate-500">
+                  {busquedaResults.length}{busquedaData?.hasMore ? '+' : ''} documento{busquedaResults.length !== 1 ? 's' : ''}
+                </p>
+                <button
+                  onClick={() => descargarTodosZip(busquedaResults)}
+                  disabled={downloadingZip}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium text-[#1E40AF] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {downloadingZip ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-[#1E40AF] rounded-full animate-spin" />
+                      Preparando ZIP...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Descargar todos ({busquedaResults.length})
+                    </>
+                  )}
+                </button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
