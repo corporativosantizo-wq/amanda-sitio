@@ -114,7 +114,128 @@ export async function checkAndProcessEmails(): Promise<{
     .not('id', 'is', null); // update all rows (there's only 1)
 
   console.log(`[molly] Ciclo completado: ${processed} procesados, ${draftsCreated} borradores, ${errors.length} errores`);
+
+  // Retry stuck emails (messages inserted but never classified)
+  const retried = await retryPendingClassifications();
+  if (retried > 0) {
+    console.log(`[molly] ${retried} emails atascados re-clasificados`);
+  }
+
   return { processed, drafts: draftsCreated, errors };
+}
+
+// ── Retry stuck classifications ──────────────────────────────────────────
+
+/**
+ * Finds inbound email_messages that were inserted but never classified
+ * (clasificacion is still null or 'pendiente') and retries classification.
+ * This fixes the bug where a failed classifyEmail() call leaves the message
+ * permanently stuck because processOneEmail skips it on the next run.
+ */
+export async function retryPendingClassifications(): Promise<number> {
+  const { data: stuckMessages, error } = await db()
+    .from('email_messages')
+    .select('id, thread_id, from_email, from_name, subject, body_text, direction, email_threads!inner(id, account)')
+    .is('clasificacion', null)
+    .eq('direction', 'inbound')
+    .order('received_at', { ascending: true })
+    .limit(5); // Process max 5 per cycle to avoid timeout
+
+  if (error) {
+    console.error('[molly-retry] Error buscando mensajes atascados:', error.message);
+    return 0;
+  }
+
+  if (!stuckMessages || stuckMessages.length === 0) return 0;
+
+  console.log(`[molly-retry] Encontrados ${stuckMessages.length} mensajes sin clasificar — reintentando`);
+
+  let retried = 0;
+
+  for (const msg of stuckMessages) {
+    try {
+      const account = (msg as any).email_threads?.account as MailboxAlias;
+      const fromEmail = msg.from_email;
+      const bodyText = msg.body_text || '';
+
+      console.log(`[molly-retry] Reintentando clasificación: ${msg.subject?.substring(0, 60)} (de: ${fromEmail})`);
+
+      const knownContact = await getContactName(fromEmail);
+      const classification = await classifyEmail(fromEmail, msg.subject, bodyText, knownContact, account);
+
+      // Update message with classification
+      await db()
+        .from('email_messages')
+        .update({
+          clasificacion: classification.tipo,
+          confidence_score: classification.confianza,
+          resumen: classification.resumen,
+        })
+        .eq('id', msg.id);
+
+      // Update thread classification + urgency
+      await db()
+        .from('email_threads')
+        .update({
+          clasificacion: classification.tipo,
+          urgencia: classification.urgencia,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', msg.thread_id);
+
+      // Try to match contact to client
+      await matchContactToClient(fromEmail, classification.cliente_probable);
+
+      // Generate draft if needed
+      if (classification.requiere_respuesta && !isFilterable(classification.tipo)) {
+        try {
+          const clientContext = await getClientContext(fromEmail);
+          const recentMessages = await getRecentThreadMessages(msg.thread_id);
+
+          const draftResult = await generateDraft(
+            msg as unknown as EmailMessage,
+            msg.subject,
+            clientContext,
+            recentMessages,
+            account,
+          );
+
+          const { data: draft } = await db()
+            .from('email_drafts')
+            .insert({
+              thread_id: msg.thread_id,
+              message_id: msg.id,
+              to_email: fromEmail,
+              subject: draftResult.subject,
+              body_text: draftResult.body_text,
+              body_html: draftResult.body_html,
+              tone: draftResult.tone,
+              status: 'pendiente',
+            })
+            .select()
+            .single();
+
+          if (draft) {
+            const thread = { id: msg.thread_id, subject: msg.subject, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
+            const notification = buildEmailNotification(thread, msg as unknown as EmailMessage, classification, draft as EmailDraft);
+            await sendTelegramMessage(notification.text, {
+              parse_mode: 'HTML',
+              reply_markup: notification.reply_markup,
+            });
+          }
+        } catch (draftErr: any) {
+          console.error(`[molly-retry] Error generando borrador para ${fromEmail}:`, draftErr.message);
+        }
+      }
+
+      console.log(`[molly-retry] ✓ Clasificado: ${classification.tipo} | ${msg.subject?.substring(0, 40)}`);
+      retried++;
+    } catch (err: any) {
+      console.error(`[molly-retry] ✗ Error reintentando ${msg.id}:`, err.message);
+    }
+  }
+
+  return retried;
 }
 
 // ── Process a single email ─────────────────────────────────────────────────
@@ -192,9 +313,11 @@ async function processOneEmail(
     return { draftCreated: false };
   }
 
-  // Classify with Claude
+  // Classify with Claude (account-aware)
   const knownContact = await getContactName(fromEmail);
-  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact);
+  console.log('[molly] Clasificando email de', fromEmail, '| cuenta:', account, '| asunto:', msg.subject.substring(0, 60));
+  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact, account);
+  console.log('[molly] Clasificación resultado:', classification.tipo, '| urgencia:', classification.urgencia, '| confianza:', classification.confianza);
 
   // Update message with classification
   await db()
@@ -294,7 +417,7 @@ async function processOneEmail(
       const clientContext = await getClientContext(fromEmail);
       const recentMessages = await getRecentThreadMessages(thread.id);
 
-      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages);
+      const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages, account);
 
       const { data: draft } = await db()
         .from('email_drafts')
