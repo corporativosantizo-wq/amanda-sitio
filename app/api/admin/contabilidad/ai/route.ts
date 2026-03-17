@@ -8,7 +8,7 @@ import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendMail } from '@/lib/services/outlook.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
-import { solicitarFacturaRE } from '@/lib/services/factura-re.service';
+import { solicitarFacturaRE, obtenerDatosPago } from '@/lib/services/factura-re.service';
 import { listarPagos, resumenPagos } from '@/lib/services/pagos.service';
 import { listarCobros, resumenCobros } from '@/lib/services/cobros.service';
 import { listarCotizaciones } from '@/lib/services/cotizaciones.service';
@@ -288,7 +288,12 @@ async function handleTool(name: string, input: any): Promise<string> {
 
 async function handleSolicitarFactura(input: any): Promise<string> {
   try {
-    await solicitarFacturaRE({
+    // Use obtenerDatosPago to enrich with detalle_servicios from cotizacion_items
+    const datos = input.pago_id
+      ? await obtenerDatosPago(input.pago_id)
+      : null;
+
+    await solicitarFacturaRE(datos ?? {
       pago_id: input.pago_id,
       cliente_nombre: input.cliente_nombre,
       cliente_nit: input.cliente_nit || 'CF',
@@ -297,9 +302,11 @@ async function handleSolicitarFactura(input: any): Promise<string> {
       fecha_pago: input.fecha_pago,
       referencia_bancaria: input.referencia_bancaria || null,
     });
+    const nombre = datos?.cliente_nombre ?? input.cliente_nombre;
+    const monto = datos?.monto ?? input.monto;
     return JSON.stringify({
       exito: true,
-      mensaje: `Factura solicitada a RE Contadores para ${input.cliente_nombre} — Q${input.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+      mensaje: `Factura solicitada a RE Contadores para ${nombre} — Q${monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
     });
   } catch (err: any) {
     return JSON.stringify({ error: err.message });
