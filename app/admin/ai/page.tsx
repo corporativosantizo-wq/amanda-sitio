@@ -9,6 +9,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { sanitizeHtml } from '@/lib/utils/sanitize-html';
+import { SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
 import type { TareaConCliente } from '@/lib/types';
 import {
   CATEGORIA_TAREA_LABEL,
@@ -396,7 +397,7 @@ export default function AIAssistantPage() {
           errMsg = err.error ?? errMsg;
         } catch {
           if (res.status === 504) errMsg = 'El asistente tardó demasiado. Intenta con una pregunta más corta.';
-          else if (res.status === 405 || res.status === 401 || res.status === 403) errMsg = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
+          else if (res.status === 401 || res.status === 403) errMsg = SESSION_EXPIRED_MSG;
         }
         throw new Error(errMsg);
       }

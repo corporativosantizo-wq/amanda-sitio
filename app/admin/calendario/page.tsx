@@ -10,13 +10,9 @@ import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import { safeRedirect } from '@/lib/utils/validate-url';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import { isSessionExpired, SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
 
-/** Detect Clerk auth redirect (session expired) */
-function isAuthRedirect(res: Response): boolean {
-  return res.type === 'opaqueredirect' || res.status === 401 || res.status === 403
-    || (res.status >= 300 && res.status < 400);
-}
-const SESSION_EXPIRED_MSG = 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
+const isAuthRedirect = isSessionExpired;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

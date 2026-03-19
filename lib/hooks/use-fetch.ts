@@ -19,18 +19,7 @@ interface UseFetchResult<T> {
   setData: React.Dispatch<React.SetStateAction<T | null>>;
 }
 
-/** Detect Clerk session expiry: middleware redirects to login, which returns 405 for non-GET */
-function isSessionExpired(res: Response): boolean {
-  // Redirect to login page
-  if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) return true;
-  // Login page doesn't accept POST/PUT → 405
-  if (res.status === 405) return true;
-  // Clerk returns 401 when JWT is invalid
-  if (res.status === 401) return true;
-  return false;
-}
-
-const SESSION_EXPIRED_MSG = 'Sesión expirada. Recarga la página para continuar.';
+import { isSessionExpired, SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
 
 export function useFetch<T>(url: string | null, options: UseFetchOptions = {}): UseFetchResult<T> {
   const { immediate = true } = options;
