@@ -22,9 +22,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // Generar URL firmada para ver el PDF
     let signedUrl: string | null = null;
     try {
-      signedUrl = await generarSignedUrl(doc.archivo_url, 600);
-    } catch {
-      // Si falla la URL firmada, no bloquear
+      if (doc.archivo_url) {
+        signedUrl = await generarSignedUrl(doc.archivo_url, 600);
+      } else {
+        console.warn(`[Documentos] Documento ${id} no tiene archivo_url`);
+      }
+    } catch (urlErr: any) {
+      console.error(`[Documentos] Error generando signed URL para doc ${id}:`, urlErr?.message ?? urlErr);
     }
 
     return NextResponse.json({ ...doc, signed_url: signedUrl });

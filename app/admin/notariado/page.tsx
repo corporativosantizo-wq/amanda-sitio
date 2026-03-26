@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 const modulos = [
   { titulo: 'Escrituras', href: '/admin/notariado/escrituras', icon: '📜', desc: 'Protocolo notarial y escrituras públicas' },
+  { titulo: 'Actas y Documentos', href: '/admin/notariado/actas', icon: '📄', desc: 'Actas notariales y escrituras públicas del archivo documental' },
   { titulo: 'Avisos', href: '/admin/notariado/avisos', icon: '📅', desc: 'Avisos trimestrales al Archivo General de Protocolos' },
   { titulo: 'Índice', href: '/admin/notariado/indice', icon: '📋', desc: 'Índice del protocolo por año' },
   { titulo: 'Plantilla', href: '/admin/notariado/configuracion', icon: '🖼️', desc: 'Membrete y configuración de documentos DOCX' },

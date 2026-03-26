@@ -468,9 +468,13 @@ export async function descargarPDF(storagePath: string): Promise<Buffer> {
 }
 
 export async function generarSignedUrl(storagePath: string, expiresIn = 300): Promise<string> {
+  if (!storagePath) throw new DocumentoError('storagePath vacío — no se puede generar signed URL');
   const storage = storageClient().storage.from('documentos');
   const { data, error } = await storage.createSignedUrl(storagePath, expiresIn);
-  if (error || !data) throw new DocumentoError('Error al generar URL firmada', error);
+  if (error || !data) {
+    console.error('[SignedUrl] Error para path:', storagePath, '— error:', error?.message ?? error);
+    throw new DocumentoError('Error al generar URL firmada', error);
+  }
   return data.signedUrl;
 }
 

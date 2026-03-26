@@ -1344,8 +1344,18 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
     try {
       const res = await adminFetch(`/api/admin/documentos/${docId}`);
       const d = await res.json();
-      if (d.signed_url) safeWindowOpen(d.signed_url);
-    } catch { /* ignore */ }
+      if (d.error) {
+        console.error('[DocumentViewer] Error al obtener documento:', d.error);
+        return;
+      }
+      if (d.signed_url) {
+        if (!safeWindowOpen(d.signed_url)) {
+          console.error('[DocumentViewer] URL bloqueada por validación:', d.signed_url);
+        }
+      } else {
+        console.error('[DocumentViewer] signed_url es null para documento:', docId);
+      }
+    } catch (err) { console.error('[DocumentViewer] Error abriendo documento:', err); }
   };
 
   const descargarDoc = async (docId: string, nombre?: string) => {
@@ -1359,8 +1369,10 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.click();
+      } else {
+        console.error('[DocumentViewer] No signed_url para descarga:', docId, d.error);
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[DocumentViewer] Error descargando:', err); }
   };
 
   const desvincular = async (docId: string) => {

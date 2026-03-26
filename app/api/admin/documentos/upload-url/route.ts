@@ -54,6 +54,20 @@ export async function POST(req: NextRequest) {
     const storage = createClient(supabaseUrl, supabaseKey);
     const storagePath = `pendientes/${Date.now()}_${sanitizarNombre(filename)}`;
 
+    // Verify bucket exists first
+    const { data: buckets, error: bucketErr } = await storage.storage.listBuckets();
+    if (bucketErr) {
+      console.error('[UploadURL] Error listando buckets:', bucketErr);
+    }
+    const documentosBucket = buckets?.find((b: any) => b.id === 'documentos');
+    if (!documentosBucket) {
+      console.error('[UploadURL] Bucket "documentos" no existe. Buckets disponibles:', buckets?.map((b: any) => b.id));
+      return NextResponse.json(
+        { error: 'El bucket de almacenamiento no existe. Contacte al administrador.' },
+        { status: 500 },
+      );
+    }
+
     const { data, error } = await storage.storage
       .from('documentos')
       .createSignedUploadUrl(storagePath);
