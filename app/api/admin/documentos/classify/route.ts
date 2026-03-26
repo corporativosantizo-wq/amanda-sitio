@@ -1,6 +1,8 @@
 // ============================================================================
 // POST /api/admin/documentos/classify
 // Clasificar un documento con Claude IA (PDF, DOCX, imágenes)
+// RESILIENT: si la clasificación falla, guarda como 'pendiente' con nota.
+// LARGE FILES: PDFs >5MB se recortan a primeras 5 páginas antes de enviar.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,6 +21,12 @@ import { createAdminClient } from '@/lib/supabase/admin';
 function getFileExtension(filename: string): string {
   return (filename.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '');
 }
+
+// Tamaño máximo para descargar el archivo completo para clasificación
+const MAX_DOWNLOAD_SIZE = 30 * 1024 * 1024; // 30MB — beyond this, skip AI
+const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5MB — use more aggressive trimming
+const MAX_PAGES_NORMAL = 5;
+const MAX_PAGES_LARGE = 8; // For large files, extract more pages for better classification
 
 const CLASSIFY_PROMPT = `Eres un asistente de clasificación documental para un bufete de abogados en Guatemala (Amanda Santizo — Despacho Jurídico). Analiza el documento legal y extrae información estructurada.
 
@@ -74,10 +82,37 @@ Reglas:
 - Si no puedes determinar algo, usa null
 - La confianza va de 0.0 a 1.0`;
 
+// Helper: save fallback classification so the document never stays stuck as 'pendiente'
+async function guardarClasificacionFallback(
+  docId: string,
+  nombreArchivo: string,
+  clienteId: string | null,
+  motivo: string,
+) {
+  try {
+    console.warn(`[Classify] Fallback para doc ${docId}: ${motivo}`);
+    await clasificarDocumento(docId, {
+      tipo: 'otro',
+      titulo: nombreArchivo.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
+      descripcion: `Clasificación automática no disponible: ${motivo}`,
+      confianza_ia: 0,
+      partes: [],
+      cliente_nombre_detectado: null,
+      cliente_id: clienteId,
+    });
+  } catch (fbErr: any) {
+    console.error(`[Classify] Error en fallback para doc ${docId}:`, fbErr.message);
+  }
+}
+
 export async function POST(req: NextRequest) {
+  let documentoId: string | undefined;
+  let docNombre = '';
+  let docClienteId: string | null = null;
+
   try {
     const body = await req.json();
-    const documentoId = body.documento_id;
+    documentoId = body.documento_id;
 
     console.log('[Classify] Iniciando clasificación para documento:', documentoId);
 
@@ -111,7 +146,7 @@ export async function POST(req: NextRequest) {
     const db = createAdminClient();
     const { data: doc, error: fetchErr } = await db
       .from('documentos')
-      .select('id, archivo_url, nombre_archivo, estado')
+      .select('id, archivo_url, nombre_archivo, estado, archivo_tamano, cliente_id')
       .eq('id', documentoId)
       .single();
 
@@ -131,7 +166,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log('[Classify] Documento encontrado:', doc.nombre_archivo, ', estado:', doc.estado, ', path:', doc.archivo_url);
+    docNombre = doc.nombre_archivo;
+    docClienteId = doc.cliente_id;
+
+    console.log('[Classify] Documento encontrado:', doc.nombre_archivo,
+      ', estado:', doc.estado,
+      ', tamano:', doc.archivo_tamano ? `${(doc.archivo_tamano / 1024 / 1024).toFixed(1)} MB` : 'desconocido',
+      ', path:', doc.archivo_url);
 
     if (doc.estado !== 'pendiente') {
       return NextResponse.json(
@@ -142,7 +183,8 @@ export async function POST(req: NextRequest) {
 
     // Paso 2: Descargar archivo de Storage y preparar contenido para Claude
     const ext = getFileExtension(doc.nombre_archivo);
-    console.log('[Classify] Paso 2: Descargando archivo de Storage:', doc.archivo_url, '(ext:', ext + ')');
+    const fileSize = doc.archivo_tamano ?? 0;
+    console.log('[Classify] Paso 2: Descargando archivo de Storage:', doc.archivo_url, '(ext:', ext, ', size:', fileSize, ')');
 
     let clasificacion: any;
     let rawResponse = '';
@@ -162,6 +204,17 @@ export async function POST(req: NextRequest) {
         partes: [],
         cliente_probable: null,
       };
+    } else if (fileSize > MAX_DOWNLOAD_SIZE) {
+      // File too large to download for classification — use filename fallback
+      console.warn(`[Classify] Archivo demasiado grande (${(fileSize / 1024 / 1024).toFixed(1)} MB > ${MAX_DOWNLOAD_SIZE / 1024 / 1024} MB) — clasificación por nombre`);
+      clasificacion = {
+        tipo: 'otro',
+        titulo: doc.nombre_archivo.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
+        descripcion: `Archivo grande (${(fileSize / 1024 / 1024).toFixed(1)} MB) — clasificado por nombre. Reclasifique manualmente si es necesario.`,
+        confianza: 0.2,
+        partes: [],
+        cliente_probable: null,
+      };
     } else {
       // PDF, DOCX, Images: download and analyze with Claude
       let fileBuffer: Buffer;
@@ -173,10 +226,14 @@ export async function POST(req: NextRequest) {
           ? `${dlErr.message} — ${JSON.stringify(dlErr.details)}`
           : (dlErr.message ?? 'desconocido');
         console.error(`[Classify] Error al descargar archivo:`, detail);
-        return NextResponse.json(
-          { error: `No se pudo descargar el archivo de Storage: ${detail}` },
-          { status: 500 }
-        );
+        // RESILIENT: save fallback instead of returning 500
+        await guardarClasificacionFallback(documentoId, doc.nombre_archivo, docClienteId, `Error de descarga: ${detail}`);
+        return NextResponse.json({
+          documento: { id: documentoId, tipo: 'otro', estado: 'clasificado' },
+          cliente_match: null,
+          fallback: true,
+          fallback_reason: 'download_error',
+        });
       }
 
       // Paso 3: Build Claude message content based on file type
@@ -184,28 +241,54 @@ export async function POST(req: NextRequest) {
       let messageContent: any[];
 
       if (isPdf) {
-        // PDF: extract first 3 pages, send as document
-        const MAX_PAGES = 3;
-        const srcDoc = await PDFDocument.load(fileBuffer);
-        const totalPages = srcDoc.getPageCount();
-        console.log(`[Classify] PDF tiene ${totalPages} página(s)`);
+        // PDF: extract pages, send as document
+        const isLarge = fileBuffer.length > LARGE_FILE_THRESHOLD;
+        const maxPages = isLarge ? MAX_PAGES_LARGE : MAX_PAGES_NORMAL;
 
-        let base64: string;
-        if (totalPages > MAX_PAGES) {
-          const trimmedDoc = await PDFDocument.create();
-          const pages = await trimmedDoc.copyPages(srcDoc, [0, 1, 2].filter((i: number) => i < totalPages));
-          for (const page of pages) trimmedDoc.addPage(page);
-          const trimmedBytes = await trimmedDoc.save();
-          base64 = Buffer.from(trimmedBytes).toString('base64');
-          console.log(`[Classify] PDF recortado a ${MAX_PAGES} páginas: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
-        } else {
-          base64 = fileBuffer.toString('base64');
+        try {
+          const srcDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+          const totalPages = srcDoc.getPageCount();
+          console.log(`[Classify] PDF tiene ${totalPages} página(s), isLarge: ${isLarge}, maxPages: ${maxPages}`);
+
+          let base64: string;
+          if (totalPages > maxPages) {
+            const trimmedDoc = await PDFDocument.create();
+            const pageIndices = Array.from({ length: Math.min(maxPages, totalPages) }, (_, i) => i);
+            const pages = await trimmedDoc.copyPages(srcDoc, pageIndices);
+            for (const page of pages) trimmedDoc.addPage(page);
+            const trimmedBytes = await trimmedDoc.save();
+            base64 = Buffer.from(trimmedBytes).toString('base64');
+            console.log(`[Classify] PDF recortado a ${pageIndices.length} páginas: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
+          } else {
+            // Even for small page count, re-save to strip large embedded resources if file is large
+            if (isLarge) {
+              const trimmedDoc = await PDFDocument.create();
+              const pageIndices = Array.from({ length: totalPages }, (_, i) => i);
+              const pages = await trimmedDoc.copyPages(srcDoc, pageIndices);
+              for (const page of pages) trimmedDoc.addPage(page);
+              const trimmedBytes = await trimmedDoc.save();
+              base64 = Buffer.from(trimmedBytes).toString('base64');
+              console.log(`[Classify] PDF grande re-saved: ${(trimmedBytes.length / 1024).toFixed(0)} KB`);
+            } else {
+              base64 = fileBuffer.toString('base64');
+            }
+          }
+
+          messageContent = [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+            { type: 'text', text: CLASSIFY_PROMPT },
+          ];
+        } catch (pdfErr: any) {
+          console.error(`[Classify] Error procesando PDF:`, pdfErr.message);
+          // PDF corrupto o protegido — fallback
+          await guardarClasificacionFallback(documentoId, doc.nombre_archivo, docClienteId, `Error procesando PDF: ${pdfErr.message}`);
+          return NextResponse.json({
+            documento: { id: documentoId, tipo: 'otro', estado: 'clasificado' },
+            cliente_match: null,
+            fallback: true,
+            fallback_reason: 'pdf_parse_error',
+          });
         }
-
-        messageContent = [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-          { type: 'text', text: CLASSIFY_PROMPT },
-        ];
       } else if (isDocx) {
         // DOCX: extract text with mammoth, send as text
         const result = await mammoth.extractRawText({ buffer: fileBuffer });
@@ -251,18 +334,11 @@ export async function POST(req: NextRequest) {
         console.error(`[Classify] Error en Claude API o JSON parse:`, parseErr.message);
         console.error('[Classify] Respuesta raw que falló el parse:', rawResponse.slice(0, 1000));
 
-        if (parseErr.status || parseErr.error) {
-          const apiMsg = parseErr.error?.message ?? parseErr.message ?? 'Error de API';
-          return NextResponse.json(
-            { error: `Error de Claude API: ${apiMsg} (status: ${parseErr.status ?? 'N/A'})` },
-            { status: 500 }
-          );
-        }
-
+        // RESILIENT: instead of returning 500 for API errors, use fallback
         console.warn(`[Classify] Usando clasificación fallback (tipo=otro, confianza=0)`);
         clasificacion = {
           tipo: 'otro',
-          titulo: doc.nombre_archivo,
+          titulo: doc.nombre_archivo.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
           descripcion: 'No se pudo analizar automáticamente.',
           confianza: 0,
           partes: [],
@@ -276,14 +352,8 @@ export async function POST(req: NextRequest) {
     let clienteMatch: { id: string; nombre: string; codigo: string; confianza: number } | null = null;
 
     // 4a. Si el documento ya tiene cliente_id asignado (subido con cliente), no buscar
-    const { data: docFull } = await db
-      .from('documentos')
-      .select('cliente_id')
-      .eq('id', documentoId)
-      .single();
-
-    if (docFull?.cliente_id) {
-      console.log('[Classify] Documento ya tiene cliente_id asignado:', docFull.cliente_id);
+    if (docClienteId) {
+      console.log('[Classify] Documento ya tiene cliente_id asignado:', docClienteId);
     } else {
       // 4b. Buscar por cliente_probable (del contenido del PDF)
       if (clasificacion.cliente_probable) {
@@ -339,7 +409,7 @@ export async function POST(req: NextRequest) {
         cliente_nombre_detectado: clasificacion.cliente_probable ?? null,
         confianza_ia: clasificacion.confianza ?? 0,
         metadata: clasificacion.datos_adicionales ?? {},
-        cliente_id: docFull?.cliente_id ?? clienteMatch?.id ?? null,
+        cliente_id: docClienteId ?? clienteMatch?.id ?? null,
       });
 
       console.log('[Classify] Clasificación guardada OK: id=', resultado.id, ', tipo=', resultado.tipo);
@@ -360,6 +430,16 @@ export async function POST(req: NextRequest) {
     }
   } catch (error: any) {
     console.error('[Classify] Error general no capturado:', error);
+    // RESILIENT: try to save fallback classification even on unexpected errors
+    if (documentoId) {
+      await guardarClasificacionFallback(documentoId, docNombre || 'documento', docClienteId, `Error inesperado: ${error.message}`);
+      return NextResponse.json({
+        documento: { id: documentoId, tipo: 'otro', estado: 'clasificado' },
+        cliente_match: null,
+        fallback: true,
+        fallback_reason: 'unexpected_error',
+      });
+    }
     const detail = error instanceof DocumentoError
       ? `${error.message} — ${JSON.stringify(error.details)}`
       : (error.message ?? 'Error desconocido');

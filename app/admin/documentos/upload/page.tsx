@@ -45,7 +45,7 @@ interface FileEntry {
   file: File;
   nombre: string;
   tamano: string;
-  status: 'pendiente' | 'subiendo' | 'analizando' | 'clasificado' | 'error';
+  status: 'pendiente' | 'subiendo' | 'analizando' | 'clasificado' | 'sin_clasificar' | 'error';
   resultado?: any;
   error?: string;
   storagePath?: string;
@@ -273,7 +273,7 @@ export default function UploadDocumentos() {
     }
   };
 
-  // Classify a single document
+  // Classify a single document — NEVER blocks upload success
   const classifySingleDoc = async (u: { id: string; docId: string }) => {
     updateFile(u.id, { status: 'analizando' });
     try {
@@ -288,20 +288,41 @@ export default function UploadDocumentos() {
       try {
         result = JSON.parse(rawClassify);
       } catch {
+        // Classification failed but document is already uploaded
+        console.error(`[Upload] Respuesta inválida del clasificador para ${u.docId}`);
         updateFile(u.id, {
-          status: 'error',
-          error: `Respuesta inválida del clasificador (HTTP ${res.status}): ${rawClassify.slice(0, 200)}`,
+          status: 'sin_clasificar',
+          error: 'No se pudo clasificar automáticamente. Puede clasificarlo manualmente.',
         });
         return;
       }
 
       if (res.ok) {
-        updateFile(u.id, { status: 'clasificado', resultado: result.documento });
+        // Check if it was a fallback classification
+        if (result.fallback) {
+          updateFile(u.id, {
+            status: 'sin_clasificar',
+            resultado: result.documento,
+            error: 'Clasificado como "Otro" — reclasifique manualmente si es necesario.',
+          });
+        } else {
+          updateFile(u.id, { status: 'clasificado', resultado: result.documento });
+        }
       } else {
-        updateFile(u.id, { status: 'error', error: result.error ?? `Error HTTP ${res.status}` });
+        // API returned error — document is still uploaded, just not classified
+        console.error(`[Upload] Error clasificando ${u.docId}:`, result.error);
+        updateFile(u.id, {
+          status: 'sin_clasificar',
+          error: result.error ?? 'Error al clasificar. Puede clasificarlo manualmente.',
+        });
       }
     } catch (classErr: any) {
-      updateFile(u.id, { status: 'error', error: `Error de conexión al clasificar: ${classErr.message ?? 'desconocido'}` });
+      // Network error — document is still uploaded
+      console.error(`[Upload] Error de conexión clasificando ${u.docId}:`, classErr.message);
+      updateFile(u.id, {
+        status: 'sin_clasificar',
+        error: 'Error de conexión al clasificar. El documento se subió correctamente.',
+      });
     }
   };
 
@@ -394,6 +415,7 @@ export default function UploadDocumentos() {
   };
 
   const clasificados = files.filter((f: FileEntry) => f.status === 'clasificado').length;
+  const sinClasificar = files.filter((f: FileEntry) => f.status === 'sin_clasificar').length;
   const errores = files.filter((f: FileEntry) => f.status === 'error').length;
 
   const STATUS_ICON: Record<string, { icon: string; color: string; text: string }> = {
@@ -401,6 +423,7 @@ export default function UploadDocumentos() {
     subiendo: { icon: '↑', color: '#2563eb', text: 'Subiendo...' },
     analizando: { icon: '◌', color: '#7c3aed', text: 'Analizando con IA...' },
     clasificado: { icon: '✓', color: '#16a34a', text: 'Clasificado' },
+    sin_clasificar: { icon: '⚠', color: '#d97706', text: 'Subido — Sin clasificar' },
     error: { icon: '✗', color: '#dc2626', text: 'Error' },
   };
 
@@ -612,6 +635,7 @@ export default function UploadDocumentos() {
                 </svg>
                 <span className="text-sm font-medium text-emerald-800">
                   {clasificados} clasificado{clasificados !== 1 ? 's' : ''}
+                  {sinClasificar > 0 ? `, ${sinClasificar} sin clasificar` : ''}
                   {errores > 0 ? `, ${errores} error${errores !== 1 ? 'es' : ''}` : ''}
                 </span>
               </div>
@@ -647,6 +671,10 @@ export default function UploadDocumentos() {
                         ) : f.status === 'clasificado' && f.resultado?.tipo ? (
                           <p className="text-xs" style={{ color: s.color }}>
                             {s.text}: {f.resultado.titulo ?? f.resultado.tipo}
+                          </p>
+                        ) : f.status === 'sin_clasificar' ? (
+                          <p className="text-xs text-amber-600">
+                            {f.error || 'Subido correctamente — pendiente de clasificar manualmente'}
                           </p>
                         ) : f.status === 'error' && f.error ? (
                           <p className="text-xs text-red-600 break-words whitespace-pre-wrap max-w-lg">

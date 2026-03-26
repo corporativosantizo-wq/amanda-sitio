@@ -401,8 +401,14 @@ export default function ClasificadorPage() {
                       </td>
                       <td className="py-3 px-4">
                         {doc.tipo ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap bg-slate-100 text-slate-600">
-                            {TIPOS[doc.tipo] ?? doc.tipo}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                            doc.tipo === 'otro' && doc.confianza_ia === 0
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {doc.tipo === 'otro' && doc.confianza_ia === 0
+                              ? 'Sin clasificar'
+                              : (TIPOS[doc.tipo] ?? doc.tipo)}
                           </span>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
