@@ -844,10 +844,14 @@ export default function DocumentosPage() {
                           className="hover:bg-slate-50/50 transition-colors"
                         >
                           <td className="py-3 px-4 pl-5 text-sm text-slate-900 max-w-[300px]">
-                            <div className="truncate font-medium">
+                            <button
+                              onClick={() => verPDFBusqueda(doc.id, doc.nombre_archivo ?? doc.titulo ?? 'documento')}
+                              className="truncate font-medium text-left hover:text-cyan-700 transition-colors"
+                              title="Ver documento"
+                            >
                               <span className="mr-1.5">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
-                              {doc.titulo ?? doc.nombre_archivo}
-                            </div>
+                              <span className="underline decoration-slate-300 hover:decoration-cyan-500">{doc.titulo ?? doc.nombre_archivo}</span>
+                            </button>
                             {doc.nombre_original && doc.titulo && (
                               <p className="text-xs text-slate-400 truncate mt-0.5">{doc.nombre_original}</p>
                             )}
@@ -876,9 +880,13 @@ export default function DocumentosPage() {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => verPDFBusqueda(doc.id, doc.nombre_archivo ?? doc.titulo ?? 'documento')}
-                                className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors whitespace-nowrap"
+                                className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                                title="Vista previa"
                               >
-                                Abrir
+                                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                  <circle cx="12" cy="12" r="3" />
+                                </svg>
                               </button>
                               {doc.archivo_url && (
                                 <button
@@ -1290,9 +1298,15 @@ export default function DocumentosPage() {
                               <td className="py-3 px-4 text-sm font-mono text-slate-700">
                                 {doc.codigo_documento ?? '—'}
                               </td>
-                              <td className="py-3 px-4 text-sm text-slate-500 max-w-[200px] truncate">
-                                <span className="mr-1">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
-                                {doc.nombre_original ?? doc.nombre_archivo}
+                              <td className="py-3 px-4 text-sm max-w-[200px] truncate">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo); }}
+                                  className="inline-flex items-center gap-1 text-slate-700 hover:text-cyan-700 transition-colors text-left"
+                                  title="Ver documento"
+                                >
+                                  <span>{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
+                                  <span className="truncate underline decoration-slate-300 hover:decoration-cyan-500">{doc.nombre_original ?? doc.nombre_archivo}</span>
+                                </button>
                               </td>
                               <td className="py-3 px-4 text-xs text-slate-500">
                                 {TIPOS[doc.tipo ?? ''] ?? doc.tipo ?? '—'}
@@ -1308,9 +1322,15 @@ export default function DocumentosPage() {
                             </>
                           ) : (
                             <>
-                              <td className="py-3 px-4 text-sm text-slate-900 max-w-[200px] truncate">
-                                <span className="mr-1">{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
-                                {doc.codigo_documento ?? doc.nombre_archivo}
+                              <td className="py-3 px-4 text-sm max-w-[200px] truncate">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo); }}
+                                  className="inline-flex items-center gap-1 text-slate-900 hover:text-cyan-700 transition-colors text-left"
+                                  title="Ver documento"
+                                >
+                                  <span>{getFileIcon(doc.nombre_original ?? doc.nombre_archivo)}</span>
+                                  <span className="truncate underline decoration-slate-300 hover:decoration-cyan-500">{doc.codigo_documento ?? doc.nombre_archivo}</span>
+                                </button>
                               </td>
                               <td className="py-3 px-4 text-xs text-slate-500">
                                 {TIPOS[doc.tipo ?? ''] ?? doc.tipo ?? '—'}
@@ -1335,6 +1355,16 @@ export default function DocumentosPage() {
                           )}
                           <td className="py-3 px-4 pr-5 text-right" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo)}
+                                className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                                title="Vista previa"
+                              >
+                                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                  <circle cx="12" cy="12" r="3" />
+                                </svg>
+                              </button>
                               {isPDF(doc) && (
                                 <button
                                   onClick={() => transcribirUno(doc.id)}
