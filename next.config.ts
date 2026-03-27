@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     {
       source: '/:path*',
       headers: [
-        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
@@ -24,6 +24,13 @@ const nextConfig: NextConfig = {
             "font-src 'self'",
           ].join('; '),
         },
+      ],
+    },
+    {
+      source: '/api/admin/documentos/:id/preview',
+      headers: [
+        { key: 'Cache-Control', value: 'private, max-age=600' },
+        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
       ],
     },
     {

@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
+import DocumentViewer from '@/components/admin/document-viewer';
 
 const TIPOS: Record<string, string> = {
   contrato_comercial: 'Contrato Comercial',
@@ -153,6 +154,9 @@ export default function DocumentosPage() {
   const [vinculando, setVinculando] = useState(false);
   const vincularTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Document viewer state
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; nombre: string } | null>(null);
+
   // Fetch folders
   const { data: carpetasData } = useFetch<{ carpetas: Carpeta[] }>(
     tab === 'carpetas' && !carpetaAbierta ? '/api/admin/documentos?carpetas=true' : null
@@ -251,12 +255,8 @@ export default function DocumentosPage() {
       ).slice(0, 8)
     : [];
 
-  const verPDFBusqueda = async (docId: string) => {
-    try {
-      const res = await adminFetch(`/api/admin/documentos/${docId}`);
-      const d = await res.json();
-      if (d.signed_url) safeWindowOpen(d.signed_url);
-    } catch { /* ignore */ }
+  const verPDFBusqueda = (docId: string, nombre?: string) => {
+    setPreviewDoc({ id: docId, nombre: nombre || 'documento' });
   };
 
   const limpiarBusqueda = () => {
@@ -323,12 +323,8 @@ export default function DocumentosPage() {
     setProcessing(new Set());
   };
 
-  const verPDF = async (id: string) => {
-    try {
-      const res = await adminFetch(`/api/admin/documentos/${id}`);
-      const data = await res.json();
-      if (data.signed_url) safeWindowOpen(data.signed_url);
-    } catch { /* ignore */ }
+  const verPDF = (id: string, nombre?: string) => {
+    setPreviewDoc({ id, nombre: nombre || 'documento' });
   };
 
   const descargarDoc = async (id: string, nombre?: string) => {
@@ -879,7 +875,7 @@ export default function DocumentosPage() {
                           <td className="py-3 px-4 pr-5 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
-                                onClick={() => verPDFBusqueda(doc.id)}
+                                onClick={() => verPDFBusqueda(doc.id, doc.nombre_archivo ?? doc.titulo ?? 'documento')}
                                 className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors whitespace-nowrap"
                               >
                                 Abrir
@@ -1110,7 +1106,7 @@ export default function DocumentosPage() {
                       </div>
                       <div className="flex flex-col gap-2 shrink-0">
                         <button
-                          onClick={() => verPDF(doc.id)}
+                          onClick={() => verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo)}
                           className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                         >
                           Ver archivo
@@ -1207,7 +1203,7 @@ export default function DocumentosPage() {
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
                       <button
-                        onClick={() => verPDF(doc.id)}
+                        onClick={() => verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo)}
                         className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                       >
                         Ver archivo
@@ -1279,7 +1275,7 @@ export default function DocumentosPage() {
                         <tr
                           key={doc.id}
                           className="hover:bg-slate-50/50 cursor-pointer transition-colors"
-                          onClick={() => verPDF(doc.id)}
+                          onClick={() => verPDF(doc.id, doc.nombre_original ?? doc.nombre_archivo)}
                         >
                           <td className="py-3 pl-5 pr-1" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                             <input
@@ -1624,6 +1620,15 @@ export default function DocumentosPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Document Viewer Modal */}
+      {previewDoc && (
+        <DocumentViewer
+          docId={previewDoc.id}
+          fileName={previewDoc.nombre}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );

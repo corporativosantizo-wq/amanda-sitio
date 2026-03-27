@@ -9,8 +9,7 @@
 import { useState } from 'react';
 import { useFetch } from '@/lib/hooks/use-fetch';
 import { PageHeader, Badge, EmptyState, TableSkeleton } from '@/components/admin/ui';
-import { safeWindowOpen } from '@/lib/utils/validate-url';
-import { adminFetch } from '@/lib/utils/admin-fetch';
+import DocumentViewer from '@/components/admin/document-viewer';
 
 const TABS = [
   { key: '', label: 'Todos' },
@@ -55,20 +54,7 @@ export default function ActasNotarialesPage() {
   }>(`/api/admin/notariado/actas?${params}`);
 
   const docs = data?.data ?? [];
-
-  const abrirDoc = async (docId: string) => {
-    try {
-      const res = await adminFetch(`/api/admin/documentos/${docId}`);
-      const d = await res.json();
-      if (d.signed_url) {
-        safeWindowOpen(d.signed_url);
-      } else {
-        console.error('[Actas] No signed_url para documento:', docId, d.error);
-      }
-    } catch (err) {
-      console.error('[Actas] Error abriendo documento:', err);
-    }
-  };
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; nombre: string } | null>(null);
 
   const formatFecha = (fecha: string | null) => {
     if (!fecha) return '—';
@@ -149,7 +135,7 @@ export default function ActasNotarialesPage() {
                     <td className="py-3 px-4 pr-5">
                       {doc.archivo_url ? (
                         <button
-                          onClick={() => abrirDoc(doc.id)}
+                          onClick={() => setPreviewDoc({ id: doc.id, nombre: doc.nombre_archivo ?? doc.titulo ?? 'documento' })}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors"
                           title="Ver documento"
                         >
@@ -178,6 +164,14 @@ export default function ActasNotarialesPage() {
             </div>
           )}
         </div>
+      )}
+
+      {previewDoc && (
+        <DocumentViewer
+          docId={previewDoc.id}
+          fileName={previewDoc.nombre}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );
