@@ -1,5 +1,5 @@
 // ============================================================================
-// middleware.ts
+// proxy.ts (Next.js 16 middleware convention)
 // Clerk authentication + admin role verification para /api/admin/*
 // ============================================================================
 
