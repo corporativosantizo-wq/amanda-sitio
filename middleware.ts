@@ -1,5 +1,5 @@
 // ============================================================================
-// middleware.ts (proxy.ts — Next.js lo reconoce como middleware)
+// middleware.ts
 // Clerk authentication + admin role verification para /api/admin/*
 // ============================================================================
 
