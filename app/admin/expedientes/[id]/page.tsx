@@ -14,10 +14,11 @@ import { Section, Badge, Skeleton, EmptyState, Q } from '@/components/admin/ui';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
+import DocumentViewer from '@/components/admin/document-viewer';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
   FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
-  Upload, Search, Unlink,
+  Upload, Search, Unlink, Eye,
 } from 'lucide-react';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
@@ -1339,24 +1340,7 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
 
   const [showVincular, setShowVincular] = useState(false);
   const [showSubir, setShowSubir] = useState(false);
-
-  const abrirDoc = async (docId: string) => {
-    try {
-      const res = await adminFetch(`/api/admin/documentos/${docId}`);
-      const d = await res.json();
-      if (d.error) {
-        console.error('[DocumentViewer] Error al obtener documento:', d.error);
-        return;
-      }
-      if (d.signed_url) {
-        if (!safeWindowOpen(d.signed_url)) {
-          console.error('[DocumentViewer] URL bloqueada por validación:', d.signed_url);
-        }
-      } else {
-        console.error('[DocumentViewer] signed_url es null para documento:', docId);
-      }
-    } catch (err) { console.error('[DocumentViewer] Error abriendo documento:', err); }
-  };
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; nombre: string } | null>(null);
 
   const descargarDoc = async (docId: string, nombre?: string) => {
     try {
@@ -1466,11 +1450,11 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => abrirDoc(doc.id)}
+                        onClick={() => setPreviewDoc({ id: doc.id, nombre: doc.nombre_archivo ?? doc.titulo ?? 'documento' })}
                         className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
-                        title="Abrir"
+                        title="Vista previa"
                       >
-                        <FileText size={15} />
+                        <Eye size={15} />
                       </button>
                       <button
                         onClick={() => descargarDoc(doc.id, doc.nombre_archivo)}
@@ -1512,6 +1496,15 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
           clienteId={clienteId}
           onClose={() => setShowSubir(false)}
           onUploaded={() => { setShowSubir(false); refetch(); }}
+        />
+      )}
+
+      {/* Modal: Vista previa de documento */}
+      {previewDoc && (
+        <DocumentViewer
+          docId={previewDoc.id}
+          fileName={previewDoc.nombre}
+          onClose={() => setPreviewDoc(null)}
         />
       )}
     </div>
