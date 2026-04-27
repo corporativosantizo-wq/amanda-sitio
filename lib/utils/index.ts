@@ -7,3 +7,4 @@ export * from './numeros-letras';
 export * from './fechas-letras';
 export * from './calculos-fiscales';
 export * from './validators';
+export * from './postgrest';

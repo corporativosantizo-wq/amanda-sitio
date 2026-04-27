@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Cliente, ClienteInsert } from '@/lib/types';
 
 const db = () => createAdminClient();
@@ -38,8 +39,9 @@ export async function listarClientes(params: ListParams = {}) {
   if (tipo) query = query.eq('tipo', tipo);
   if (activo !== undefined) query = query.eq('activo', activo);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `nombre.ilike.%${busqueda}%,nit.ilike.%${busqueda}%,email.ilike.%${busqueda}%,codigo.ilike.%${busqueda}%`
+      `nombre.ilike.${v},nit.ilike.${v},email.ilike.${v},codigo.ilike.${v}`
     );
   }
 

@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import { sendMail } from '@/lib/services/outlook.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 import { solicitarFacturaRE, obtenerDatosPago } from '@/lib/services/factura-re.service';
@@ -459,10 +460,11 @@ async function handleConsultarCliente(input: any): Promise<string> {
     const b = input.busqueda?.trim();
     if (!b) return JSON.stringify({ error: 'Búsqueda vacía' });
 
+    const v = pgrstQuote(`%${b}%`);
     const { data, error } = await db()
       .from('clientes')
       .select('nombre, nit, email')
-      .or(`nombre.ilike.%${b}%,codigo.ilike.%${b}%,email.ilike.%${b}%`)
+      .or(`nombre.ilike.${v},codigo.ilike.${v},email.ilike.${v}`)
       .limit(5);
 
     if (error) return JSON.stringify({ error: error.message });
