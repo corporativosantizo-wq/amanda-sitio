@@ -12,14 +12,9 @@ import { adminFetch } from '@/lib/utils/admin-fetch';
 import {
   PageHeader, Badge, EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
+import type { CampoExtra, CampoExtraLookup, LookupResult } from '@/lib/types/plantillas-correo';
 
 // ── Types ────────────────────────────────────────────────────────────────
-
-interface CampoExtra {
-  key: string;
-  label: string;
-  type: 'text' | 'textarea' | 'date' | 'time' | 'url';
-}
 
 interface Plantilla {
   id: string;
@@ -242,6 +237,63 @@ function NuevoCorreoTab() {
 
     setPaso(3);
   };
+
+  // Handler para campos type:'lookup'. Recibe el populated_data del row elegido
+  // (ya resuelto server-side) y propaga los valores: meta-keys (destinatario_*,
+  // cliente_*) actualizan state del correo y reemplazan placeholders {nombre_cliente}
+  // y {nit}; cualquier otra key se asigna a camposExtra. Si cambia el cliente,
+  // muestra toast informativo (no pide confirmación — fricción innecesaria).
+  // Keys reservadas: si la plantilla mapea populates a una de estas, en lugar
+  // de ir a camposExtra dispara side effect en el meta-state del correo.
+  // Documentado en lib/types/plantillas-correo.ts (CampoExtraLookup.populates).
+  const onLookupSelect = useCallback(
+    (populated: Record<string, any>, lookupValue: string, source: string) => {
+      let nombreActualizado: string | null = null;
+
+      setCamposExtra((prev) => {
+        const next = { ...prev };
+        for (const [key, value] of Object.entries(populated)) {
+          if (value == null) continue;
+          if (
+            key === 'destinatario_email' ||
+            key === 'destinatario_nombre' ||
+            key === 'cliente_id' ||
+            key === 'cliente_nit'
+          ) continue;
+          next[key] = String(value);
+        }
+        return next;
+      });
+
+      for (const [key, value] of Object.entries(populated)) {
+        if (value == null) continue;
+
+        if (key === 'destinatario_email') {
+          setDestinatarioEmail(String(value));
+        } else if (key === 'destinatario_nombre') {
+          const nombre = String(value);
+          setClienteNombre(nombre);
+          setAsunto((prev) => prev.replace(/\{nombre_cliente\}/g, nombre));
+          setCuerpo((prev) => prev.replace(/\{nombre_cliente\}/g, nombre));
+          nombreActualizado = nombre;
+        } else if (key === 'cliente_id') {
+          setClienteId(String(value));
+        } else if (key === 'cliente_nit') {
+          const nit = String(value || 'CF');
+          setAsunto((prev) => prev.replace(/\{nit\}/g, nit));
+          setCuerpo((prev) => prev.replace(/\{nit\}/g, nit));
+        }
+      }
+
+      if (nombreActualizado) {
+        setToast({
+          type: 'success',
+          msg: `Cliente actualizado a ${nombreActualizado} según ${source} ${lookupValue}`,
+        });
+      }
+    },
+    [],
+  );
 
   // Apply extra fields to content
   const aplicarCampos = useCallback(() => {
@@ -519,7 +571,14 @@ function NuevoCorreoTab() {
                 {camposExtraCompletos.map((campo: CampoExtra) => (
                   <div key={campo.key}>
                     <label className="text-xs text-blue-600 font-medium">{campo.label}</label>
-                    {campo.type === 'textarea' ? (
+                    {campo.type === 'lookup' ? (
+                      <LookupField
+                        campo={campo}
+                        value={camposExtra[campo.key] ?? ''}
+                        onChange={(v) => setCamposExtra(prev => ({ ...prev, [campo.key]: v }))}
+                        onLookupSelect={onLookupSelect}
+                      />
+                    ) : campo.type === 'textarea' ? (
                       <textarea
                         value={camposExtra[campo.key] ?? ''}
                         onChange={e => setCamposExtra(prev => ({ ...prev, [campo.key]: e.target.value }))}
@@ -1606,6 +1665,88 @@ function EditarCorreoModal({ correo, onClose, onSaved }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── LookupField ─────────────────────────────────────────────────────────────
+// Combobox minimal para campos type:'lookup'. Reusa el patrón del autocomplete
+// de cliente que ya existe en este archivo (input + dropdown absoluto + useFetch
+// con URL null hasta tener 2+ caracteres). Sin dep externa de cmdk.
+
+function LookupField({
+  campo,
+  value,
+  onChange,
+  onLookupSelect,
+}: {
+  campo: CampoExtraLookup;
+  value: string;
+  onChange: (v: string) => void;
+  onLookupSelect: (data: Record<string, any>, lookupValue: string, source: string) => void;
+}) {
+  const [query, setQuery] = useState(value ?? '');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Mantener input sincronizado si el parent cambia value externamente.
+  useEffect(() => { setQuery(value ?? ''); }, [value]);
+
+  const url = query.length >= 2
+    ? `/api/admin/comunicaciones/lookup?table=${encodeURIComponent(campo.source)}&q=${encodeURIComponent(query)}&limit=10`
+    : null;
+  const { data, loading } = useFetch<{ data: LookupResult[] }>(url);
+
+  const handleSelect = (r: LookupResult) => {
+    onChange(r.value);
+    setQuery(r.value);
+    setShowDropdown(false);
+
+    // Mapear según `populates` de la plantilla: { keyForm: aliasServerSide }.
+    const mapped: Record<string, any> = {};
+    for (const [formKey, alias] of Object.entries(campo.populates)) {
+      if (alias in r.populated_data) {
+        mapped[formKey] = r.populated_data[alias];
+      }
+    }
+    onLookupSelect(mapped, r.value, campo.source);
+  };
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value);
+          setShowDropdown(true);
+        }}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+        placeholder={`Buscar ${campo.source}…`}
+        className="w-full mt-1 px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/20 bg-white"
+      />
+      {loading && showDropdown && query.length >= 2 && (
+        <div className="absolute right-3 top-3 text-xs text-slate-400">…</div>
+      )}
+      {showDropdown && data?.data && data.data.length > 0 && (
+        <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-auto bg-white border border-blue-200 rounded-lg shadow-lg">
+          {data.data.map((r) => (
+            <li
+              key={r.value}
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(r); }}
+              className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b border-blue-50 last:border-b-0"
+            >
+              {r.display}
+            </li>
+          ))}
+        </ul>
+      )}
+      {showDropdown && !loading && data?.data && data.data.length === 0 && query.length >= 2 && (
+        <div className="absolute z-20 mt-1 w-full px-3 py-2 text-xs text-slate-400 bg-white border border-blue-200 rounded-lg shadow-lg">
+          Sin resultados
+        </div>
+      )}
     </div>
   );
 }

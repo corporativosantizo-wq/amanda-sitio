@@ -6,30 +6,12 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import type { CampoExtra, PlantillaCorreo } from '@/lib/types/plantillas-correo';
 
 const db = () => createAdminClient();
 
-// ── Types ────────────────────────────────────────────────────────────────
-
-export interface PlantillaCorreo {
-  id: string;
-  nombre: string;
-  slug: string | null;
-  icono: string;
-  categoria: string;
-  asunto_template: string;
-  cuerpo_template: string;
-  cuenta_default: string;
-  campos_extra: CampoExtra[];
-  activo: boolean;
-  orden: number;
-}
-
-export interface CampoExtra {
-  key: string;
-  label: string;
-  type: 'text' | 'textarea' | 'date' | 'time' | 'url';
-}
+// Re-export para no romper imports existentes del service.
+export type { CampoExtra, PlantillaCorreo };
 
 export interface CorreoProgramado {
   id: string;
