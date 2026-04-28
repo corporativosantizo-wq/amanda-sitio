@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Proveedor, ProveedorInsert, TipoProveedor } from '@/lib/types';
 
 const db = () => createAdminClient();
@@ -35,8 +36,9 @@ export async function listarProveedores(params: ListParams = {}) {
   if (tipo) query = query.eq('tipo', tipo);
   if (activo !== undefined) query = query.eq('activo', activo);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `nombre.ilike.%${busqueda}%,nit.ilike.%${busqueda}%,email.ilike.%${busqueda}%,especialidad.ilike.%${busqueda}%,codigo.ilike.%${busqueda}%`
+      `nombre.ilike.${v},nit.ilike.${v},email.ilike.${v},especialidad.ilike.${v},codigo.ilike.${v}`
     );
   }
 

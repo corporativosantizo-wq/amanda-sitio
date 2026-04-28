@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
 import { sanitizarNombre } from '@/lib/services/documentos.service';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 
 const db = () => createAdminClient();
 
@@ -61,7 +62,8 @@ export async function listarTomos(params: ListParams = {}) {
   if (carpeta_id) query = query.eq('carpeta_id', carpeta_id);
   if (procesado !== undefined) query = query.eq('procesado', procesado);
   if (q) {
-    query = query.or(`titulo.ilike.%${q}%,nombre_archivo.ilike.%${q}%`);
+    const v = pgrstQuote(`%${q}%`);
+    query = query.or(`titulo.ilike.${v},nombre_archivo.ilike.${v}`);
   }
 
   const { data, error, count } = await query;

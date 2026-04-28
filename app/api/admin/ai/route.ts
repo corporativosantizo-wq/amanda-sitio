@@ -11,6 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import { Packer } from 'docx';
 import { generarDocumento, PLANTILLAS_DISPONIBLES } from '@/lib/templates';
 import type { TipoDocumentoGenerable } from '@/lib/templates';
@@ -1436,7 +1437,8 @@ async function handleGestionarClientes(
 
       if (words.length <= 1) {
         // Single word: search across all fields
-        query = query.or(`nombre.ilike.%${q}%,email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`);
+        const v = pgrstQuote(`%${q}%`);
+        query = query.or(`nombre.ilike.${v},email.ilike.${v},empresa.ilike.${v},razon_social.ilike.${v},nit.ilike.${v}`);
       } else {
         // Multiple words: AND match each word in nombre (primary), OR try full query in other fields
         // Use two queries and merge results for best coverage
@@ -1448,8 +1450,9 @@ async function handleGestionarClientes(
 
       // If no results with AND on nombre and multi-word, try OR across other fields
       if (!data?.length && words.length > 1) {
+        const v = pgrstQuote(`%${q}%`);
         const { data: fallback } = await db.from('clientes').select(selectCols)
-          .or(`email.ilike.%${q}%,empresa.ilike.%${q}%,razon_social.ilike.%${q}%,nit.ilike.%${q}%`)
+          .or(`email.ilike.${v},empresa.ilike.${v},razon_social.ilike.${v},nit.ilike.${v}`)
           .limit(5);
         if (fallback?.length) {
           const lines = fallback.map((c: any) =>
@@ -2205,10 +2208,11 @@ async function handleConsultarLegal(
       if (!q) return 'Se requiere parámetro busqueda.';
 
       // Search by number or text across multiple fields
+      const v = pgrstQuote(`%${q}%`);
       const { data, error } = await db
         .from('expedientes')
         .select('*, cliente:clientes!expedientes_cliente_id_fkey(id, codigo, nombre)')
-        .or(`numero_expediente.ilike.%${q}%,numero_mp.ilike.%${q}%,numero_administrativo.ilike.%${q}%,descripcion.ilike.%${q}%,tribunal_nombre.ilike.%${q}%,actor.ilike.%${q}%,demandado.ilike.%${q}%,departamento.ilike.%${q}%,fiscalia.ilike.%${q}%,entidad_administrativa.ilike.%${q}%`)
+        .or(`numero_expediente.ilike.${v},numero_mp.ilike.${v},numero_administrativo.ilike.${v},descripcion.ilike.${v},tribunal_nombre.ilike.${v},actor.ilike.${v},demandado.ilike.${v},departamento.ilike.${v},fiscalia.ilike.${v},entidad_administrativa.ilike.${v}`)
         .order('updated_at', { ascending: false })
         .limit(20);
 
@@ -2732,7 +2736,10 @@ async function handleConsultarLegal(
     case 'biblioteca_buscar': {
       let query = db.from('biblioteca_legal').select('*').limit(15);
 
-      if (params.busqueda) query = query.or(`titulo.ilike.%${params.busqueda}%,descripcion.ilike.%${params.busqueda}%,tags.ilike.%${params.busqueda}%`);
+      if (params.busqueda) {
+        const v = pgrstQuote(`%${params.busqueda}%`);
+        query = query.or(`titulo.ilike.${v},descripcion.ilike.${v},tags.ilike.${v}`);
+      }
       if (params.categoria) query = query.eq('categoria', params.categoria);
 
       const { data, error } = await query;
@@ -3493,10 +3500,11 @@ export async function POST(req: Request) {
                 let docId = input.documento_id;
                 if (!docId && input.busqueda) {
                   const dbq = createAdminClient();
+                  const v = pgrstQuote(`%${input.busqueda}%`);
                   const { data: found } = await dbq
                     .from('documentos')
                     .select('id, nombre_archivo')
-                    .or(`titulo.ilike.%${input.busqueda}%,nombre_archivo.ilike.%${input.busqueda}%`)
+                    .or(`titulo.ilike.${v},nombre_archivo.ilike.${v}`)
                     .ilike('nombre_archivo', '%.pdf')
                     .limit(1)
                     .single();

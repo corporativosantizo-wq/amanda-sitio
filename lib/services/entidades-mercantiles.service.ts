@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 
 const db = () => createAdminClient();
 
@@ -79,8 +80,9 @@ export async function listarEntidades(params: ListEntidadesParams = {}) {
 
   if (activa !== undefined) query = query.eq('activa', activa);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `nombre.ilike.%${busqueda}%,nombre_corto.ilike.%${busqueda}%,nit.ilike.%${busqueda}%,representante_legal_nombre.ilike.%${busqueda}%`
+      `nombre.ilike.${v},nombre_corto.ilike.${v},nit.ilike.${v},representante_legal_nombre.ilike.${v}`
     );
   }
 
@@ -215,11 +217,12 @@ export async function actualizarDocumento(id: string, input: Partial<DocumentoMe
 // ── Búsqueda rápida (para combobox en generadores) ─────────────────────────
 
 export async function buscarEntidades(q: string, limit = 10) {
+  const v = pgrstQuote(`%${q}%`);
   const { data, error } = await db()
     .from('entidades_mercantiles')
     .select('id, nombre, nombre_corto, tipo_entidad, representante_legal_nombre, representante_legal_cargo')
     .eq('activa', true)
-    .or(`nombre.ilike.%${q}%,nombre_corto.ilike.%${q}%,nit.ilike.%${q}%`)
+    .or(`nombre.ilike.${v},nombre_corto.ilike.${v},nit.ilike.${v}`)
     .order('nombre')
     .limit(limit);
 

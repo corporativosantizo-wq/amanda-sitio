@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   Factura,
   FacturaInsert,
@@ -64,7 +65,8 @@ export async function listarFacturas(params: ListParams = {}) {
   if (desde) query = query.gte('fecha_emision', desde);
   if (hasta) query = query.lte('fecha_emision', hasta);
   if (busqueda) {
-    query = query.or(`numero.ilike.%${busqueda}%,razon_social.ilike.%${busqueda}%`);
+    const v = pgrstQuote(`%${busqueda}%`);
+    query = query.or(`numero.ilike.${v},razon_social.ilike.${v}`);
   }
   if (vencidas) {
     const hoy = new Date().toISOString().split('T')[0];

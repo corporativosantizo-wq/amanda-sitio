@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 
 const db = () => createAdminClient();
 
@@ -233,8 +234,9 @@ export async function listarDocumentos(params: ListParams = {}) {
   if (fecha_desde) query = query.gte('created_at', fecha_desde + 'T00:00:00');
   if (fecha_hasta) query = query.lte('created_at', fecha_hasta + 'T23:59:59');
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `titulo.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,cliente_nombre_detectado.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%,texto_extraido.ilike.%${busqueda}%`
+      `titulo.ilike.${v},nombre_archivo.ilike.${v},cliente_nombre_detectado.ilike.${v},descripcion.ilike.${v},texto_extraido.ilike.${v}`
     );
   }
 

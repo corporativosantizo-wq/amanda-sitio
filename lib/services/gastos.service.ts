@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   Gasto,
   GastoInsert,
@@ -75,8 +76,9 @@ export async function listarGastos(params: ListParams = {}) {
   if (hasta) query = query.lte('fecha', hasta);
   if (deducibles !== undefined) query = query.eq('es_deducible', deducibles);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `descripcion.ilike.%${busqueda}%,proveedor.ilike.%${busqueda}%,numero.ilike.%${busqueda}%`
+      `descripcion.ilike.${v},proveedor.ilike.${v},numero.ilike.${v}`
     );
   }
 

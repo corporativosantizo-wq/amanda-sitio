@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Cobro, CobroConCliente, CobroInsert, RecordatorioCobro } from '@/lib/types';
 import { sendMail } from '@/lib/services/outlook.service';
 import {
@@ -59,7 +60,8 @@ export async function listarCobros(params: ListCobrosParams = {}) {
   if (desde) query = query.gte('fecha_emision', desde);
   if (hasta) query = query.lte('fecha_emision', hasta);
   if (busqueda) {
-    query = query.or(`concepto.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%`);
+    const v = pgrstQuote(`%${busqueda}%`);
+    query = query.or(`concepto.ilike.${v},descripcion.ilike.${v}`);
   }
 
   const { data, error, count } = await query;

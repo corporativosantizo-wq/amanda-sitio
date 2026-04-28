@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   TramiteLaboral,
   TramiteLaboralConCliente,
@@ -68,8 +69,9 @@ export async function listarTramitesLaborales(params: ListParams = {}) {
   if (fecha_fin_desde) query = query.gte('fecha_fin', fecha_fin_desde);
   if (fecha_fin_hasta) query = query.lte('fecha_fin', fecha_fin_hasta);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `nombre_empleado.ilike.%${busqueda}%,puesto.ilike.%${busqueda}%,numero_registro_igt.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%`
+      `nombre_empleado.ilike.${v},puesto.ilike.${v},numero_registro_igt.ilike.${v},descripcion.ilike.${v}`
     );
   }
 

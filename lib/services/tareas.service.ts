@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Tarea, TareaConCliente, TareaInsert } from '@/lib/types';
 import { EstadoTarea } from '@/lib/types';
 
@@ -51,7 +52,8 @@ export async function listarTareas(params: ListParams = {}) {
   if (fecha_desde) query = query.gte('fecha_limite', fecha_desde);
   if (fecha_hasta) query = query.lte('fecha_limite', fecha_hasta);
   if (busqueda) {
-    query = query.or(`titulo.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%,notas.ilike.%${busqueda}%`);
+    const v = pgrstQuote(`%${busqueda}%`);
+    query = query.or(`titulo.ilike.${v},descripcion.ilike.${v},notas.ilike.${v}`);
   }
 
   const { data, error, count } = await query;

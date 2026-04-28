@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   Cotizacion,
   CotizacionItem,
@@ -83,8 +84,12 @@ export async function listarCotizaciones(params: ListParams = {}) {
     const clientIds = (matchClientes ?? []).map((c: any) => c.id);
 
     if (clientIds.length > 0) {
-      query = query.or(`numero.ilike.%${busqueda}%,cliente_id.in.(${clientIds.join(',')})`);
+      // pgrstQuote solo sobre el ilike: el .in.(uuid1,uuid2,...) tiene comas
+      // estructurales que PostgREST necesita como separadores.
+      const v = pgrstQuote(`%${busqueda}%`);
+      query = query.or(`numero.ilike.${v},cliente_id.in.(${clientIds.join(',')})`);
     } else {
+      // .ilike() con args separados — supabase-js escapa el valor, no hace falta pgrstQuote.
       query = query.ilike('numero', `%${busqueda}%`);
     }
   }

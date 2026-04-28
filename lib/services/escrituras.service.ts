@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   Escritura,
   EscrituraInsert,
@@ -93,8 +94,9 @@ export async function listarEscrituras(params: ListParams = {}) {
   if (tipo_instrumento) query = query.eq('tipo_instrumento', tipo_instrumento);
   if (cliente_id) query = query.eq('cliente_id', cliente_id);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `numero_texto.ilike.%${busqueda}%,tipo_instrumento_texto.ilike.%${busqueda}%`
+      `numero_texto.ilike.${v},tipo_instrumento_texto.ilike.${v}`
     );
   }
 

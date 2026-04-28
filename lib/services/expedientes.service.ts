@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   Expediente, ExpedienteInsert, ExpedienteUpdate,
   ExpedienteConCliente, ActuacionProcesal, ActuacionInsert,
@@ -67,8 +68,9 @@ export async function listarExpedientes(params: ListParams = {}) {
   if (cliente_id) query = query.eq('cliente_id', cliente_id);
   if (departamento) query = query.eq('departamento', departamento);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `numero_expediente.ilike.%${busqueda}%,numero_mp.ilike.%${busqueda}%,numero_administrativo.ilike.%${busqueda}%,actor.ilike.%${busqueda}%,demandado.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%`
+      `numero_expediente.ilike.${v},numero_mp.ilike.${v},numero_administrativo.ilike.${v},actor.ilike.${v},demandado.ilike.${v},descripcion.ilike.${v}`
     );
   }
 

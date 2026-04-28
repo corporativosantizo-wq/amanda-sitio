@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type {
   TramiteMercantil,
   TramiteMercantilConCliente,
@@ -67,8 +68,9 @@ export async function listarTramitesMercantiles(params: ListParams = {}) {
   if (vencimiento_desde) query = query.gte('fecha_vencimiento', vencimiento_desde);
   if (vencimiento_hasta) query = query.lte('fecha_vencimiento', vencimiento_hasta);
   if (busqueda) {
+    const v = pgrstQuote(`%${busqueda}%`);
     query = query.or(
-      `numero_registro.ilike.%${busqueda}%,numero_expediente_rm.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%,notario_responsable.ilike.%${busqueda}%`
+      `numero_registro.ilike.${v},numero_expediente_rm.ilike.${v},descripcion.ilike.${v},notario_responsable.ilike.${v}`
     );
   }
 
