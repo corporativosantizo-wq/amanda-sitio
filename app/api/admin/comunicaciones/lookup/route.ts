@@ -43,17 +43,31 @@ const fmtQ = (n: number | null | undefined): string =>
 
 const LOOKUP_CONFIG: Record<LookupSource, LookupTableConfig> = {
   cotizaciones: {
-    search_columns: ['numero', 'asunto'],
+    // legal.cotizaciones NO tiene columna `asunto` — el "asunto" semántico vive
+    // en el primer item de cotizacion_items (la descripción del servicio principal).
+    // search_columns queda solo con `numero` porque buscar dentro de embedded
+    // resources via PostgREST es engorroso; el caso real es buscar por COT-XXX.
+    search_columns: ['numero'],
     value_alias: 'numero',
     select:
-      'id, numero, asunto, total, fecha_emision, ' +
+      'id, numero, total, fecha_emision, ' +
+      'items:cotizacion_items!cotizacion_id(descripcion, orden), ' +
       'cliente:clientes!cliente_id(id, nombre, email, nit)',
-    display: (r) =>
-      `${r.numero} — ${r.asunto ?? '(sin asunto)'}` +
-      (typeof r.total === 'number' ? ` · ${fmtQ(r.total)}` : ''),
+    display: (r) => {
+      const items = (r.items ?? []) as Array<{ descripcion: string | null; orden: number | null }>;
+      const sorted = [...items].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
+      const primer = sorted[0]?.descripcion?.trim() || null;
+      return `${r.numero} — ${primer ?? '(sin items)'}` +
+        (typeof r.total === 'number' ? ` · ${fmtQ(r.total)}` : '');
+    },
     fields: {
       numero: (r) => r.numero,
-      asunto: (r) => r.asunto,
+      asunto: (r) => {
+        const items = (r.items ?? []) as Array<{ descripcion: string | null; orden: number | null }>;
+        if (!items.length) return null;
+        const sorted = [...items].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
+        return sorted[0]?.descripcion?.trim() ?? null;
+      },
       total: (r) => r.total,
       fecha_emision: (r) => r.fecha_emision,
       cliente_id: (r) => r.cliente?.id ?? null,
