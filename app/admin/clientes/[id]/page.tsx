@@ -111,7 +111,7 @@ interface PagoRow {
   id: string;
   monto: number;
   estado: string;
-  fecha: string;
+  fecha_pago: string;
   concepto: string | null;
   metodo: string | null;
 }
@@ -1285,7 +1285,7 @@ function TabPagos({ pagos, clienteId }: { pagos: PagoRow[]; clienteId: string })
             <tbody className="divide-y divide-slate-100">
               {pagos.map((p: PagoRow) => (
                 <tr key={p.id} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-4 text-sm text-slate-700">{p.fecha}</td>
+                  <td className="py-3 px-4 text-sm text-slate-700">{p.fecha_pago}</td>
                   <td className="py-3 px-4 text-sm text-slate-900">{p.concepto ?? '—'}</td>
                   <td className="py-3 px-4 text-sm text-slate-600">{p.metodo ?? '—'}</td>
                   <td className="py-3 px-4 text-sm font-medium text-slate-900">{Q(p.monto)}</td>

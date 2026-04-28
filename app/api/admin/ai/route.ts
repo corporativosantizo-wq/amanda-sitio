@@ -732,7 +732,7 @@ async function queryDatabase(query: string): Promise<string> {
     if (query.includes('cotizaciones_mes')) {
       const inicio = new Date();
       inicio.setDate(1);
-      const { data } = await db.from('cotizaciones').select('*').gte('fecha', inicio.toISOString().split('T')[0]);
+      const { data } = await db.from('cotizaciones').select('*').gte('fecha_emision', inicio.toISOString().split('T')[0]);
       const total = (data ?? []).reduce((s: number, c: any) => s + (c.total ?? 0), 0);
       return `Cotizaciones este mes: ${data?.length ?? 0} por un total de Q${total.toFixed(2)}`;
     }
@@ -751,7 +751,7 @@ async function queryDatabase(query: string): Promise<string> {
     if (query.includes('pagos_mes')) {
       const inicio = new Date();
       inicio.setDate(1);
-      const { data } = await db.from('pagos').select('*').gte('fecha', inicio.toISOString().split('T')[0]);
+      const { data } = await db.from('pagos').select('*').gte('fecha_pago', inicio.toISOString().split('T')[0]);
       const total = (data ?? []).reduce((s: number, p: any) => s + (p.monto ?? 0), 0);
       return `Pagos recibidos este mes: ${data?.length ?? 0} por un total de Q${total.toFixed(2)}`;
     }

@@ -37,9 +37,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         .order('created_at', { ascending: false })
         .limit(50),
       db.from('pagos')
-        .select('id, monto, estado, fecha, concepto, metodo')
+        .select('id, monto, estado, fecha_pago, metodo, cobro:cobros!cobro_id (concepto)')
         .eq('cliente_id', id)
-        .order('fecha', { ascending: false })
+        .order('fecha_pago', { ascending: false })
         .limit(20),
       db.from('cotizaciones')
         .select('id, numero, fecha_emision, estado, total, pdf_url')
@@ -65,12 +65,23 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       }
     }
 
+    // concepto vive en cobros, no en pagos. Aplanamos cobro.concepto al nivel
+    // raíz del pago para que la UI lo consuma como `pago.concepto`.
+    const pagos = (pagosRes.data ?? []).map((p: any) => ({
+      id: p.id,
+      monto: p.monto,
+      estado: p.estado,
+      fecha_pago: p.fecha_pago,
+      metodo: p.metodo,
+      concepto: p.cobro?.concepto ?? null,
+    }));
+
     return NextResponse.json({
       ...cliente,
       citas: citasRes.data ?? [],
       expedientes,
       documentos: docsRes.data ?? [],
-      pagos: pagosRes.data ?? [],
+      pagos,
       cotizaciones: cotizacionesRes.data ?? [],
       representantes,
       grupo_empresarial,
