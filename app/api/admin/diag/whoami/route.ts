@@ -1,9 +1,10 @@
 // ============================================================================
-// GET /api/admin/_diag/whoami
+// GET /api/admin/diag/whoami
 // Diagnóstico temporal Bug 1 (cobros 403): confirma rol PostgreSQL,
 // auth.role() del JWT, GRANTs sobre legal.cobros y la sequence, y corre un
 // INSERT de prueba con ROLLBACK automático.
-// TODO: borrar después de Bug 1 (también drop FUNCTION public.whoami()).
+// TODO(BUG-1-CLEANUP): borrar este endpoint después de aplicar el fix de cobros
+// (también drop FUNCTION public.whoami()).
 // ============================================================================
 
 import { NextResponse } from 'next/server';
