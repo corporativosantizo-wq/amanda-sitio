@@ -211,17 +211,63 @@ export async function registrarPagoCobro(params: {
 
 // --- Enviar solicitud de pago ---
 
-export async function enviarSolicitudPago(cobro_id: string): Promise<string> {
+// Mapeo del tipo según cuántos envíos previos hay para este cobro.
+// La columna `tipo` en legal.recordatorios_cobro tiene CHECK contra estos 4 valores;
+// reusamos la semántica del cron diario (primer/segundo/tercer/urgente) para que la
+// columna refleje correctamente el nivel de insistencia sin migrar el constraint.
+function tipoPorEnvioPrevio(envios: number): 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente' {
+  if (envios <= 0) return 'primer_aviso';
+  if (envios === 1) return 'segundo_aviso';
+  if (envios === 2) return 'tercer_aviso';
+  return 'urgente';
+}
+
+export type EnviarSolicitudPagoResult =
+  | { status: 'sent'; tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente'; mensaje: string }
+  | { status: 'duplicate_recent'; ultimo_envio: string };
+
+export async function enviarSolicitudPago(
+  cobro_id: string,
+  options: { forceResend?: boolean } = {},
+): Promise<EnviarSolicitudPagoResult> {
   const cobro = await obtenerCobro(cobro_id);
   if (!cobro.cliente?.email) {
     throw new CobroError(`El cliente ${cobro.cliente?.nombre ?? 'desconocido'} no tiene email`);
   }
 
+  // Anti doble envío: si hubo un envío en las últimas 24h y forceResend != true, devolvemos
+  // un señal para que el endpoint conteste 409 y el frontend muestre confirmación.
+  if (!options.forceResend) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recientes } = await db()
+      .from('recordatorios_cobro')
+      .select('fecha_envio')
+      .eq('cobro_id', cobro_id)
+      .eq('email_enviado', true)
+      .gte('fecha_envio', since)
+      .order('fecha_envio', { ascending: false })
+      .limit(1);
+
+    if (recientes && recientes.length > 0) {
+      return { status: 'duplicate_recent', ultimo_envio: recientes[0].fecha_envio };
+    }
+  }
+
+  // Determinar tipo según cuántos envíos exitosos previos hay (sin importar la ventana 24h)
+  const { count: enviosPrevios } = await db()
+    .from('recordatorios_cobro')
+    .select('id', { count: 'exact', head: true })
+    .eq('cobro_id', cobro_id)
+    .eq('email_enviado', true);
+  const tipo = tipoPorEnvioPrevio(enviosPrevios ?? 0);
+
+  const numeroCotizacion = (cobro as any).cotizacion?.numero ?? undefined;
   const template = emailSolicitudPago({
     clienteNombre: cobro.cliente.nombre,
     concepto: cobro.concepto,
     monto: cobro.saldo_pendiente,
     fechaLimite: cobro.fecha_vencimiento ?? undefined,
+    numeroCotizacion,
   });
 
   await sendMail({
@@ -231,7 +277,19 @@ export async function enviarSolicitudPago(cobro_id: string): Promise<string> {
     htmlBody: template.html,
   });
 
-  return `Solicitud de pago enviada a ${cobro.cliente.nombre} (${cobro.cliente.email})`;
+  // Tracking: el email ya salió. Si esto falla, NO devolvemos error al usuario
+  // porque el correo ya se envió — sería confuso. Solo logueamos.
+  try {
+    await registrarRecordatorio(cobro_id, tipo, true, `Manual desde panel — enviado a ${cobro.cliente.email}`);
+  } catch (err: any) {
+    console.error('[Cobros] enviarSolicitudPago tracking fallido:', err.message ?? err);
+  }
+
+  return {
+    status: 'sent',
+    tipo,
+    mensaje: `Solicitud de pago enviada a ${cobro.cliente.nombre} (${cobro.cliente.email})`,
+  };
 }
 
 // --- Enviar comprobante de pago ---

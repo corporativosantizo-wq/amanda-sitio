@@ -56,10 +56,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const cobro = await crearCobro(body);
 
-    // Auto-send solicitud de pago
+    // Auto-send solicitud de pago. forceResend: true porque el cobro acaba de
+    // crearse en esta misma request, no puede haber duplicado de ventana 24h.
+    // Pasarlo explícitamente elimina el path de falla silenciosa si el service
+    // devolviera 'duplicate_recent' por algún motivo inesperado.
     let emailResult = '';
     try {
-      emailResult = await enviarSolicitudPago(cobro.id);
+      const r = await enviarSolicitudPago(cobro.id, { forceResend: true });
+      emailResult = r.status === 'sent' ? r.mensaje : '';
     } catch (err: any) {
       emailResult = `(No se envió email: ${err.message})`;
     }

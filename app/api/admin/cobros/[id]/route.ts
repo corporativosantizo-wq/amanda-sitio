@@ -90,8 +90,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     if (accion === 'enviar_recordatorio') {
-      const result = await enviarSolicitudPago(id);
-      return NextResponse.json({ ok: true, result });
+      const forceResend = body.forceResend === true;
+      const result = await enviarSolicitudPago(id, { forceResend });
+      if (result.status === 'duplicate_recent') {
+        return NextResponse.json(
+          { warning: 'duplicate_recent', ultimo_envio: result.ultimo_envio },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ ok: true, ...result });
     }
 
     return NextResponse.json({ error: 'Acción no reconocida' }, { status: 400 });

@@ -8,6 +8,7 @@ import type { Modulo } from '@/lib/rbac/permissions'
 import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
 import { useActivityTracker } from '@/lib/hooks/use-activity-tracker'
 import { useSessionKeepAlive } from '@/lib/hooks/use-session-keep-alive'
+import { Toaster } from 'sonner'
 
 export default function AdminLayout({
   children,
@@ -1003,6 +1004,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       <main className="md:ml-[264px] min-h-screen pt-14 md:pt-0">
         {children}
       </main>
+
+      <Toaster richColors position="top-right" />
     </div>
   )
 }

@@ -272,32 +272,38 @@ export function emailSolicitudPago(params: {
   concepto: string;
   monto: number;
   fechaLimite?: string;
+  numeroCotizacion?: string;
 }): EmailTemplate {
-  const montoFmt = `Q${params.monto.toLocaleString('es-GT')}`;
-  const fechaLimite = params.fechaLimite ? `<p style="margin:8px 0;font-size:14px;"><strong>Fecha l\u00edmite:</strong> ${formatearFechaGT(params.fechaLimite)}</p>` : '';
+  const montoFmt = `Q${params.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  const subjectRef = params.numeroCotizacion
+    ? `Cotización ${params.numeroCotizacion}`
+    : (params.concepto?.trim() ? params.concepto : 'Cotización pendiente');
 
   const html = emailWrapper(`
-    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Solicitud de Pago</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, le enviamos los detalles para realizar su pago.</p>
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Recordatorio de pago pendiente</h2>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre},</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">En nuestros registros figura como pendiente de cancelación el siguiente monto correspondiente a los servicios prestados. Le hacemos llegar este recordatorio con los datos para que pueda realizar el pago a su conveniencia.</p>
     <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Concepto:</strong> ${params.concepto}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Monto:</strong> ${montoFmt}</p>
-        ${fechaLimite}
       </td></tr>
     </table>
     <table width="100%" style="margin:16px 0;background:#eff6ff;border-radius:8px;padding:16px;">
       <tr><td>
-        <p style="margin:0 0 8px;font-size:14px;font-weight:600;">Cuentas para dep\u00f3sito:</p>
-        ${cuentasBancariasHTML()}
+        <p style="margin:0 0 8px;font-size:14px;font-weight:600;">Cuentas para depósito:</p>
+        <p style="margin:4px 0;font-size:14px;"><strong>Banco Industrial:</strong> 455-008846-4<br/>A nombre de: Invest &amp; Jure-Advisor, S.A.</p>
       </td></tr>
     </table>
-    <p style="color:#64748b;font-size:13px;margin-top:16px;">Por favor env\u00ede comprobante de pago a este correo.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Una vez realizado el pago, le agradecemos enviar el comprobante a este mismo correo para confirmar la recepción y proceder con el cierre del expediente correspondiente.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Si ya realizó el pago, por favor desestime este mensaje.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Quedamos atentos a cualquier consulta.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong> — Despacho Jurídico<br/><a href="https://amandasantizo.com" style="color:#1E40AF;text-decoration:none;">amandasantizo.com</a></p>
   `);
 
   return {
     from: 'contador@papeleo.legal',
-    subject: `Solicitud de pago \u2014 ${params.concepto} \u2014 ${montoFmt}`,
+    subject: `Recordatorio de pago pendiente — ${subjectRef}`,
     html,
   };
 }

@@ -1,10 +1,36 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import type { CobroConCliente, Pago, RecordatorioCobro } from '@/lib/types'
+
+interface RecordatorioInfo {
+  cobro_id: string
+  ultimo_envio: string
+  total_envios: number
+}
+
+// Tiempo relativo en formato compacto: "hace 2h", "ayer", "hace 3d", "hace 2sem".
+// Built-in con Date — evita meter date-fns (~70KB) solo para una columna.
+function formatRelativo(iso: string): string {
+  const date = new Date(iso)
+  const diffMs = Date.now() - date.getTime()
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000))
+  if (diffSec < 60) return 'hace unos segundos'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `hace ${diffMin}m`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `hace ${diffHr}h`
+  const diffDays = Math.floor(diffHr / 24)
+  if (diffDays === 1) return 'ayer'
+  if (diffDays < 7) return `hace ${diffDays}d`
+  const diffWk = Math.floor(diffDays / 7)
+  if (diffWk < 4) return `hace ${diffWk}sem`
+  return date.toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +113,58 @@ export default function ContabilidadPage() {
 
   const cobros = cobrosData?.data ?? []
 
-  const refetchAll = () => { refetchResumen(); refetchCobros() }
+  // Fetch agrupado de recordatorios para los cobros visibles. URL es null si no hay
+  // cobros, así useFetch no dispara hasta tener IDs.
+  const cobroIdsCsv = useMemo(
+    () =>
+      cobros
+        .filter((c: any) => !c.es_cotizacion_sin_cobro)
+        .map((c: any) => c.id)
+        .join(','),
+    [cobros],
+  )
+  const { data: recordatoriosData, refetch: refetchRecordatorios } = useFetch<{ data: RecordatorioInfo[] }>(
+    cobroIdsCsv ? `/api/admin/cobros/recordatorios?cobro_ids=${cobroIdsCsv}` : null,
+  )
+  const recordatoriosByCobro = useMemo(() => {
+    const map = new Map<string, RecordatorioInfo>()
+    for (const r of recordatoriosData?.data ?? []) map.set(r.cobro_id, r)
+    return map
+  }, [recordatoriosData])
+
+  const refetchAll = () => { refetchResumen(); refetchCobros(); refetchRecordatorios() }
+
+  async function handleCobrar(c: any, forceResend = false): Promise<void> {
+    const nombreCliente = c.cliente?.nombre ?? 'el cliente'
+    try {
+      const res = await adminFetch(`/api/admin/cobros/${c.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'enviar_recordatorio', forceResend }),
+      })
+
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}))
+        const cuandoFmt = data?.ultimo_envio ? formatRelativo(data.ultimo_envio) : 'hace poco'
+        const confirma = window.confirm(
+          `Ya enviaste un recordatorio a este cliente ${cuandoFmt}. ¿Querés enviar otro ahora?`,
+        )
+        if (confirma) return handleCobrar(c, true)
+        return
+      }
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody.error || `HTTP ${res.status}`)
+      }
+
+      toast.success(`Solicitud de pago enviada a ${nombreCliente}`)
+      refetchAll()
+    } catch (err: any) {
+      console.error('[handleCobrar]', err)
+      toast.error(`Error al enviar la solicitud${err.message ? `: ${err.message}` : ''}.`)
+    }
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -166,13 +243,14 @@ export default function ContabilidadPage() {
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3">Vencimiento</th>
               <th className="px-4 py-3 text-right">Días</th>
+              <th className="px-4 py-3">Recordatorios</th>
               <th className="px-4 py-3">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cobros.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                   No hay cobros para mostrar
                 </td>
               </tr>
@@ -216,6 +294,21 @@ export default function ContabilidadPage() {
                     <td className={`px-4 py-3 text-right text-xs font-mono ${esVencido ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
                       {esCotSinCobro ? '—' : c.estado === 'pagado' || c.estado === 'cancelado' ? '—' : dias > 0 ? `+${dias}` : dias === 0 ? 'Hoy' : `${dias}`}
                     </td>
+                    <td className="px-4 py-3 text-xs">
+                      {esCotSinCobro ? (
+                        <span className="text-gray-300">—</span>
+                      ) : (() => {
+                        const rec = recordatoriosByCobro.get(c.id)
+                        if (!rec) return <span className="text-gray-300">—</span>
+                        const tooltip = new Date(rec.ultimo_envio).toLocaleString('es-GT')
+                        return (
+                          <span className="text-gray-600" title={tooltip}>
+                            {formatRelativo(rec.ultimo_envio)}
+                            {rec.total_envios > 1 ? ` (${rec.total_envios})` : ''}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {esCotSinCobro ? (
@@ -236,13 +329,7 @@ export default function ContabilidadPage() {
                                   Pago
                                 </button>
                                 <button
-                                  onClick={async () => {
-                                    await mutate(`/api/admin/cobros/${c.id}`, {
-                                      method: 'POST',
-                                      body: { accion: 'enviar_recordatorio' },
-                                      onSuccess: () => refetchAll(),
-                                    })
-                                  }}
+                                  onClick={() => handleCobrar(c)}
                                   className="px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 font-medium"
                                 >
                                   Cobrar

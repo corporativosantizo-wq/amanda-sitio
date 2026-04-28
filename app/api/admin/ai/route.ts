@@ -1549,11 +1549,12 @@ async function handleGestionarCobros(
         notas: datos.notas,
       });
 
-      // Auto-send solicitud de pago
+      // Auto-send solicitud de pago. forceResend: true — cobro recién creado en
+      // este mismo flujo, no aplica check de 24h, evita falla silenciosa.
       let emailResult = '';
       try {
-        emailResult = await enviarSolicitudPago(cobro.id);
-        emailResult = ` ${emailResult}`;
+        const r = await enviarSolicitudPago(cobro.id, { forceResend: true });
+        emailResult = r.status === 'sent' ? ` ${r.mensaje}` : '';
       } catch (_) {
         emailResult = ' (No se pudo enviar email — cliente sin email o error de envío)';
       }
@@ -1600,8 +1601,14 @@ async function handleGestionarCobros(
 
     case 'enviar_recordatorio': {
       if (!datos.cobro_id) throw new CobroError('Se requiere cobro_id para enviar recordatorio');
-      const result = await enviarSolicitudPago(datos.cobro_id);
-      return result;
+      const result = await enviarSolicitudPago(datos.cobro_id, { forceResend: datos.force === true });
+      if (result.status === 'duplicate_recent') {
+        const ultimo = new Date(result.ultimo_envio);
+        const diffHoras = Math.max(1, Math.floor((Date.now() - ultimo.getTime()) / (1000 * 60 * 60)));
+        const cuando = diffHoras < 24 ? `hace ${diffHoras}h` : `hace ${Math.floor(diffHoras / 24)}d`;
+        return `Ya envié un recordatorio a este cliente ${cuando} (${ultimo.toLocaleString('es-GT')}). ¿Querés que lo envíe de nuevo? Si confirmás, reintento con force=true.`;
+      }
+      return result.mensaje;
     }
 
     case 'resumen_cobros': {
