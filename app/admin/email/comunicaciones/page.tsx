@@ -324,7 +324,10 @@ function NuevoCorreoTab() {
         body: formData,
       });
       const data = await res.json();
-      setAdjuntos(prev => [...prev, ...data.adjuntos]);
+      // Guard contra response sin `adjuntos` o malformado: spread de undefined
+      // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
+      // por state corrupto de uploads previos.
+      setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message ?? 'Error al subir archivos' });
     } finally {
@@ -1490,7 +1493,10 @@ function EditarCorreoModal({ correo, onClose, onSaved }: {
         body: formData,
       });
       const data = await res.json();
-      setAdjuntos(prev => [...prev, ...data.adjuntos]);
+      // Guard contra response sin `adjuntos` o malformado: spread de undefined
+      // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
+      // por state corrupto de uploads previos.
+      setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
     } catch (err: any) {
       setError(err.message ?? 'Error al subir');
     } finally {
