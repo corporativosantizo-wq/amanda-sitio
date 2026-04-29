@@ -577,6 +577,8 @@ function NuevoCorreoTab() {
                         value={camposExtra[campo.key] ?? ''}
                         onChange={(v) => setCamposExtra(prev => ({ ...prev, [campo.key]: v }))}
                         onLookupSelect={onLookupSelect}
+                        clienteIdActual={clienteId}
+                        clienteNombreActual={clienteNombre}
                       />
                     ) : campo.type === 'textarea' ? (
                       <textarea
@@ -1679,11 +1681,15 @@ function LookupField({
   value,
   onChange,
   onLookupSelect,
+  clienteIdActual,
+  clienteNombreActual,
 }: {
   campo: CampoExtraLookup;
   value: string;
   onChange: (v: string) => void;
   onLookupSelect: (data: Record<string, any>, lookupValue: string, source: string) => void;
+  clienteIdActual: string | null;
+  clienteNombreActual: string;
 }) {
   const [query, setQuery] = useState(value ?? '');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -1691,8 +1697,14 @@ function LookupField({
   // Mantener input sincronizado si el parent cambia value externamente.
   useEffect(() => { setQuery(value ?? ''); }, [value]);
 
+  // URL es función de query y clienteIdActual: si Amanda cambia el cliente
+  // mientras el dropdown está abierto, la URL cambia y useFetch refetchea
+  // automáticamente. Si no hay cliente, no se manda el param y el endpoint
+  // devuelve todos los registros (backward compatible).
   const url = query.length >= 2
-    ? `/api/admin/comunicaciones/lookup?table=${encodeURIComponent(campo.source)}&q=${encodeURIComponent(query)}&limit=10`
+    ? `/api/admin/comunicaciones/lookup?table=${encodeURIComponent(campo.source)}` +
+      `&q=${encodeURIComponent(query)}&limit=10` +
+      (clienteIdActual ? `&cliente_id=${encodeURIComponent(clienteIdActual)}` : '')
     : null;
   const { data, loading } = useFetch<{ data: LookupResult[] }>(url);
 
@@ -1726,6 +1738,19 @@ function LookupField({
         placeholder={`Buscar ${campo.source}…`}
         className="w-full mt-1 px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/20 bg-white"
       />
+
+      {/* Hint contextual: con cliente siempre visible (afordancia previa);
+          sin cliente solo cuando el input está activo (showDropdown == focus). */}
+      {clienteIdActual ? (
+        <p className="mt-1 text-xs text-slate-400 italic">
+          💡 Mostrando solo de {clienteNombreActual || 'cliente seleccionado'}
+        </p>
+      ) : showDropdown ? (
+        <p className="mt-1 text-xs text-slate-400 italic">
+          💡 Sugerimos elegir cliente primero para filtrar resultados
+        </p>
+      ) : null}
+
       {loading && showDropdown && query.length >= 2 && (
         <div className="absolute right-3 top-3 text-xs text-slate-400">…</div>
       )}

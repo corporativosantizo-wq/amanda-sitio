@@ -1,5 +1,9 @@
 // ============================================================================
-// GET /api/admin/comunicaciones/lookup?table=<source>&q=<texto>&limit=<n>
+// GET /api/admin/comunicaciones/lookup
+//   ?table=<source>            (requerido, whitelist)
+//   &q=<texto>                 (requerido, ilike sobre search_columns)
+//   &limit=<n>                 (opcional, max 50, default 20)
+//   &cliente_id=<uuid>         (opcional — filtra por cliente, requiere uuid válido)
 //
 // Endpoint para autocomplete de campos type:'lookup' en plantillas de correo.
 //
@@ -8,8 +12,8 @@
 // server-side por tabla. Esto evita que un admin malicioso (o un row mal armado)
 // pueda leer columnas no intencionadas de cualquier tabla.
 //
-// Whitelist actual: cotizaciones, expedientes, cobros, facturas.
-// Cualquier otra tabla → 400.
+// Whitelist actual: cotizaciones, expedientes, cobros, facturas (todas con cliente_id).
+// Cualquier otra tabla → 400. UUID mal formado → 400.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -191,6 +195,7 @@ export async function GET(req: NextRequest) {
   const q = (sp.get('q') ?? '').trim();
   const limitRaw = parseInt(sp.get('limit') ?? '20', 10);
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 20;
+  const clienteIdRaw = sp.get('cliente_id')?.trim() || null;
 
   if (!(table in LOOKUP_CONFIG)) {
     return NextResponse.json(
@@ -202,6 +207,17 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Validar uuid si vino. Defensa explícita antes de tocar PostgREST — mejor
+  // mensaje de error nuestro, y evita pasar valor mal formado al filtro.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (clienteIdRaw && !UUID_RE.test(clienteIdRaw)) {
+    return NextResponse.json(
+      { error: 'cliente_id no es un UUID válido' },
+      { status: 400 },
+    );
+  }
+  const clienteId = clienteIdRaw;
+
   const config = LOOKUP_CONFIG[table as LookupSource];
 
   if (!q) {
@@ -212,11 +228,15 @@ export async function GET(req: NextRequest) {
   const v = pgrstQuote(`%${q}%`);
   const orFilter = config.search_columns.map((c) => `${c}.ilike.${v}`).join(',');
 
-  const { data, error } = await db
-    .from(table)
-    .select(config.select)
-    .or(orFilter)
-    .limit(limit);
+  let query = db.from(table).select(config.select).or(orFilter);
+  if (clienteId) {
+    // Las 4 tablas de la whitelist tienen columna cliente_id (verificado vía
+    // information_schema). Si en el futuro se agrega una tabla sin cliente_id,
+    // habría que mover este filtro a config.scope_by_cliente: boolean.
+    query = query.eq('cliente_id', clienteId);
+  }
+
+  const { data, error } = await query.limit(limit);
 
   if (error) {
     console.error('[comunicaciones/lookup]', table, error.message ?? error);
