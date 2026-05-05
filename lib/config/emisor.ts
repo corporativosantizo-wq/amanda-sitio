@@ -12,7 +12,7 @@ export const EMISOR = {
   profesional:     process.env.NEXT_PUBLIC_EMISOR_PROFESIONAL   ?? 'Amanda Santizo — Abogada y Notaria',
   profesionalCorto: process.env.NEXT_PUBLIC_EMISOR_PROFESIONAL_CORTO ?? 'Licda. Amanda Santizo',
   colegiado:       process.env.NEXT_PUBLIC_EMISOR_COLEGIADO     ?? '19565',
-  nit:             process.env.NEXT_PUBLIC_EMISOR_NIT           ?? '10441452-0',
+  nit:             process.env.NEXT_PUBLIC_EMISOR_NIT           ?? '104414510',
   direccion:       process.env.NEXT_PUBLIC_EMISOR_DIRECCION     ?? '12 calle 1-25 zona 10, Edificio Géminis 10, Torre Sur, Oficina 402, Guatemala',
   telefono:        process.env.NEXT_PUBLIC_EMISOR_TELEFONO      ?? '(502) 2335-3613',
   email:           process.env.NEXT_PUBLIC_EMISOR_EMAIL         ?? 'contador@papeleo.legal',
