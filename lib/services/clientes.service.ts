@@ -171,19 +171,6 @@ export async function actualizarCliente(
   if (input.grupo_empresarial_id !== undefined) updates.grupo_empresarial_id = input.grupo_empresarial_id;
   if (input.notas !== undefined) updates.notas = input.notas;
   if (input.activo !== undefined) updates.activo = input.activo;
-  if (input.emails_cc_recibos !== undefined) {
-    // Validación: deben ser strings con formato de email; deduplicar; filtrar vacíos
-    const { normalizarEmails } = await import('@/lib/services/comprobantes-email');
-    const raw = Array.isArray(input.emails_cc_recibos) ? input.emails_cc_recibos : [];
-    const normalized = normalizarEmails(raw);
-    if (Array.isArray(input.emails_cc_recibos) && raw.length > normalized.length) {
-      const invalidos = raw.filter(e => typeof e === 'string' && e.trim() && !normalized.some(n => n.toLowerCase() === e.trim().toLowerCase()));
-      if (invalidos.length > 0) {
-        throw new ClienteError(`Email(s) con formato inválido: ${invalidos.join(', ')}`);
-      }
-    }
-    updates.emails_cc_recibos = normalized;
-  }
 
   const { data, error } = await db()
     .from('clientes')

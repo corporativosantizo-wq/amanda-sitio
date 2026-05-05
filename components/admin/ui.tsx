@@ -252,21 +252,10 @@ export function Q(monto: number | undefined | null): string { if (monto == null)
 interface PageHeaderProps {
   title: string;
   description?: string;
-  action?: {
-    label: string;
-    onClick?: () => void;
-    href?: string;
-    icon?: string;
-    variant?: 'primary' | 'success';   // default primary (azul); success = verde
-  };
+  action?: { label: string; onClick?: () => void; href?: string; icon?: string };
 }
 
 export function PageHeader({ title, description, action }: PageHeaderProps) {
-  const isSuccess = action?.variant === 'success';
-  const btnClass = isSuccess
-    ? 'inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#059669] to-[#10B981] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-emerald-900/20 transition-all shrink-0'
-    : 'inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all shrink-0';
-
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
       <div>
@@ -274,7 +263,10 @@ export function PageHeader({ title, description, action }: PageHeaderProps) {
         {description && <p className="text-sm text-slate-500 mt-0.5">{description}</p>}
       </div>
       {action && (
-        <button onClick={action.onClick} className={btnClass}>
+        <button
+          onClick={action.onClick}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-blue-900/20 transition-all shrink-0"
+        >
           {action.icon && <span>{action.icon}</span>}
           {action.label}
         </button>

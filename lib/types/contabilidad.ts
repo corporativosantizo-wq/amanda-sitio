@@ -300,20 +300,17 @@ export interface GastoConCategoria extends Gasto {
 
 // --- Recibos de Caja (gastos de trámite) ---
 
-export type OrigenReciboCaja = 'automatico' | 'manual';
-
 export interface ReciboCaja {
   id: string;
-  numero: string;                       // 'RC-0001'
-  cotizacion_id: string | null;         // nullable: recibos manuales pueden no tener cotización
+  numero: string;                  // 'RC-0001'
+  cotizacion_id: string;
   cliente_id: string;
-  pago_id: string | null;               // nullable: recibos manuales pueden no tener pago previo
-  origen: OrigenReciboCaja;
+  pago_id: string;
   monto: number;
-  fecha_emision: string;                // ISO timestamptz
+  fecha_emision: string;           // ISO timestamptz
   concepto: string;
-  pdf_url: string | null;               // path en bucket recibos-caja
-  email_enviado_at: string | null;      // último envío exitoso (ver tabla envios para historial)
+  pdf_url: string | null;          // path en bucket recibos-caja
+  email_enviado_at: string | null;
   email_error: string | null;
   notas: string | null;
   created_by: string | null;
@@ -322,46 +319,17 @@ export interface ReciboCaja {
 }
 
 export interface ReciboCajaConRelaciones extends ReciboCaja {
-  cliente: Pick<Cliente, 'id' | 'codigo' | 'nombre' | 'nit' | 'email'> & { emails_cc_recibos?: string[] };
+  cliente: Pick<Cliente, 'id' | 'codigo' | 'nombre' | 'nit' | 'email'>;
   cotizacion: Pick<Cotizacion, 'id' | 'numero'> | null;
 }
 
 export interface RegistrarPagoGastosInput {
   cotizacion_id: string;
   monto: number;
-  fecha_pago?: string;
-  metodo?: string;
+  fecha_pago?: string;             // YYYY-MM-DD; default hoy
+  metodo?: string;                 // transferencia, efectivo, etc.
   referencia_bancaria?: string | null;
   notas?: string | null;
-}
-
-export interface CrearReciboManualInput {
-  cliente_id: string;
-  cotizacion_id?: string | null;
-  monto: number;
-  concepto: string;
-  fecha_emision?: string;          // ISO date; default hoy
-  notas?: string | null;
-}
-
-export interface ReciboCajaEnvio {
-  id: string;
-  recibo_id: string;
-  enviado_a: string;
-  cc: string[];
-  enviado_por: string | null;      // email del admin
-  enviado_at: string;
-  exito: boolean;
-  error_mensaje: string | null;
-  asunto: string | null;
-  created_at: string;
-}
-
-export interface EnviarReciboInput {
-  to: string;
-  cc?: string[];
-  asunto?: string;                 // si null, usa default
-  cuerpo_html?: string;            // si null, usa template default
 }
 
 // --- Cobros ---

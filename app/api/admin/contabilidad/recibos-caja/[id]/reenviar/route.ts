@@ -1,7 +1,6 @@
 // ============================================================================
 // app/api/admin/contabilidad/recibos-caja/[id]/reenviar/route.ts
-// POST → Reintento rápido sin args (usa email del cliente + CC fijos).
-// Para envío personalizado (To/CC/asunto/cuerpo editables), usar /enviar.
+// POST → Reintenta el envío del email del recibo (descarga PDF de storage).
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,7 +16,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   try {
     const { id } = await params;
-    await reenviarEmailRecibo(id, session.email || null);
+    await reenviarEmailRecibo(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof ReciboCajaError) {

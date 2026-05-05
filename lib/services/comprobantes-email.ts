@@ -15,33 +15,9 @@ export interface EnviarComprobanteParams {
   cuerpoHtml: string;            // ya envuelto en emailWrapper si se desea
   pdfBuffer: Buffer;
   nombreArchivo: string;         // ej. 'RC-0001.pdf'
-  cc?: string | string[];        // CC visible (puede ser array de emails ya validados)
+  cc?: string | string[];
   bcc?: string | string[];
   from?: MailboxAlias;           // default según tipo
-}
-
-// Regex práctico para validar formato de email (no exhaustivo, suficiente para UI)
-export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function isValidEmail(s: string): boolean {
-  return EMAIL_REGEX.test(s.trim());
-}
-
-/** Normaliza una lista de emails: trim, dedupe (case-insensitive), descarta inválidos. */
-export function normalizarEmails(input: string[] | string | undefined | null): string[] {
-  if (!input) return [];
-  const list = Array.isArray(input) ? input : input.split(',');
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of list) {
-    const e = raw.trim();
-    const k = e.toLowerCase();
-    if (e && isValidEmail(e) && !seen.has(k)) {
-      seen.add(k);
-      out.push(e);
-    }
-  }
-  return out;
 }
 
 /**

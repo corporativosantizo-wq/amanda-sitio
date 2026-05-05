@@ -30,8 +30,6 @@ export interface Cliente {
 
   grupo_empresarial_id: string | null;
 
-  emails_cc_recibos: string[];  // CC fijos para envío de Recibos de Caja
-
   datos_sensibles_encrypted: Record<string, unknown> | null;
   notas: string | null;
 
@@ -55,7 +53,6 @@ export interface ClienteInsert {
   nit_facturacion?: string | null;
   direccion_facturacion?: string | null;
   grupo_empresarial_id?: string | null;
-  emails_cc_recibos?: string[];
   notas?: string | null;
   activo?: boolean;
 }

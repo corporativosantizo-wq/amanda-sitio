@@ -18,7 +18,6 @@ interface ReciboItem {
   monto: number;
   fecha_emision: string;
   concepto: string;
-  origen: 'automatico' | 'manual';
   email_enviado_at: string | null;
   email_error: string | null;
   pdf_url: string | null;
@@ -63,13 +62,7 @@ export default function RecibosCajaListPage() {
     <div className="space-y-5">
       <PageHeader
         title="Recibos de Caja"
-        description={`${data?.total ?? 0} recibos · comprobante NO fiscal`}
-        action={{
-          label: 'Nuevo Recibo de Caja',
-          icon: '+',
-          variant: 'success',
-          onClick: () => router.push('/admin/contabilidad/recibos-caja/nuevo'),
-        }}
+        description={`${data?.total ?? 0} recibos · gastos del trámite (comprobante NO fiscal)`}
       />
 
       {/* Filtros */}
@@ -119,22 +112,15 @@ export default function RecibosCajaListPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {recibos.map(r => (
-                  <tr
-                    key={r.id}
-                    onClick={() => router.push(`/admin/contabilidad/recibos-caja/${r.id}`)}
-                    className="hover:bg-slate-50/50 cursor-pointer transition-colors"
-                  >
+                  <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-3 px-4 pl-5">
                       <span className="font-mono text-sm font-semibold text-slate-900">{r.numero}</span>
-                      {r.origen === 'manual' && (
-                        <span className="ml-2 text-[9px] font-semibold tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded uppercase">manual</span>
-                      )}
                     </td>
                     <td className="py-3 px-4 text-sm">
                       <p className="text-slate-700">{r.cliente?.nombre ?? '—'}</p>
                       {r.cliente?.nit && <p className="text-xs text-slate-400">NIT {r.cliente.nit}</p>}
                     </td>
-                    <td className="py-3 px-4 text-sm" onClick={e => e.stopPropagation()}>
+                    <td className="py-3 px-4 text-sm">
                       {r.cotizacion ? (
                         <button
                           onClick={() => router.push(`/admin/contabilidad/cotizaciones/${r.cotizacion!.id}`)}
@@ -157,7 +143,7 @@ export default function RecibosCajaListPage() {
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 pr-5 text-xs" onClick={e => e.stopPropagation()}>
+                    <td className="py-3 px-4 pr-5 text-xs">
                       <div className="flex items-center gap-3">
                         <a
                           href={`/api/admin/contabilidad/recibos-caja/${r.id}/pdf`}

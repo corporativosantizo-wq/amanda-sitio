@@ -60,7 +60,6 @@ interface ClienteDetalle {
   nit_facturacion: string;
   direccion_facturacion: string;
   grupo_empresarial_id: string | null;
-  emails_cc_recibos: string[];
   notas: string | null;
   activo: boolean;
   created_at: string;
@@ -745,12 +744,6 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
           )}
         </Section>
       )}
-
-      {/* Correos en CC para Recibos de Caja */}
-      <EmailsCcRecibosSection
-        clienteId={c.id}
-        emailsIniciales={c.emails_cc_recibos ?? []}
-      />
 
       {/* Grupo Empresarial (solo empresa) */}
       {c.tipo === 'empresa' && c.grupo_empresarial && (
@@ -1488,120 +1481,5 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
       <p className={`text-xl font-bold ${color}`}>{value}</p>
       <p className="text-xs text-slate-500 mt-1">{label}</p>
     </div>
-  );
-}
-
-// ── Correos CC fijos para Recibos de Caja ──────────────────────────────────
-
-const EMAIL_RX_CLI = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function EmailsCcRecibosSection({
-  clienteId, emailsIniciales,
-}: {
-  clienteId: string;
-  emailsIniciales: string[];
-}) {
-  const [emails, setEmails] = useState<string[]>(emailsIniciales);
-  const [input, setInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  const persistir = useCallback(async (lista: string[]) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await adminFetch(`/api/admin/clientes/${clienteId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emails_cc_recibos: lista }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Error ${res.status}`);
-      }
-      setFeedback('Guardado');
-      setTimeout(() => setFeedback(null), 2000);
-    } catch (err: any) {
-      setError(err?.message ?? 'Error al guardar');
-    } finally {
-      setSaving(false);
-    }
-  }, [clienteId]);
-
-  const agregar = async () => {
-    const v = input.trim();
-    if (!v) return;
-    if (!EMAIL_RX_CLI.test(v)) { setError(`Email inválido: ${v}`); return; }
-    if (emails.some(e => e.toLowerCase() === v.toLowerCase())) {
-      setInput('');
-      return;
-    }
-    const nueva = [...emails, v];
-    setEmails(nueva);
-    setInput('');
-    setError(null);
-    await persistir(nueva);
-  };
-
-  const quitar = async (email: string) => {
-    const nueva = emails.filter(e => e !== email);
-    setEmails(nueva);
-    await persistir(nueva);
-  };
-
-  return (
-    <Section title="Correos en copia para Recibos de Caja">
-      <p className="text-xs text-slate-500 mb-3">
-        Estos correos recibirán copia visible (CC) cada vez que se le envíe un Recibo de Caja
-        a este cliente. Pueden editarse al momento de enviar cada recibo.
-      </p>
-
-      {emails.length > 0 ? (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {emails.map(e => (
-            <span
-              key={e}
-              className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md"
-            >
-              {e}
-              <button
-                type="button"
-                onClick={() => quitar(e)}
-                disabled={saving}
-                className="text-slate-400 hover:text-red-500 leading-none disabled:opacity-30"
-                aria-label={`Quitar ${e}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-slate-400 italic mb-3">Sin correos configurados</p>
-      )}
-
-      <div className="flex items-center gap-2">
-        <input
-          type="email"
-          value={input}
-          onChange={ev => setInput(ev.target.value)}
-          onKeyDown={ev => { if (ev.key === 'Enter') { ev.preventDefault(); agregar(); } }}
-          placeholder="email@ejemplo.com"
-          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
-        />
-        <button
-          type="button"
-          onClick={agregar}
-          disabled={saving || !input.trim()}
-          className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-[#0F172A] to-[#22D3EE] rounded-lg disabled:opacity-30"
-        >
-          Agregar
-        </button>
-      </div>
-
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      {feedback && <p className="mt-2 text-xs text-emerald-600">✓ {feedback}</p>}
-    </Section>
   );
 }
