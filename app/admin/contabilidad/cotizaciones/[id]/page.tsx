@@ -40,6 +40,7 @@ interface CotizacionDetalle {
   subtotal: number;
   iva_monto: number;
   total: number;
+  monto_gastos: number;
   condiciones: string;
   notas_internas: string | null;
   notas_cliente: string | null;
@@ -138,6 +139,54 @@ export default function CotizacionDetallePage() {
   const [descargando, setDescargando] = useState(false);
   const [showFacturaModal, setShowFacturaModal] = useState(false);
   const [enviandoFactura, setEnviandoFactura] = useState(false);
+
+  // Recibo de Caja (gastos del trámite) — fetch separate
+  const { data: recibosResult, refetch: refetchRecibo } = useFetch<{ data: Array<any> }>(
+    id ? `/api/admin/contabilidad/recibos-caja?cotizacion_id=${id}&limit=1` : null
+  );
+  const recibo = recibosResult?.data?.[0] ?? null;
+
+  // Pagar gastos modal
+  const [showGastosModal, setShowGastosModal] = useState(false);
+  const [gastosMetodo, setGastosMetodo] = useState('transferencia');
+  const [gastosRef, setGastosRef] = useState('');
+  const [gastosFecha, setGastosFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [gastosNotas, setGastosNotas] = useState('');
+  const [gastosEnviando, setGastosEnviando] = useState(false);
+
+  const registrarPagoGastosCot = useCallback(async () => {
+    setGastosEnviando(true);
+    await mutate(`/api/admin/contabilidad/cotizaciones/${id}/pagar-gastos`, {
+      body: {
+        monto: Number(cot?.monto_gastos ?? 0),
+        metodo: gastosMetodo,
+        referencia_bancaria: gastosRef.trim() || null,
+        fecha_pago: gastosFecha,
+        notas: gastosNotas.trim() || null,
+      },
+      onSuccess: () => {
+        setShowGastosModal(false);
+        setGastosRef('');
+        setGastosNotas('');
+        refetch();
+        refetchRecibo();
+      },
+      onError: (err: any) => alert(`Error: ${err}`),
+    });
+    setGastosEnviando(false);
+  }, [id, cot?.monto_gastos, gastosMetodo, gastosRef, gastosFecha, gastosNotas, mutate, refetch, refetchRecibo]);
+
+  const reenviarEmailReciboCot = useCallback(async () => {
+    if (!recibo) return;
+    await mutate(`/api/admin/contabilidad/recibos-caja/${recibo.id}/reenviar`, {
+      body: {},
+      onSuccess: () => {
+        alert('Email reenviado');
+        refetchRecibo();
+      },
+      onError: (err: any) => alert(`Error: ${err}`),
+    });
+  }, [recibo, mutate, refetchRecibo]);
   const descargarPdf = useCallback(async () => {
     setDescargando(true);
     try {
@@ -182,9 +231,15 @@ export default function CotizacionDetallePage() {
   const estado = ESTADO_CONFIG[cot.estado] ?? ESTADO_CONFIG.borrador;
   const anticipo = Math.round(cot.total * 0.6 * 100) / 100;
   const saldo = Math.round(cot.total * 0.4 * 100) / 100;
+  const montoGastos = Number(cot.monto_gastos ?? 0);
+  const totalGeneral = Number(cot.total) + montoGastos;
 
-  // Pagos summary
-  const pagosConfirmados = (cot.pagos ?? []).filter(p => p.estado === 'confirmado');
+  // Separar pagos por tipo: honorarios (todos los demás) vs gastos del trámite
+  const pagosTodos = cot.pagos ?? [];
+  const pagosHonorarios = pagosTodos.filter(p => p.tipo !== 'gastos_tramite');
+  const pagoGastos = pagosTodos.find(p => p.tipo === 'gastos_tramite');
+
+  const pagosConfirmados = pagosHonorarios.filter(p => p.estado === 'confirmado');
   const totalPagado = pagosConfirmados.reduce((s, p) => s + p.monto, 0);
   const porcentajePagado = cot.total > 0 ? Math.min(100, Math.round((totalPagado / cot.total) * 100)) : 0;
   const estadoPago = totalPagado === 0
@@ -192,6 +247,8 @@ export default function CotizacionDetallePage() {
     : totalPagado >= cot.total
       ? 'completo'
       : 'parcial';
+
+  const gastosPagados = !!pagoGastos && pagoGastos.estado === 'confirmado';
 
   // Find last confirmed non-anticipo pago for factura request
   const pagoParaFactura = pagosConfirmados.find(p => !p.es_anticipo && !p.factura_solicitada);
@@ -427,18 +484,31 @@ export default function CotizacionDetallePage() {
                       </>
                     );
                   })()}
-                  <div className="flex justify-between text-lg font-bold border-t-2 border-[#1E40AF] pt-2 mt-1">
-                    <span className="text-[#1E40AF]">TOTAL</span>
-                    <span className="text-[#1E40AF]">{Q(cot.total)}</span>
+                  <div className="flex justify-between text-sm font-semibold pt-1 border-t border-slate-200">
+                    <span className="text-slate-700">Total honorarios</span>
+                    <span className="text-slate-900">{Q(cot.total)}</span>
                   </div>
-                  <div className="mt-2 bg-blue-50 rounded-lg p-3 space-y-1">
+
+                  <div className="pt-3 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                    Gastos del trámite (Recibo de Caja)
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Monto gastos</span>
+                    <span className="text-slate-700">{Q(montoGastos)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-lg font-bold border-t-2 border-[#0F172A] pt-2 mt-2">
+                    <span className="text-[#0F172A]">TOTAL GENERAL</span>
+                    <span className="text-[#0F172A]">{Q(totalGeneral)}</span>
+                  </div>
+                  <div className="mt-2 bg-cyan-50 rounded-lg p-3 space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span className="text-blue-700">Anticipo 60%</span>
-                      <span className="font-medium text-blue-800">{Q(anticipo)}</span>
+                      <span className="text-slate-600">Anticipo 60% (honorarios)</span>
+                      <span className="font-medium text-slate-800">{Q(anticipo)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-blue-700">Saldo 40%</span>
-                      <span className="font-medium text-blue-800">{Q(saldo)}</span>
+                      <span className="text-slate-600">Saldo 40% (honorarios)</span>
+                      <span className="font-medium text-slate-800">{Q(saldo)}</span>
                     </div>
                   </div>
                 </div>
@@ -461,8 +531,8 @@ export default function CotizacionDetallePage() {
             </div>
           )}
 
-          {/* Pagos asociados */}
-          <Section title="Pagos asociados">
+          {/* Pagos de honorarios */}
+          <Section title="Pagos de honorarios (factura)">
             {/* Progress bar */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1.5">
@@ -470,9 +540,9 @@ export default function CotizacionDetallePage() {
                   estadoPago === 'completo' ? 'text-emerald-700' :
                   estadoPago === 'parcial' ? 'text-blue-700' : 'text-slate-500'
                 }`}>
-                  {estadoPago === 'completo' ? '✅ Pagado en su totalidad' :
+                  {estadoPago === 'completo' ? '✅ Honorarios pagados en su totalidad' :
                    estadoPago === 'parcial' ? `Anticipo recibido (${Q(totalPagado)} de ${Q(cot.total)})` :
-                   'Pendiente de pago'}
+                   'Pendiente de pago de honorarios'}
                 </span>
                 <span className="text-sm font-bold text-slate-900">{porcentajePagado}%</span>
               </div>
@@ -487,14 +557,14 @@ export default function CotizacionDetallePage() {
               </div>
               <div className="flex justify-between text-xs text-slate-400 mt-1">
                 <span>{Q(totalPagado)} pagado</span>
-                <span>{Q(cot.total)} total</span>
+                <span>{Q(cot.total)} total honorarios</span>
               </div>
             </div>
 
-            {/* Pagos list */}
-            {cot.pagos && cot.pagos.length > 0 ? (
+            {/* Pagos list (solo honorarios) */}
+            {pagosHonorarios.length > 0 ? (
               <div className="space-y-2 mb-4">
-                {cot.pagos.map(p => (
+                {pagosHonorarios.map(p => (
                   <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="flex items-center gap-3">
                       <span className="text-base">{p.es_anticipo ? '🔹' : '💰'}</span>
@@ -516,13 +586,13 @@ export default function CotizacionDetallePage() {
               <p className="text-sm text-slate-400 mb-4">No hay pagos registrados</p>
             )}
 
-            {/* Registrar pago button */}
+            {/* Registrar pago de honorarios */}
             {estadoPago !== 'completo' && (
               <button
                 onClick={() => router.push(`/admin/contabilidad/pagos/nuevo?cotizacion_id=${id}`)}
                 className="w-full px-4 py-2.5 text-sm font-medium text-[#1E40AF] bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
               >
-                + Registrar pago
+                + Registrar pago de honorarios
               </button>
             )}
 
@@ -539,6 +609,79 @@ export default function CotizacionDetallePage() {
               <div className="w-full px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
                 ✅ Factura solicitada
               </div>
+            )}
+          </Section>
+
+          {/* Gastos del trámite — Recibo de Caja */}
+          <Section title="Gastos del trámite (Recibo de Caja)">
+            {montoGastos <= 0 ? (
+              <p className="text-sm text-slate-400">
+                Esta cotización no contempla gastos del trámite (Q0). Si aplica,
+                edítala para agregar el monto antes de registrar el pago.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div>
+                    <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Monto</p>
+                    <p className="text-lg font-bold text-slate-900">{Q(montoGastos)}</p>
+                  </div>
+                  <div className="text-right">
+                    {gastosPagados ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-full border border-emerald-200">
+                        ✅ Pagado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 text-slate-600 text-xs font-medium rounded-full border border-slate-200">
+                        Pendiente
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {recibo && (
+                  <div className="space-y-2 mb-4 p-3 rounded-lg border border-cyan-200 bg-cyan-50/40">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900">{recibo.numero}</p>
+                      <a
+                        href={`/api/admin/contabilidad/recibos-caja/${recibo.id}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-[#0F172A] hover:underline"
+                      >
+                        Descargar PDF →
+                      </a>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Emitido el {new Date(recibo.fecha_emision).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' })}
+                    </p>
+                    {recibo.email_enviado_at ? (
+                      <p className="text-xs text-emerald-700">
+                        ✓ Email enviado el {new Date(recibo.email_enviado_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', timeZone: 'America/Guatemala' })}
+                      </p>
+                    ) : recibo.email_error ? (
+                      <p className="text-xs text-amber-700">⚠ Email no enviado: {recibo.email_error}</p>
+                    ) : null}
+                    {(recibo.email_error || !recibo.email_enviado_at) && (
+                      <button
+                        onClick={reenviarEmailReciboCot}
+                        className="mt-1 text-xs font-medium text-[#0F172A] hover:underline"
+                      >
+                        Reintentar envío de email
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {!gastosPagados && !recibo && (
+                  <button
+                    onClick={() => setShowGastosModal(true)}
+                    className="w-full px-4 py-2.5 text-sm font-medium text-[#0F172A] bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-colors"
+                  >
+                    + Registrar pago de gastos
+                  </button>
+                )}
+              </>
             )}
           </Section>
         </div>
@@ -712,6 +855,82 @@ export default function CotizacionDetallePage() {
           onClose={() => setShowProgramarModal(false)}
           onSuccess={() => { setShowProgramarModal(false); refetch(); }}
         />
+      )}
+
+      {/* Modal registrar pago de gastos */}
+      {showGastosModal && cot.cliente && montoGastos > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowGastosModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">💵 Registrar pago de gastos</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Se generará un Recibo de Caja y se enviará por email a <b>{cot.cliente.email ?? '(cliente sin email)'}</b>.
+            </p>
+
+            <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 mb-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs uppercase tracking-wider text-slate-500">Monto a pagar</span>
+                <span className="text-xl font-bold text-[#0F172A]">{Q(montoGastos)}</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">Coincide con los gastos registrados en la cotización</p>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Método</label>
+                <select
+                  value={gastosMetodo}
+                  onChange={e => setGastosMetodo(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
+                >
+                  <option value="transferencia">Transferencia</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="deposito">Depósito</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
+                <input
+                  type="date"
+                  value={gastosFecha}
+                  onChange={e => setGastosFecha(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Referencia bancaria <span className="text-slate-400 font-normal">(opcional)</span></label>
+                <input
+                  type="text"
+                  value={gastosRef}
+                  onChange={e => setGastosRef(e.target.value)}
+                  placeholder="No. de transferencia, boleta, etc."
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notas <span className="text-slate-400 font-normal">(opcional)</span></label>
+                <textarea
+                  value={gastosNotas}
+                  onChange={e => setGastosNotas(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowGastosModal(false)}
+                className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button onClick={registrarPagoGastosCot} disabled={gastosEnviando}
+                className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-[#0F172A] to-[#22D3EE] rounded-lg hover:shadow-lg transition-all disabled:opacity-50">
+                {gastosEnviando ? 'Procesando…' : '✅ Registrar pago + emitir recibo'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

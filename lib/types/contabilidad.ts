@@ -26,6 +26,7 @@ export interface Cotizacion {
   subtotal: number;
   iva_monto: number;
   total: number;
+  monto_gastos: number;  // gastos del trámite (separado de honorarios; respaldados con Recibo de Caja)
 
   condiciones: string | null;
   notas_internas: string | null;
@@ -84,6 +85,7 @@ export interface CotizacionInsert {
   duracion_consulta_min?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;
+  monto_gastos?: number;
   cc_emails?: string | null;
   envio_programado?: boolean;
   envio_programado_fecha?: string | null;
@@ -104,6 +106,7 @@ export interface CotizacionUpdate {
   incluye_consultas?: number;
   requiere_anticipo?: boolean;
   anticipo_porcentaje?: number;
+  monto_gastos?: number;
   items?: CotizacionItemInsert[];
 }
 
@@ -293,6 +296,40 @@ export interface GastoInsert {
 
 export interface GastoConCategoria extends Gasto {
   categoria: CategoriaGasto;
+}
+
+// --- Recibos de Caja (gastos de trámite) ---
+
+export interface ReciboCaja {
+  id: string;
+  numero: string;                  // 'RC-0001'
+  cotizacion_id: string;
+  cliente_id: string;
+  pago_id: string;
+  monto: number;
+  fecha_emision: string;           // ISO timestamptz
+  concepto: string;
+  pdf_url: string | null;          // path en bucket recibos-caja
+  email_enviado_at: string | null;
+  email_error: string | null;
+  notas: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReciboCajaConRelaciones extends ReciboCaja {
+  cliente: Pick<Cliente, 'id' | 'codigo' | 'nombre' | 'nit' | 'email'>;
+  cotizacion: Pick<Cotizacion, 'id' | 'numero'> | null;
+}
+
+export interface RegistrarPagoGastosInput {
+  cotizacion_id: string;
+  monto: number;
+  fecha_pago?: string;             // YYYY-MM-DD; default hoy
+  metodo?: string;                 // transferencia, efectivo, etc.
+  referencia_bancaria?: string | null;
+  notas?: string | null;
 }
 
 // --- Cobros ---

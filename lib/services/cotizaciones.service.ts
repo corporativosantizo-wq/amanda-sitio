@@ -242,6 +242,7 @@ export async function crearCotizacion(input: CotizacionInsert): Promise<Cotizaci
       requiere_anticipo: input.requiere_anticipo ?? true,
       anticipo_porcentaje: anticipoPorcentaje,
       anticipo_monto: anticipo,
+      monto_gastos: input.monto_gastos ?? 0,
       envio_programado: input.envio_programado ?? false,
       envio_programado_fecha: input.envio_programado_fecha ?? null,
       enviada_at: enviadaAt,
@@ -307,6 +308,7 @@ export async function actualizarCotizacion(
   if (input.incluye_consultas !== undefined) updates.incluye_consultas = input.incluye_consultas;
   if (input.requiere_anticipo !== undefined) updates.requiere_anticipo = input.requiere_anticipo;
   if (input.anticipo_porcentaje !== undefined) updates.anticipo_porcentaje = input.anticipo_porcentaje;
+  if (input.monto_gastos !== undefined) updates.monto_gastos = input.monto_gastos;
 
   // Si cambian los items, recalcular montos
   if (input.items) {

@@ -75,6 +75,9 @@ export default function NuevaCotizacionPage() {
   // CC emails
   const [ccEmails, setCcEmails] = useState('');
 
+  // Gastos del trámite (separados de honorarios; respaldados con Recibo de Caja)
+  const [montoGastos, setMontoGastos] = useState('');
+
   // Terms
   const [condiciones, setCondiciones] = useState(CONDICIONES_DEFAULT);
   const [notasCliente, setNotasCliente] = useState('');
@@ -106,10 +109,12 @@ export default function NuevaCotizacionPage() {
       .reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
     const iva = Math.round(baseGravable * 0.12 * 100) / 100;
     const total = subtotal + iva;
+    const gastos = Math.max(0, parseFloat(montoGastos) || 0);
+    const totalGeneral = total + gastos;
     const anticipo = Math.round(total * 0.6 * 100) / 100;
     const saldo = Math.round(total * 0.4 * 100) / 100;
-    return { subtotal, baseGravable, iva, total, anticipo, saldo };
-  }, [items]);
+    return { subtotal, baseGravable, iva, total, gastos, totalGeneral, anticipo, saldo };
+  }, [items, montoGastos]);
 
   // ── Catalog filtering ───────────────────────────────────────────────
 
@@ -218,6 +223,7 @@ export default function NuevaCotizacionPage() {
       notas_cliente: notasCliente || null,
       notas_internas: notas || null,
       cc_emails: ccEmails.trim() || null,
+      monto_gastos: Math.max(0, parseFloat(montoGastos) || 0),
     };
 
     if (modo === 'programar') {
@@ -244,7 +250,7 @@ export default function NuevaCotizacionPage() {
       },
       onError: (err: any) => setFormError(String(err)),
     });
-  }, [clienteId, items, condiciones, notasCliente, notas, ccEmails, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
+  }, [clienteId, items, condiciones, notasCliente, notas, ccEmails, montoGastos, envioFecha, envioHora, retroactiva, retroEstado, retroFechaEnvio, retroFechaAceptacion, mutate, router]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -570,9 +576,13 @@ export default function NuevaCotizacionPage() {
             ))}
 
             {/* ── Totals ── */}
-            <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-blue-50/20">
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-cyan-50/20">
               <div className="flex justify-end">
-                <div className="w-72 space-y-1.5">
+                <div className="w-80 space-y-1.5">
+                  {/* Honorarios profesionales */}
+                  <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                    Honorarios profesionales (factura)
+                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Subtotal (sin IVA)</span>
                     <span className="text-slate-700">{Q(calc.subtotal)}</span>
@@ -587,18 +597,44 @@ export default function NuevaCotizacionPage() {
                     <span className="text-slate-500">IVA (12%)</span>
                     <span className="text-slate-700">{Q(calc.iva)}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold border-t-2 border-[#1E40AF] pt-2 mt-1">
-                    <span className="text-[#1E40AF]">TOTAL</span>
-                    <span className="text-[#1E40AF]">{Q(calc.total)}</span>
+                  <div className="flex justify-between text-sm font-semibold pt-1 border-t border-slate-200">
+                    <span className="text-slate-700">Total honorarios</span>
+                    <span className="text-slate-900">{Q(calc.total)}</span>
                   </div>
-                  <div className="mt-2 bg-blue-50 rounded-lg p-3 space-y-1">
+
+                  {/* Gastos del trámite */}
+                  <div className="pt-3 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                    Gastos del trámite (Recibo de Caja)
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm text-slate-500 whitespace-nowrap">Monto gastos</label>
+                    <div className="relative w-32">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">Q</span>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={montoGastos}
+                        onChange={e => setMontoGastos(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full pl-6 pr-2 py-1.5 text-sm text-right border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/30 focus:border-[#22D3EE]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Total general */}
+                  <div className="flex justify-between text-lg font-bold border-t-2 border-[#0F172A] pt-2 mt-2">
+                    <span className="text-[#0F172A]">TOTAL GENERAL</span>
+                    <span className="text-[#0F172A]">{Q(calc.totalGeneral)}</span>
+                  </div>
+
+                  {/* Anticipo (sobre honorarios solamente) */}
+                  <div className="mt-2 bg-cyan-50 rounded-lg p-3 space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span className="text-blue-700">Anticipo 60%</span>
-                      <span className="font-medium text-blue-800">{Q(calc.anticipo)}</span>
+                      <span className="text-slate-600">Anticipo 60% (honorarios)</span>
+                      <span className="font-medium text-slate-800">{Q(calc.anticipo)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-blue-700">Saldo 40%</span>
-                      <span className="font-medium text-blue-800">{Q(calc.saldo)}</span>
+                      <span className="text-slate-600">Saldo 40% (honorarios)</span>
+                      <span className="font-medium text-slate-800">{Q(calc.saldo)}</span>
                     </div>
                   </div>
                 </div>

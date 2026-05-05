@@ -52,6 +52,7 @@ export enum TipoPago {
   PARCIAL = 'parcial',
   TOTAL = 'total',
   CONSULTA_EXTRA = 'consulta_extra',
+  GASTOS_TRAMITE = 'gastos_tramite',
 }
 
 // --- Notariado ---

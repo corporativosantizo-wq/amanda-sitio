@@ -114,6 +114,7 @@ const SECTIONS: Section[] = [
         children: [
           { name: 'Cotizaciones', href: '/admin/contabilidad/cotizaciones' },
           { name: 'Facturas', href: '/admin/contabilidad/facturas' },
+          { name: 'Recibos de Caja', href: '/admin/contabilidad/recibos-caja' },
           { name: 'Pagos', href: '/admin/contabilidad/pagos' },
           { name: 'Gastos', href: '/admin/contabilidad/gastos' },
           { name: 'Reportes', href: '/admin/contabilidad/reportes' },

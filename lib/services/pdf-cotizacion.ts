@@ -5,6 +5,7 @@
 
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage, PDFImage } from 'pdf-lib';
 import type { CotizacionConCliente } from '@/lib/types';
+import { montoALetras } from '@/lib/utils/numeros-letras';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,8 +18,8 @@ const C = {
   slate:       rgb(148 / 255, 163 / 255, 184 / 255),    // #94A3B8 — terciarios
   border:      rgb(203 / 255, 213 / 255, 225 / 255),    // #CBD5E1 — bordes
   bgSubtle:    rgb(248 / 255, 250 / 255, 252 / 255),    // #F8FAFC — fondo sutil
-  accent:      rgb(37 / 255, 99 / 255, 235 / 255),      // #2563EB — detalles
-  accentLight: rgb(219 / 255, 234 / 255, 254 / 255),    // #DBEAFE — badges
+  accent:      rgb(34 / 255, 211 / 255, 238 / 255),     // #22D3EE — cyan brand
+  accentLight: rgb(207 / 255, 250 / 255, 254 / 255),    // #CFFAFE — badges
   tableBorder: rgb(241 / 255, 245 / 255, 249 / 255),    // #F1F5F9 — bordes tabla
   white:       rgb(1, 1, 1),
   amberBg:     rgb(255 / 255, 251 / 255, 235 / 255),    // #FFFBEB — fondo amber
@@ -26,13 +27,12 @@ const C = {
   amberText:   rgb(146 / 255, 64 / 255, 14 / 255),      // #92400E — texto amber
 };
 
-// Colores para segmentos del gradiente simulado
+// Gradiente navy → cyan para la línea separadora (familia visual unificada)
 const GRAD = [
-  rgb(30 / 255, 58 / 255, 138 / 255),   // #1E3A8A
-  rgb(33 / 255, 78 / 255, 186 / 255),   // interpolado
-  rgb(37 / 255, 99 / 255, 235 / 255),   // #2563EB
-  rgb(33 / 255, 78 / 255, 186 / 255),   // interpolado
-  rgb(30 / 255, 58 / 255, 138 / 255),   // #1E3A8A
+  rgb(15 / 255, 23 / 255, 42 / 255),    // #0F172A navy
+  rgb(20 / 255, 78 / 255, 116 / 255),
+  rgb(8 / 255, 145 / 255, 178 / 255),   // #0891B2
+  rgb(34 / 255, 211 / 255, 238 / 255),  // #22D3EE
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -292,11 +292,11 @@ export async function generarPDFCotizacion(
 
   y -= 18;
 
-  // ── 6. TOTALES — alineados a la derecha ──────────────────────────────
+  // ── 6. TOTALES DESGLOSADOS — honorarios + gastos del trámite ─────────
 
-  ensureSpace(100);
+  ensureSpace(220);
 
-  const totLabelX = M + CW - 200;
+  const totLabelX = M + CW - 220;
   const totValX = tblRight - 4;
 
   // Calculate base gravable from items
@@ -305,42 +305,92 @@ export async function generarPDFCotizacion(
     .filter((i: any) => i.aplica_iva !== false)
     .reduce((s: number, i: any) => s + (i.total ?? i.cantidad * i.precio_unitario), 0);
   const hasExentos = baseGravable < itemSubtotal;
+  const totalHonorarios = Number(cotizacion.total ?? 0);
+  const montoGastos = Number((cotizacion as any).monto_gastos ?? 0);
+  const totalGeneral = totalHonorarios + montoGastos;
 
-  // Subtotal
+  // Sección Honorarios
+  page.drawText('HONORARIOS PROFESIONALES (FACTURA)', { x: totLabelX, y, size: 7.5, font: bold, color: C.accent });
+  y -= 14;
+
   page.drawText('Subtotal (sin IVA)', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
   drawTextRight(page, safeText(formatQ(itemSubtotal)), totValX, y, regular, 9, C.steel);
-  y -= 16;
+  y -= 14;
 
-  // Base gravable (only if there are exempt items)
   if (hasExentos) {
     page.drawText('Base gravable', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
     drawTextRight(page, safeText(formatQ(baseGravable)), totValX, y, regular, 9, C.steel);
-    y -= 16;
+    y -= 14;
   }
 
-  // IVA 12%
   page.drawText('IVA (12%)', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
   drawTextRight(page, safeText(formatQ(cotizacion.iva_monto)), totValX, y, regular, 9, C.steel);
+  y -= 6;
+
+  page.drawRectangle({ x: totLabelX, y, width: totValX - totLabelX + 4, height: 0.5, color: C.border });
+  y -= 14;
+
+  page.drawText('Total honorarios', { x: totLabelX, y, size: 10, font: bold, color: C.navy });
+  drawTextRight(page, safeText(formatQ(totalHonorarios)), totValX, y, bold, 10, C.navy);
+  y -= 12;
+
+  // Letras honorarios
+  const letrasHonorarios = safeText(montoALetras(totalHonorarios));
+  const lhLines = wrapText(letrasHonorarios, regular, 7.5, CW - (totLabelX - M));
+  for (const line of lhLines) {
+    page.drawText(line, { x: totLabelX, y, size: 7.5, font: regular, color: C.muted });
+    y -= 10;
+  }
   y -= 8;
 
-  // Separator
-  page.drawRectangle({ x: totLabelX, y, width: totValX - totLabelX + 4, height: 1, color: C.border });
+  // Sección Gastos del Trámite (siempre visible, aunque sea 0)
+  page.drawText('GASTOS DEL TRAMITE (RECIBO DE CAJA)', { x: totLabelX, y, size: 7.5, font: bold, color: C.accent });
+  y -= 14;
+
+  page.drawText('Monto de gastos', { x: totLabelX, y, size: 9, font: regular, color: C.muted });
+  drawTextRight(page, safeText(formatQ(montoGastos)), totValX, y, bold, 10, C.navy);
+  y -= 12;
+
+  const letrasGastos = safeText(montoALetras(montoGastos));
+  const lgLines = wrapText(letrasGastos, regular, 7.5, CW - (totLabelX - M));
+  for (const line of lgLines) {
+    page.drawText(line, { x: totLabelX, y, size: 7.5, font: regular, color: C.muted });
+    y -= 10;
+  }
+  y -= 6;
+
+  // TOTAL GENERAL
+  page.drawRectangle({ x: totLabelX, y, width: totValX - totLabelX + 4, height: 1.5, color: C.navy });
   y -= 16;
+  page.drawText('TOTAL GENERAL', { x: totLabelX, y, size: 12, font: bold, color: C.navy });
+  drawTextRight(page, safeText(formatQ(totalGeneral)), totValX, y, bold, 13, C.navy);
+  y -= 14;
 
-  // TOTAL
-  page.drawText('TOTAL', { x: totLabelX, y, size: 13, font: bold, color: C.navy });
-  drawTextRight(page, safeText(formatQ(cotizacion.total)), totValX, y, bold, 13, C.navy);
-  y -= 18;
-
-  // Anticipo (opcional)
+  // Anticipo (sobre honorarios solamente)
   if (cotizacion.requiere_anticipo && cotizacion.anticipo_monto > 0) {
-    const antLabel = safeText(`Anticipo (${cotizacion.anticipo_porcentaje}%)`);
+    const antLabel = safeText(`Anticipo honorarios (${cotizacion.anticipo_porcentaje}%)`);
     page.drawText(antLabel, { x: totLabelX, y, size: 9, font: regular, color: C.accent });
     drawTextRight(page, safeText(formatQ(cotizacion.anticipo_monto)), totValX, y, bold, 9, C.accent);
     y -= 16;
   }
 
   y -= 10;
+
+  // Aclaratoria fiscal (cyan, sutil)
+  ensureSpace(40);
+  const aclar = safeText(
+    'Los honorarios profesionales se respaldan mediante factura fiscal. Los gastos de tramite se respaldan mediante Recibo de Caja.'
+  );
+  const aclarLines = wrapText(aclar, regular, 7.5, CW - 28);
+  const aclarH = 14 + aclarLines.length * 10 + 8;
+  page.drawRectangle({ x: M, y: y - aclarH, width: CW, height: aclarH, color: C.bgSubtle });
+  page.drawRectangle({ x: M, y: y - aclarH, width: 3, height: aclarH, color: C.accent });
+  let aclarY = y - 14;
+  for (const line of aclarLines) {
+    page.drawText(line, { x: M + 14, y: aclarY, size: 7.5, font: regular, color: C.steel });
+    aclarY -= 10;
+  }
+  y -= aclarH + 14;
 
   // ── 6b. NOTA IMPORTANTE — caja amarilla destacada ───────────────────
 
