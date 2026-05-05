@@ -10,18 +10,20 @@ import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { PageHeader, Q } from '@/components/admin/ui';
 
-const CATEGORIAS_DEFAULT = [
-  { id: 'oficina', nombre: 'Oficina', icon: '🏢' },
-  { id: 'legal', nombre: 'Gastos legales', icon: '⚖️' },
-  { id: 'transporte', nombre: 'Transporte', icon: '🚗' },
-  { id: 'servicios', nombre: 'Servicios', icon: '📱' },
-  { id: 'honorarios', nombre: 'Honorarios', icon: '💼' },
-  { id: 'tecnologia', nombre: 'Tecnología', icon: '💻' },
-  { id: 'comida', nombre: 'Alimentación', icon: '🍽️' },
-  { id: 'marketing', nombre: 'Marketing', icon: '📣' },
-  { id: 'impuestos', nombre: 'Impuestos', icon: '🏛️' },
-  { id: 'otros', nombre: 'Otros', icon: '📋' },
-];
+const ICONS_POR_NOMBRE: Record<string, string> = {
+  'Oficina': '🏢',
+  'Legal': '⚖️',
+  'Transporte': '🚗',
+  'Servicios': '📱',
+  'Honorarios': '💼',
+  'Capacitación': '🎓',
+  'Alimentación': '🍽️',
+  'Publicidad': '📣',
+  'Impuestos': '🏛️',
+  'Mantenimiento': '🔧',
+  'Registros': '📑',
+  'Otros': '📋',
+};
 
 export default function NuevoGastoPage() {
   const router = useRouter();
@@ -37,11 +39,15 @@ export default function NuevoGastoPage() {
   const [notas, setNotas] = useState('');
   const [guardarYOtro, setGuardarYOtro] = useState(false);
 
-  // Fetch real categories from DB (fallback to defaults)
-  const { data: catsResult } = useFetch<{ data: typeof CATEGORIAS_DEFAULT }>(
-    '/api/admin/contabilidad/gastos/categorias'
+  // Fetch real categories from DB
+  const { data: catsResult } = useFetch<Array<{ id: string; nombre: string }>>(
+    '/api/admin/contabilidad/gastos?categorias=true'
   );
-  const categorias = catsResult?.data ?? CATEGORIAS_DEFAULT;
+  const categorias = (catsResult ?? []).map(c => ({
+    id: c.id,
+    nombre: c.nombre,
+    icon: ICONS_POR_NOMBRE[c.nombre] ?? '📋',
+  }));
 
   const montoNum = parseFloat(monto) || 0;
 
@@ -64,7 +70,7 @@ export default function NuevoGastoPage() {
       descripcion: descripcion.trim(),
       monto: montoNum,
       fecha,
-      categoria_gasto_id: categoriaId,
+      categoria_id: categoriaId,
       proveedor: proveedor.trim() || null,
       numero_factura_proveedor: numeroFactura.trim() || null,
       deducible,
