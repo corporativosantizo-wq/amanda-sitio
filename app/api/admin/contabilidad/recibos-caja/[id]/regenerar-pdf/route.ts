@@ -1,11 +1,10 @@
 // ============================================================================
-// app/api/admin/contabilidad/recibos-caja/[id]/reenviar/route.ts
-// POST → Reintento rápido sin args (usa email del cliente + CC fijos).
-// Para envío personalizado (To/CC/asunto/cuerpo editables), usar /enviar.
+// app/api/admin/contabilidad/recibos-caja/[id]/regenerar-pdf/route.ts
+// POST → Regenera el PDF del recibo (útil tras cambios de branding/datos emisor).
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { reenviarEmailRecibo, ReciboCajaError } from '@/lib/services/recibos-caja.service';
+import { regenerarPDF, ReciboCajaError } from '@/lib/services/recibos-caja.service';
 import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -17,12 +16,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   try {
     const { id } = await params;
-    await reenviarEmailRecibo(id, session.email || null);
-    return NextResponse.json({ ok: true });
+    const result = await regenerarPDF(id);
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ReciboCajaError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const status = error.message.includes('no encontrad') ? 404 : 400;
+      return NextResponse.json({ error: error.message }, { status });
     }
-    return handleApiError(error, 'recibos-caja/[id]/reenviar');
+    return handleApiError(error, 'recibos-caja/[id]/regenerar-pdf');
   }
 }

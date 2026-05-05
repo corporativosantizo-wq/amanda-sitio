@@ -1,28 +1,31 @@
 // ============================================================================
 // lib/services/recibos-caja.service.ts
-// Lógica del Recibo de Caja: comprobante NO fiscal de pagos de gastos del
-// trámite. Paralelo a factura/honorarios.
+// Recibo de Caja: comprobante NO fiscal de pagos de gastos del trámite y de
+// otros recibos manuales sueltos (anticipos, reembolsos, etc.).
 //
-// Flujo registrarPagoGastos:
-//   1. Validar (cotización existe, monto coincide con monto_gastos, sin duplicado)
-//   2. Generar correlativo RC-NNNN (atómico vía next_sequence)
-//   3. Insertar pago en `pagos` (tipo='gastos_tramite', confirmado)
-//   4. Generar PDF
-//   5. Subir PDF a bucket recibos-caja/{año}/{numero}.pdf
-//   6. Insertar registro en recibos_caja
-//   7. Enviar email (best-effort: si falla, registrar email_error)
+// Flujo automático (registrarPagoGastos): pago + recibo + PDF + upload + email
+// con CC fijos del cliente.
+//
+// Flujo manual (crearReciboManual): solo recibo + PDF + upload (sin email,
+// sin pago); el email se dispara por separado vía enviarEmail.
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generarPDFReciboCaja } from './pdf-recibo-caja';
-import { enviarComprobantePorEmail } from './comprobantes-email';
+import {
+  enviarComprobantePorEmail,
+  normalizarEmails,
+  isValidEmail,
+} from './comprobantes-email';
 import { emailWrapper } from '@/lib/templates/emails';
 import {
   EstadoPago,
   TipoPago,
   type ReciboCaja,
   type ReciboCajaConRelaciones,
+  type ReciboCajaEnvio,
   type RegistrarPagoGastosInput,
+  type CrearReciboManualInput,
 } from '@/lib/types';
 import { EMISOR } from '@/lib/config/emisor';
 
@@ -42,6 +45,7 @@ export class ReciboCajaError extends Error {
 interface ListParams {
   cliente_id?: string;
   cotizacion_id?: string;
+  origen?: 'automatico' | 'manual';
   desde?: string;
   hasta?: string;
   busqueda?: string;
@@ -49,24 +53,27 @@ interface ListParams {
   limit?: number;
 }
 
+const RECIBO_SELECT = `
+  id, numero, monto, fecha_emision, concepto, origen,
+  pdf_url, email_enviado_at, email_error, notas,
+  cotizacion_id, cliente_id, pago_id, created_by, created_at, updated_at,
+  cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc_recibos),
+  cotizacion:cotizaciones!cotizacion_id (id, numero)
+`;
+
 export async function listarRecibos(params: ListParams = {}) {
-  const { cliente_id, cotizacion_id, desde, hasta, busqueda, page = 1, limit = 20 } = params;
+  const { cliente_id, cotizacion_id, origen, desde, hasta, busqueda, page = 1, limit = 20 } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
     .from('recibos_caja')
-    .select(`
-      id, numero, monto, fecha_emision, concepto,
-      pdf_url, email_enviado_at, email_error, notas,
-      cotizacion_id, cliente_id, pago_id, created_at, updated_at,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email),
-      cotizacion:cotizaciones!cotizacion_id (id, numero)
-    `, { count: 'exact' })
+    .select(RECIBO_SELECT, { count: 'exact' })
     .order('fecha_emision', { ascending: false })
     .range(offset, offset + limit - 1);
 
   if (cliente_id)    query = query.eq('cliente_id', cliente_id);
   if (cotizacion_id) query = query.eq('cotizacion_id', cotizacion_id);
+  if (origen)        query = query.eq('origen', origen);
   if (desde)         query = query.gte('fecha_emision', desde);
   if (hasta)         query = query.lte('fecha_emision', hasta);
   if (busqueda)      query = query.ilike('numero', `%${busqueda}%`);
@@ -85,11 +92,7 @@ export async function listarRecibos(params: ListParams = {}) {
 export async function obtenerRecibo(id: string): Promise<ReciboCajaConRelaciones> {
   const { data, error } = await db()
     .from('recibos_caja')
-    .select(`
-      *,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email),
-      cotizacion:cotizaciones!cotizacion_id (id, numero)
-    `)
+    .select(RECIBO_SELECT)
     .eq('id', id)
     .single();
 
@@ -106,23 +109,52 @@ export async function obtenerReciboPorCotizacion(cotizacionId: string): Promise<
   return (data ?? null) as ReciboCaja | null;
 }
 
-// ── Registrar pago de gastos (transacción "best-effort") ────────────────────
+export async function listarEnvios(reciboId: string): Promise<ReciboCajaEnvio[]> {
+  const { data, error } = await db()
+    .from('recibos_caja_envios')
+    .select('*')
+    .eq('recibo_id', reciboId)
+    .order('enviado_at', { ascending: false });
+
+  if (error) throw new ReciboCajaError('Error al listar envíos', error);
+  return (data ?? []) as ReciboCajaEnvio[];
+}
+
+// ── Generar y subir PDF (helper interno) ────────────────────────────────────
+
+interface GenerarPDFInput {
+  numero: string;
+  fechaEmision: string;
+  monto: number;
+  concepto: string;
+  cliente: { nombre: string; nit?: string | null; dpi?: string | null; direccion?: string | null };
+  cotizacionNumero?: string | null;
+  expedienteNumero?: string | null;
+}
+
+async function generarYSubirPDF(input: GenerarPDFInput): Promise<{ pdfBuffer: Buffer; storagePath: string }> {
+  const pdfBuffer = await generarPDFReciboCaja(input);
+  const year = new Date(input.fechaEmision).getFullYear();
+  const storagePath = `${year}/${input.numero}.pdf`;
+  const { error } = await db()
+    .storage.from('recibos-caja')
+    .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+  if (error) throw new ReciboCajaError('Error al subir el PDF a storage', error);
+  return { pdfBuffer, storagePath };
+}
+
+// ── Flujo automático: registrar pago de gastos de una cotización ────────────
 
 export async function registrarPagoGastos(input: RegistrarPagoGastosInput): Promise<ReciboCajaConRelaciones> {
-  // 1. Validaciones básicas
-  if (!input.cotizacion_id) {
-    throw new ReciboCajaError('cotizacion_id es requerido');
-  }
-  if (!input.monto || input.monto <= 0) {
-    throw new ReciboCajaError('El monto debe ser mayor a 0');
-  }
+  if (!input.cotizacion_id) throw new ReciboCajaError('cotizacion_id es requerido');
+  if (!input.monto || input.monto <= 0) throw new ReciboCajaError('El monto debe ser mayor a 0');
 
-  // 2. Fetch cotización + cliente + expediente
+  // Fetch cotización + cliente + expediente
   const { data: cot, error: cotErr } = await db()
     .from('cotizaciones')
     .select(`
       id, numero, monto_gastos, expediente_id, cliente_id,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, dpi, direccion, email),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit, dpi, direccion, email, emails_cc_recibos),
       expediente:expedientes!expediente_id (id, numero)
     `)
     .eq('id', input.cotizacion_id)
@@ -144,29 +176,27 @@ export async function registrarPagoGastos(input: RegistrarPagoGastosInput): Prom
     );
   }
 
-  // 3. Asegurar que no existe recibo previo para esta cotización
   const existente = await obtenerReciboPorCotizacion(input.cotizacion_id);
   if (existente) {
     throw new ReciboCajaError(`Ya existe el recibo ${existente.numero} para esta cotización`);
   }
 
-  // 4. Generar correlativos atómicos (RC + PAG) en paralelo
+  // Correlativos atómicos
   const [rcRes, pagRes] = await Promise.all([
     db().schema('public').rpc('next_sequence', { p_tipo: 'RC' }) as any,
     db().schema('public').rpc('next_sequence', { p_tipo: 'PAG' }) as any,
   ]);
-  if (rcRes.error) throw new ReciboCajaError('Error al generar correlativo RC', rcRes.error);
+  if (rcRes.error)  throw new ReciboCajaError('Error al generar correlativo RC', rcRes.error);
   if (pagRes.error) throw new ReciboCajaError('Error al generar correlativo PAG', pagRes.error);
   const numeroRecibo = rcRes.data as string;
   const numeroPago = pagRes.data as string;
 
-  // 5. Insertar pago (estado=confirmado directamente; tipo gastos_tramite)
   const fechaPago = input.fecha_pago ?? new Date().toISOString().split('T')[0];
   const { data: pago, error: pagoErr } = await db()
     .from('pagos')
     .insert({
       numero: numeroPago,
-      factura_id: null,                        // no aplica para gastos
+      factura_id: null,
       cotizacion_id: input.cotizacion_id,
       cliente_id: cliente.id,
       fecha_pago: fechaPago,
@@ -184,46 +214,27 @@ export async function registrarPagoGastos(input: RegistrarPagoGastosInput): Prom
 
   if (pagoErr || !pago) throw new ReciboCajaError('Error al registrar el pago', pagoErr);
 
-  // 6. Generar PDF
   const concepto = expediente?.numero
     ? `Gastos de trámite — ${expediente.numero}`
     : `Gastos de trámite — Cotización ${cot.numero}`;
   const fechaEmisionISO = new Date().toISOString();
 
-  let pdfBuffer: Buffer;
+  let pdfData: { pdfBuffer: Buffer; storagePath: string };
   try {
-    pdfBuffer = await generarPDFReciboCaja({
+    pdfData = await generarYSubirPDF({
       numero: numeroRecibo,
       fechaEmision: fechaEmisionISO,
       monto: input.monto,
       concepto,
-      cliente: {
-        nombre: cliente.nombre,
-        nit: cliente.nit,
-        dpi: cliente.dpi,
-        direccion: cliente.direccion,
-      },
+      cliente: { nombre: cliente.nombre, nit: cliente.nit, dpi: cliente.dpi, direccion: cliente.direccion },
       cotizacionNumero: cot.numero,
       expedienteNumero: expediente?.numero ?? null,
     });
   } catch (err) {
     await rollbackPago(pago.id);
-    throw new ReciboCajaError('Error al generar el PDF del recibo', err);
+    throw err;
   }
 
-  // 7. Upload PDF a bucket
-  const year = new Date().getFullYear();
-  const storagePath = `${year}/${numeroRecibo}.pdf`;
-  const { error: upErr } = await db()
-    .storage.from('recibos-caja')
-    .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
-
-  if (upErr) {
-    await rollbackPago(pago.id);
-    throw new ReciboCajaError('Error al subir el PDF a storage', upErr);
-  }
-
-  // 8. Insertar registro en recibos_caja
   const { data: recibo, error: recErr } = await db()
     .from('recibos_caja')
     .insert({
@@ -231,10 +242,11 @@ export async function registrarPagoGastos(input: RegistrarPagoGastosInput): Prom
       cotizacion_id: input.cotizacion_id,
       cliente_id: cliente.id,
       pago_id: pago.id,
+      origen: 'automatico',
       monto: input.monto,
       fecha_emision: fechaEmisionISO,
       concepto,
-      pdf_url: storagePath,
+      pdf_url: pdfData.storagePath,
       notas: input.notas ?? null,
     })
     .select('id')
@@ -242,20 +254,26 @@ export async function registrarPagoGastos(input: RegistrarPagoGastosInput): Prom
 
   if (recErr || !recibo) {
     await Promise.allSettled([
-      db().storage.from('recibos-caja').remove([storagePath]),
+      db().storage.from('recibos-caja').remove([pdfData.storagePath]),
       rollbackPago(pago.id),
     ]);
     throw new ReciboCajaError('Error al registrar el recibo', recErr);
   }
 
-  // 9. Email (best-effort: el recibo ya está creado, no se rompe el flujo)
-  await intentarEnviarEmail(recibo.id, {
-    destinatarioEmail: cliente.email ?? null,
-    clienteNombre: cliente.nombre,
-    numero: numeroRecibo,
-    monto: input.monto,
-    concepto,
-    pdfBuffer,
+  // Email automático: incluye CC fijos del cliente
+  const ccDefault = normalizarEmails(cliente.emails_cc_recibos ?? []);
+  await enviarEmailRecibo({
+    reciboId: recibo.id,
+    to: cliente.email ?? '',
+    cc: ccDefault,
+    pdfBuffer: pdfData.pdfBuffer,
+    snapshot: {
+      numero: numeroRecibo,
+      clienteNombre: cliente.nombre,
+      monto: input.monto,
+      concepto,
+    },
+    enviadoPor: null,    // emisión automática del sistema
   });
 
   return obtenerRecibo(recibo.id);
@@ -269,61 +287,294 @@ async function rollbackPago(pagoId: string): Promise<void> {
   }
 }
 
-// ── Email (envío + reintento) ───────────────────────────────────────────────
+// ── Flujo manual: crear recibo suelto (sin pago, sin email) ─────────────────
 
-interface IntentoEmailParams {
-  destinatarioEmail: string | null;
-  clienteNombre: string;
-  numero: string;
-  monto: number;
-  concepto: string;
-  pdfBuffer: Buffer;
+export async function crearReciboManual(
+  input: CrearReciboManualInput,
+  createdBy?: { id?: string | null; email?: string | null } | null,
+): Promise<ReciboCajaConRelaciones> {
+  if (!input.cliente_id) throw new ReciboCajaError('cliente_id es requerido');
+  if (!input.monto || input.monto <= 0) throw new ReciboCajaError('El monto debe ser mayor a 0');
+  if (!input.concepto?.trim()) throw new ReciboCajaError('El concepto es requerido');
+
+  // Fecha: default hoy. Validar que no sea muy en el futuro.
+  const fechaEmisionISO = input.fecha_emision
+    ? new Date(input.fecha_emision).toISOString()
+    : new Date().toISOString();
+  const limiteFuturo = Date.now() + 30 * 24 * 60 * 60 * 1000; // +30 días
+  if (new Date(fechaEmisionISO).getTime() > limiteFuturo) {
+    throw new ReciboCajaError('La fecha de emisión no puede ser más de 30 días en el futuro');
+  }
+
+  // Validar cliente
+  const { data: cliente, error: cliErr } = await db()
+    .from('clientes')
+    .select('id, codigo, nombre, nit, dpi, direccion, email, emails_cc_recibos, estado')
+    .eq('id', input.cliente_id)
+    .single();
+  if (cliErr || !cliente) throw new ReciboCajaError('Cliente no encontrado', cliErr);
+  if ((cliente as any).estado === 'inactivo') {
+    throw new ReciboCajaError('El cliente está inactivo');
+  }
+
+  // Validar cotización (si se pasa)
+  let cotizacion: { id: string; numero: string; expediente_id: string | null } | null = null;
+  if (input.cotizacion_id) {
+    const { data: cot, error: cotErr } = await db()
+      .from('cotizaciones')
+      .select('id, numero, cliente_id, expediente_id')
+      .eq('id', input.cotizacion_id)
+      .single();
+    if (cotErr || !cot) throw new ReciboCajaError('Cotización no encontrada', cotErr);
+    if (cot.cliente_id !== input.cliente_id) {
+      throw new ReciboCajaError('La cotización no pertenece al cliente seleccionado');
+    }
+    cotizacion = { id: cot.id, numero: cot.numero, expediente_id: cot.expediente_id };
+  }
+
+  // Correlativo RC
+  const rcRes = await db().schema('public').rpc('next_sequence', { p_tipo: 'RC' }) as any;
+  if (rcRes.error) throw new ReciboCajaError('Error al generar correlativo RC', rcRes.error);
+  const numeroRecibo = rcRes.data as string;
+
+  // PDF
+  let expedienteNumero: string | null = null;
+  if (cotizacion?.expediente_id) {
+    const { data: exp } = await db()
+      .from('expedientes')
+      .select('numero')
+      .eq('id', cotizacion.expediente_id)
+      .maybeSingle();
+    expedienteNumero = exp?.numero ?? null;
+  }
+
+  const pdfData = await generarYSubirPDF({
+    numero: numeroRecibo,
+    fechaEmision: fechaEmisionISO,
+    monto: input.monto,
+    concepto: input.concepto.trim(),
+    cliente: { nombre: cliente.nombre, nit: cliente.nit, dpi: cliente.dpi, direccion: cliente.direccion },
+    cotizacionNumero: cotizacion?.numero ?? null,
+    expedienteNumero,
+  });
+
+  const { data: recibo, error: recErr } = await db()
+    .from('recibos_caja')
+    .insert({
+      numero: numeroRecibo,
+      cotizacion_id: cotizacion?.id ?? null,
+      cliente_id: cliente.id,
+      pago_id: null,
+      origen: 'manual',
+      monto: input.monto,
+      fecha_emision: fechaEmisionISO,
+      concepto: input.concepto.trim(),
+      pdf_url: pdfData.storagePath,
+      notas: input.notas ?? null,
+      created_by: createdBy?.id ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (recErr || !recibo) {
+    await db().storage.from('recibos-caja').remove([pdfData.storagePath]).catch(() => {});
+    throw new ReciboCajaError('Error al registrar el recibo manual', recErr);
+  }
+
+  return obtenerRecibo(recibo.id);
 }
 
-async function intentarEnviarEmail(reciboId: string, params: IntentoEmailParams): Promise<void> {
-  if (!params.destinatarioEmail) {
+// ── Vincular / desvincular cotización ───────────────────────────────────────
+
+export async function vincularCotizacion(reciboId: string, cotizacionId: string | null): Promise<ReciboCajaConRelaciones> {
+  const recibo = await obtenerRecibo(reciboId);
+
+  if (cotizacionId) {
+    const { data: cot, error } = await db()
+      .from('cotizaciones')
+      .select('id, cliente_id, numero')
+      .eq('id', cotizacionId)
+      .single();
+    if (error || !cot) throw new ReciboCajaError('Cotización no encontrada', error);
+    if (cot.cliente_id !== recibo.cliente_id) {
+      throw new ReciboCajaError('La cotización no pertenece al cliente del recibo');
+    }
+  }
+
+  const { error } = await db()
+    .from('recibos_caja')
+    .update({ cotizacion_id: cotizacionId, updated_at: new Date().toISOString() })
+    .eq('id', reciboId);
+  if (error) throw new ReciboCajaError('Error al vincular cotización', error);
+
+  return obtenerRecibo(reciboId);
+}
+
+// ── Regenerar PDF (útil tras cambiar branding/datos del emisor) ─────────────
+
+export async function regenerarPDF(reciboId: string): Promise<{ pdf_url: string }> {
+  const recibo = await obtenerRecibo(reciboId);
+  const cliente = recibo.cliente as any;
+
+  // Datos extra: cliente completo + expediente si hay cotización
+  const { data: cliFull } = await db()
+    .from('clientes').select('nombre, nit, dpi, direccion').eq('id', recibo.cliente_id).single();
+
+  let expedienteNumero: string | null = null;
+  if (recibo.cotizacion_id) {
+    const { data: cot } = await db()
+      .from('cotizaciones').select('expediente_id, numero').eq('id', recibo.cotizacion_id).single();
+    if (cot?.expediente_id) {
+      const { data: exp } = await db().from('expedientes').select('numero').eq('id', cot.expediente_id).maybeSingle();
+      expedienteNumero = exp?.numero ?? null;
+    }
+  }
+
+  const { storagePath } = await generarYSubirPDF({
+    numero: recibo.numero,
+    fechaEmision: recibo.fecha_emision,
+    monto: Number(recibo.monto),
+    concepto: recibo.concepto,
+    cliente: {
+      nombre: cliFull?.nombre ?? cliente.nombre,
+      nit:    cliFull?.nit    ?? cliente.nit,
+      dpi:    cliFull?.dpi,
+      direccion: cliFull?.direccion,
+    },
+    cotizacionNumero: recibo.cotizacion?.numero ?? null,
+    expedienteNumero,
+  });
+
+  // El storagePath debería ser igual al previo (mismo numero+año). Aún así, persiste.
+  if (storagePath !== recibo.pdf_url) {
     await db()
       .from('recibos_caja')
-      .update({
-        email_error: 'El cliente no tiene email registrado',
-        updated_at: new Date().toISOString(),
-      })
+      .update({ pdf_url: storagePath, updated_at: new Date().toISOString() })
       .eq('id', reciboId);
+  }
+
+  return { pdf_url: storagePath };
+}
+
+// ── Envío de email (núcleo unificado: auto + manual + reintento) ────────────
+
+interface EnviarEmailParams {
+  reciboId: string;
+  to: string;
+  cc?: string[];
+  asunto?: string;
+  cuerpoHtml?: string;
+  /** Si se pasa, se usa para el body por defecto y para asunto */
+  snapshot?: { numero: string; clienteNombre: string; monto: number; concepto: string };
+  /** Buffer del PDF; si no se pasa, se descarga del bucket */
+  pdfBuffer?: Buffer;
+  /** Email del admin que disparó el envío (para audit). null = sistema/auto */
+  enviadoPor: string | null;
+}
+
+export async function enviarEmailRecibo(params: EnviarEmailParams): Promise<void> {
+  const recibo = await obtenerRecibo(params.reciboId);
+
+  // Si no llegó snapshot, lo armamos del recibo
+  const snap = params.snapshot ?? {
+    numero: recibo.numero,
+    clienteNombre: recibo.cliente.nombre,
+    monto: Number(recibo.monto),
+    concepto: recibo.concepto,
+  };
+
+  const to = (params.to ?? '').trim();
+  const ccList = normalizarEmails(params.cc ?? []);
+  const asunto = (params.asunto?.trim() || `Recibo de Caja ${snap.numero} — ${EMISOR.nombreComercial} ${EMISOR.profesionalCorto}`);
+  const cuerpoHtml = params.cuerpoHtml?.trim() || emailWrapper(buildCuerpoHtmlDefault(snap));
+
+  // Descargar PDF si no se pasó (caso reintento o envío desde detalle)
+  let pdfBuffer = params.pdfBuffer;
+  if (!pdfBuffer) {
+    if (!recibo.pdf_url) throw new ReciboCajaError('El recibo no tiene PDF en storage');
+    const { data: blob, error } = await db().storage.from('recibos-caja').download(recibo.pdf_url);
+    if (error || !blob) throw new ReciboCajaError('No se pudo descargar el PDF', error);
+    pdfBuffer = Buffer.from(await blob.arrayBuffer());
+  }
+
+  // Validaciones
+  if (!to) {
+    await registrarEnvio(params.reciboId, {
+      to: '', cc: ccList, asunto,
+      enviadoPor: params.enviadoPor, exito: false,
+      error: 'Sin destinatario (cliente sin email)',
+    });
+    await db().from('recibos_caja').update({
+      email_error: 'El cliente no tiene email registrado',
+      updated_at: new Date().toISOString(),
+    }).eq('id', params.reciboId);
     return;
+  }
+  if (!isValidEmail(to)) {
+    throw new ReciboCajaError(`Email destinatario inválido: ${to}`);
   }
 
   try {
     await enviarComprobantePorEmail({
       tipo: 'recibo_caja',
-      destinatario: params.destinatarioEmail,
-      asunto: `Recibo de Caja ${params.numero} — Gastos de trámite`,
-      cuerpoHtml: emailWrapper(buildCuerpoHtml(params)),
-      pdfBuffer: params.pdfBuffer,
-      nombreArchivo: `${params.numero}.pdf`,
+      destinatario: to,
+      cc: ccList,
+      asunto,
+      cuerpoHtml,
+      pdfBuffer,
+      nombreArchivo: `${snap.numero}.pdf`,
     });
 
-    await db()
-      .from('recibos_caja')
-      .update({
-        email_enviado_at: new Date().toISOString(),
-        email_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', reciboId);
+    await registrarEnvio(params.reciboId, {
+      to, cc: ccList, asunto,
+      enviadoPor: params.enviadoPor, exito: true, error: null,
+    });
+
+    await db().from('recibos_caja').update({
+      email_enviado_at: new Date().toISOString(),
+      email_error: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', params.reciboId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[recibos-caja] Error al enviar email para recibo', reciboId, msg);
-    await db()
-      .from('recibos_caja')
-      .update({
-        email_error: msg.slice(0, 500),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', reciboId);
+    console.error('[recibos-caja] Error al enviar email para recibo', params.reciboId, msg);
+
+    await registrarEnvio(params.reciboId, {
+      to, cc: ccList, asunto,
+      enviadoPor: params.enviadoPor, exito: false, error: msg.slice(0, 1000),
+    });
+
+    await db().from('recibos_caja').update({
+      email_error: msg.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    }).eq('id', params.reciboId);
   }
 }
 
-function buildCuerpoHtml(p: { clienteNombre: string; numero: string; monto: number; concepto: string }): string {
+interface RegistrarEnvioParams {
+  to: string;
+  cc: string[];
+  asunto: string;
+  enviadoPor: string | null;
+  exito: boolean;
+  error: string | null;
+}
+
+async function registrarEnvio(reciboId: string, p: RegistrarEnvioParams): Promise<void> {
+  await db().from('recibos_caja_envios').insert({
+    recibo_id:     reciboId,
+    enviado_a:     p.to,
+    cc:            p.cc,
+    enviado_por:   p.enviadoPor,
+    asunto:        p.asunto,
+    exito:         p.exito,
+    error_mensaje: p.error,
+  });
+}
+
+// ── Default body / helpers HTML ─────────────────────────────────────────────
+
+function buildCuerpoHtmlDefault(p: { clienteNombre: string; numero: string; monto: number; concepto: string }): string {
   const montoStr = `Q ${p.monto.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return `
     <h2 style="margin:0 0 16px;color:#0F172A;font-size:20px;">Recibo de Caja ${p.numero}</h2>
@@ -331,8 +582,7 @@ function buildCuerpoHtml(p: { clienteNombre: string; numero: string; monto: numb
       Estimado/a <strong>${escapeHtml(p.clienteNombre)}</strong>,
     </p>
     <p style="margin:0 0 12px;color:#334155;font-size:14px;line-height:1.6;">
-      Le agradecemos el pago de los gastos del trámite. Adjunto encontrará el
-      Recibo de Caja correspondiente:
+      Adjunto encontrará el Recibo de Caja correspondiente:
     </p>
     <table cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse;width:100%;">
       <tr>
@@ -345,14 +595,22 @@ function buildCuerpoHtml(p: { clienteNombre: string; numero: string; monto: numb
       </tr>
     </table>
     <p style="margin:16px 0;color:#64748B;font-size:12px;line-height:1.6;">
-      Recordatorio: este Recibo de Caja respalda el pago de gastos del trámite
-      y NO sustituye a la factura fiscal de honorarios profesionales.
+      Recordatorio: este Recibo de Caja es un comprobante NO fiscal y no sustituye
+      a la factura fiscal de honorarios profesionales.
     </p>
     <p style="margin:24px 0 0;color:#334155;font-size:13px;">
       Saludos cordiales,<br>
       <strong>${escapeHtml(EMISOR.profesional)}</strong>
     </p>
   `;
+}
+
+/**
+ * Plantilla HTML por defecto para el cuerpo del email del recibo.
+ * Exportada para que la UI pueda pre-rellenar el modal de envío.
+ */
+export function plantillaCuerpoEmailRecibo(p: { clienteNombre: string; numero: string; monto: number; concepto: string }): string {
+  return buildCuerpoHtmlDefault(p);
 }
 
 function escapeHtml(s: string): string {
@@ -364,31 +622,16 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-// ── Reenvío manual desde la UI ──────────────────────────────────────────────
+// ── Reenvío rápido (sin args; usa defaults) — wrapper de compat ─────────────
 
-export async function reenviarEmailRecibo(reciboId: string): Promise<void> {
+export async function reenviarEmailRecibo(reciboId: string, enviadoPor: string | null = null): Promise<void> {
   const recibo = await obtenerRecibo(reciboId);
-  if (!recibo.pdf_url) {
-    throw new ReciboCajaError('El recibo no tiene PDF en storage');
-  }
-
-  const { data: pdfBlob, error: dlErr } = await db()
-    .storage.from('recibos-caja')
-    .download(recibo.pdf_url);
-
-  if (dlErr || !pdfBlob) {
-    throw new ReciboCajaError('No se pudo descargar el PDF del recibo', dlErr);
-  }
-
-  const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
-
-  await intentarEnviarEmail(recibo.id, {
-    destinatarioEmail: recibo.cliente.email ?? null,
-    clienteNombre: recibo.cliente.nombre,
-    numero: recibo.numero,
-    monto: Number(recibo.monto),
-    concepto: recibo.concepto,
-    pdfBuffer,
+  const ccDefault = normalizarEmails(recibo.cliente.emails_cc_recibos ?? []);
+  await enviarEmailRecibo({
+    reciboId,
+    to: recibo.cliente.email ?? '',
+    cc: ccDefault,
+    enviadoPor,
   });
 }
 
