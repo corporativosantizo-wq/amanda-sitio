@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       concepto:      String(body.concepto ?? ''),
       fecha_emision: body.fecha_emision ?? undefined,
       notas:         body.notas ?? null,
-    }, { id: session.userId, email: session.email });
+    });
 
     return NextResponse.json(recibo, { status: 201 });
   } catch (error) {
@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       const status = error.message.includes('no encontrad') ? 404 : 400;
       return NextResponse.json({ error: error.message, details: error.details }, { status });
     }
+    console.error('[recibos-caja/POST] Error inesperado', error);
     return handleApiError(error, 'recibos-caja/POST');
   }
 }

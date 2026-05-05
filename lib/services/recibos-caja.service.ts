@@ -34,9 +34,22 @@ const db = () => createAdminClient();
 export class ReciboCajaError extends Error {
   details?: unknown;
   constructor(message: string, details?: unknown) {
-    super(message);
+    // Si llega un error de Supabase/PG con .message, lo apendamos para que sea
+    // visible al usuario (en lugar de mostrar un mensaje genérico).
+    let fullMessage = message;
+    if (details && typeof details === 'object') {
+      const d = details as { message?: string; code?: string; hint?: string; details?: string };
+      const parts: string[] = [];
+      if (d.message) parts.push(d.message);
+      if (d.code)    parts.push(`[${d.code}]`);
+      if (d.hint)    parts.push(d.hint);
+      if (parts.length > 0) fullMessage = `${message}: ${parts.join(' ')}`;
+    }
+    super(fullMessage);
     this.name = 'ReciboCajaError';
     this.details = details;
+    // Log para debugging en server logs (Vercel etc.)
+    console.error(`[ReciboCajaError] ${fullMessage}`, details ?? '');
   }
 }
 
@@ -291,7 +304,11 @@ async function rollbackPago(pagoId: string): Promise<void> {
 
 export async function crearReciboManual(
   input: CrearReciboManualInput,
-  createdBy?: { id?: string | null; email?: string | null } | null,
+  // El parámetro queda para compat futura; hoy NO se persiste created_by porque
+  // el `id` que retorna requireAdmin() es un Clerk userId (string) y la columna
+  // es UUID. El audit log captura quién hizo el INSERT vía session_user.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _createdBy?: { id?: string | null; email?: string | null } | null,
 ): Promise<ReciboCajaConRelaciones> {
   if (!input.cliente_id) throw new ReciboCajaError('cliente_id es requerido');
   if (!input.monto || input.monto <= 0) throw new ReciboCajaError('El monto debe ser mayor a 0');
@@ -371,12 +388,14 @@ export async function crearReciboManual(
       concepto: input.concepto.trim(),
       pdf_url: pdfData.storagePath,
       notas: input.notas ?? null,
-      created_by: createdBy?.id ?? null,
     })
     .select('id')
     .single();
 
   if (recErr || !recibo) {
+    console.error('[crearReciboManual] Falló INSERT recibos_caja', {
+      numero: numeroRecibo, cliente_id: cliente.id, error: recErr,
+    });
     await db().storage.from('recibos-caja').remove([pdfData.storagePath]).catch(() => {});
     throw new ReciboCajaError('Error al registrar el recibo manual', recErr);
   }
