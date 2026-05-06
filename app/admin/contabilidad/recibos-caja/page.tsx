@@ -62,7 +62,12 @@ export default function RecibosCajaListPage() {
     <div className="space-y-5">
       <PageHeader
         title="Recibos de Caja"
-        description={`${data?.total ?? 0} recibos · gastos del trámite (comprobante NO fiscal)`}
+        description={`${data?.total ?? 0} recibos · comprobante NO fiscal`}
+        action={{
+          label: 'Nuevo Recibo de Caja',
+          icon: '+',
+          onClick: () => router.push('/admin/contabilidad/recibos-caja/nuevo'),
+        }}
       />
 
       {/* Filtros */}
