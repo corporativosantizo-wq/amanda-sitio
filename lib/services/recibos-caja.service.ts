@@ -23,6 +23,7 @@ import {
   type ReciboCaja,
   type ReciboCajaConRelaciones,
   type RegistrarPagoGastosInput,
+  type CrearReciboManualInput,
 } from '@/lib/types';
 import { EMISOR } from '@/lib/config/emisor';
 
@@ -31,9 +32,21 @@ const db = () => createAdminClient();
 export class ReciboCajaError extends Error {
   details?: unknown;
   constructor(message: string, details?: unknown) {
-    super(message);
+    // Apenda mensaje + code + hint del error de Supabase/PG si vienen, para que
+    // el banner del form no muestre un mensaje genérico sino el detalle real.
+    let fullMessage = message;
+    if (details && typeof details === 'object') {
+      const d = details as { message?: string; code?: string; hint?: string };
+      const parts: string[] = [];
+      if (d.message) parts.push(d.message);
+      if (d.code)    parts.push(`[${d.code}]`);
+      if (d.hint)    parts.push(d.hint);
+      if (parts.length > 0) fullMessage = `${message}: ${parts.join(' ')}`;
+    }
+    super(fullMessage);
     this.name = 'ReciboCajaError';
     this.details = details;
+    console.error(`[ReciboCajaError] ${fullMessage}`, details ?? '');
   }
 }
 
@@ -267,6 +280,141 @@ async function rollbackPago(pagoId: string): Promise<void> {
   } catch (e) {
     console.error('[recibos-caja] No se pudo rollback el pago', pagoId, e);
   }
+}
+
+// ── Flujo manual: crear recibo suelto (sin pago, sin email) ─────────────────
+//
+// Diseño minimal post-rollback: sólo valida + genera correlativo + PDF +
+// upload + INSERT. NO envía email ni registra historial. Si falla cualquier
+// paso, intenta limpiar el storage. NO setea created_by (Clerk userId no es
+// UUID; trazabilidad va por audit log).
+
+export async function crearReciboManual(
+  input: CrearReciboManualInput,
+): Promise<ReciboCajaConRelaciones> {
+  // 1. Validaciones de input
+  if (!input.cliente_id) throw new ReciboCajaError('cliente_id es requerido');
+  if (!input.monto || input.monto <= 0) throw new ReciboCajaError('El monto debe ser mayor a 0');
+  if (!input.concepto?.trim()) throw new ReciboCajaError('El concepto es requerido');
+
+  const fechaEmisionISO = input.fecha_emision
+    ? new Date(input.fecha_emision).toISOString()
+    : new Date().toISOString();
+  const limiteFuturo = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  if (new Date(fechaEmisionISO).getTime() > limiteFuturo) {
+    throw new ReciboCajaError('La fecha de emisión no puede ser más de 30 días en el futuro');
+  }
+
+  // 2. Validar cliente
+  const { data: cliente, error: cliErr } = await db()
+    .from('clientes')
+    .select('id, codigo, nombre, nit, dpi, direccion, email, estado')
+    .eq('id', input.cliente_id)
+    .single();
+  if (cliErr || !cliente) {
+    console.error('[crearReciboManual] cliente no encontrado', { cliente_id: input.cliente_id, error: cliErr });
+    throw new ReciboCajaError('Cliente no encontrado', cliErr);
+  }
+  if ((cliente as any).estado === 'inactivo') {
+    throw new ReciboCajaError('El cliente está inactivo');
+  }
+
+  // 3. Validar cotización (si se pasó) y que pertenezca al cliente
+  let cotizacion: { id: string; numero: string; expediente_id: string | null } | null = null;
+  if (input.cotizacion_id) {
+    const { data: cot, error: cotErr } = await db()
+      .from('cotizaciones')
+      .select('id, numero, cliente_id, expediente_id')
+      .eq('id', input.cotizacion_id)
+      .single();
+    if (cotErr || !cot) {
+      throw new ReciboCajaError('Cotización no encontrada', cotErr);
+    }
+    if (cot.cliente_id !== input.cliente_id) {
+      throw new ReciboCajaError('La cotización no pertenece al cliente seleccionado');
+    }
+    cotizacion = { id: cot.id, numero: cot.numero, expediente_id: cot.expediente_id };
+  }
+
+  // 4. Correlativo RC atómico
+  const rcRes = await db().schema('public').rpc('next_sequence', { p_tipo: 'RC' }) as any;
+  if (rcRes.error) {
+    console.error('[crearReciboManual] next_sequence(RC) falló', rcRes.error);
+    throw new ReciboCajaError('Error al generar correlativo RC', rcRes.error);
+  }
+  const numeroRecibo = rcRes.data as string;
+
+  // 5. Expediente para el concepto del PDF
+  let expedienteNumero: string | null = null;
+  if (cotizacion?.expediente_id) {
+    const { data: exp } = await db()
+      .from('expedientes')
+      .select('numero')
+      .eq('id', cotizacion.expediente_id)
+      .maybeSingle();
+    expedienteNumero = exp?.numero ?? null;
+  }
+
+  // 6. Generar PDF
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await generarPDFReciboCaja({
+      numero: numeroRecibo,
+      fechaEmision: fechaEmisionISO,
+      monto: input.monto,
+      concepto: input.concepto.trim(),
+      cliente: {
+        nombre: (cliente as any).nombre,
+        nit: (cliente as any).nit,
+        dpi: (cliente as any).dpi,
+        direccion: (cliente as any).direccion,
+      },
+      cotizacionNumero: cotizacion?.numero ?? null,
+      expedienteNumero,
+    });
+  } catch (err) {
+    console.error('[crearReciboManual] generarPDFReciboCaja falló', err);
+    throw new ReciboCajaError('Error al generar el PDF del recibo', err);
+  }
+
+  // 7. Upload PDF
+  const year = new Date(fechaEmisionISO).getFullYear();
+  const storagePath = `${year}/${numeroRecibo}.pdf`;
+  const { error: upErr } = await db()
+    .storage.from('recibos-caja')
+    .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+  if (upErr) {
+    console.error('[crearReciboManual] storage upload falló', upErr);
+    throw new ReciboCajaError('Error al subir el PDF a storage', upErr);
+  }
+
+  // 8. INSERT recibos_caja (origen=manual; SIN created_by)
+  const { data: recibo, error: recErr } = await db()
+    .from('recibos_caja')
+    .insert({
+      numero: numeroRecibo,
+      cotizacion_id: cotizacion?.id ?? null,
+      cliente_id: (cliente as any).id,
+      pago_id: null,
+      origen: 'manual',
+      monto: input.monto,
+      fecha_emision: fechaEmisionISO,
+      concepto: input.concepto.trim(),
+      pdf_url: storagePath,
+      notas: input.notas ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (recErr || !recibo) {
+    console.error('[crearReciboManual] INSERT recibos_caja falló', {
+      numero: numeroRecibo, cliente_id: (cliente as any).id, error: recErr,
+    });
+    await db().storage.from('recibos-caja').remove([storagePath]).catch(() => {});
+    throw new ReciboCajaError('Error al registrar el recibo manual', recErr);
+  }
+
+  return obtenerRecibo(recibo.id);
 }
 
 // ── Email (envío + reintento) ───────────────────────────────────────────────

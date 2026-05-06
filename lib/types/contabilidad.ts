@@ -298,18 +298,21 @@ export interface GastoConCategoria extends Gasto {
   categoria: CategoriaGasto;
 }
 
-// --- Recibos de Caja (gastos de trámite) ---
+// --- Recibos de Caja (gastos de trámite + manuales) ---
+
+export type OrigenReciboCaja = 'automatico' | 'manual';
 
 export interface ReciboCaja {
   id: string;
-  numero: string;                  // 'RC-0001'
-  cotizacion_id: string;
+  numero: string;                       // 'RC-0001'
+  cotizacion_id: string | null;         // nullable para recibos manuales
   cliente_id: string;
-  pago_id: string;
+  pago_id: string | null;               // nullable para recibos manuales
+  origen: OrigenReciboCaja;
   monto: number;
-  fecha_emision: string;           // ISO timestamptz
+  fecha_emision: string;                // ISO timestamptz
   concepto: string;
-  pdf_url: string | null;          // path en bucket recibos-caja
+  pdf_url: string | null;
   email_enviado_at: string | null;
   email_error: string | null;
   notas: string | null;
@@ -329,6 +332,15 @@ export interface RegistrarPagoGastosInput {
   fecha_pago?: string;             // YYYY-MM-DD; default hoy
   metodo?: string;                 // transferencia, efectivo, etc.
   referencia_bancaria?: string | null;
+  notas?: string | null;
+}
+
+export interface CrearReciboManualInput {
+  cliente_id: string;
+  cotizacion_id?: string | null;   // opcional
+  monto: number;
+  concepto: string;
+  fecha_emision?: string;          // ISO; default ahora
   notas?: string | null;
 }
 

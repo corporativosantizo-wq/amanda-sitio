@@ -1,10 +1,15 @@
 // ============================================================================
 // app/api/admin/contabilidad/recibos-caja/route.ts
-// GET → Lista recibos de caja con filtros (cliente, fechas, búsqueda).
+// GET  → Lista recibos de caja con filtros (cliente, fechas, búsqueda).
+// POST → Crear recibo manual (sin pago, sin email automático).
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { listarRecibos, ReciboCajaError } from '@/lib/services/recibos-caja.service';
+import {
+  listarRecibos,
+  crearReciboManual,
+  ReciboCajaError,
+} from '@/lib/services/recibos-caja.service';
 import { handleApiError } from '@/lib/api-error';
 
 export async function GET(request: NextRequest) {
@@ -28,5 +33,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message, details: error.details }, { status: 400 });
     }
     return handleApiError(error, 'recibos-caja');
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const { requireAdmin } = await import('@/lib/auth/api-auth');
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const body = await request.json();
+
+    const recibo = await crearReciboManual({
+      cliente_id:    body.cliente_id,
+      cotizacion_id: body.cotizacion_id ?? null,
+      monto:         Number(body.monto),
+      concepto:      String(body.concepto ?? ''),
+      fecha_emision: body.fecha_emision ?? undefined,
+      notas:         body.notas ?? null,
+    });
+
+    return NextResponse.json(recibo, { status: 201 });
+  } catch (error) {
+    if (error instanceof ReciboCajaError) {
+      const status = error.message.includes('no encontrad') ? 404 : 400;
+      return NextResponse.json({ error: error.message, details: error.details }, { status });
+    }
+    console.error('[recibos-caja/POST] Error inesperado', error);
+    return handleApiError(error, 'recibos-caja/POST');
   }
 }
