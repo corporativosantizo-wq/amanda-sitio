@@ -297,8 +297,11 @@ export async function crearReciboManual(
   if (!input.monto || input.monto <= 0) throw new ReciboCajaError('El monto debe ser mayor a 0');
   if (!input.concepto?.trim()) throw new ReciboCajaError('El concepto es requerido');
 
+  // La fecha del form llega como YYYY-MM-DD. Se interpreta como mediodía en
+  // Guatemala (UTC-6) para que al mostrarla en cualquier timezone GT siga
+  // siendo el mismo día. Si llega vacía, usa "ahora".
   const fechaEmisionISO = input.fecha_emision
-    ? new Date(input.fecha_emision).toISOString()
+    ? new Date(`${input.fecha_emision}T12:00:00-06:00`).toISOString()
     : new Date().toISOString();
   const limiteFuturo = Date.now() + 30 * 24 * 60 * 60 * 1000;
   if (new Date(fechaEmisionISO).getTime() > limiteFuturo) {

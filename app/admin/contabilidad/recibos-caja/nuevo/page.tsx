@@ -42,7 +42,11 @@ export default function NuevoReciboCajaPage() {
   // Form
   const [concepto, setConcepto] = useState('Gastos de trámite — ');
   const [monto, setMonto] = useState('');
-  const [fechaEmision, setFechaEmision] = useState(new Date().toISOString().split('T')[0]);
+  // Fecha de hoy en Guatemala (UTC-6), no en UTC, para que cuando son las 11pm GT
+  // del día N el picker siga mostrando N y no N+1.
+  const [fechaEmision, setFechaEmision] = useState(
+    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' })
+  );
   const [notas, setNotas] = useState('');
   const [error, setError] = useState<string | null>(null);
 

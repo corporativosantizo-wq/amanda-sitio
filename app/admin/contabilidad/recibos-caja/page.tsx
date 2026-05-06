@@ -162,9 +162,19 @@ export default function RecibosCajaListPage() {
                           onClick={() => reenviarEmail(r.id)}
                           disabled={reenviando === r.id || !r.cliente?.email}
                           className="text-[#0F172A] hover:underline font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={r.cliente?.email ? 'Reenviar email al cliente' : 'El cliente no tiene email'}
+                          title={
+                            !r.cliente?.email
+                              ? 'El cliente no tiene email'
+                              : r.email_enviado_at
+                                ? 'Reenviar email al cliente'
+                                : 'Enviar email al cliente'
+                          }
                         >
-                          {reenviando === r.id ? 'Enviando…' : 'Reenviar'}
+                          {reenviando === r.id
+                            ? 'Enviando…'
+                            : r.email_enviado_at
+                              ? 'Reenviar'
+                              : 'Enviar email'}
                         </button>
                       </div>
                     </td>
