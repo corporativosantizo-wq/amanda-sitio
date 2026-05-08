@@ -11,11 +11,18 @@ import Link from 'next/link';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import ExcelJS from 'exceljs';
 import { Section, Badge, Q, Skeleton, EmptyState } from '@/components/admin/ui';
-import { Scale, Shield, Building2, AlertTriangle, Download } from 'lucide-react';
+import {
+  Scale, Shield, Building2, AlertTriangle, Download, ChevronRight,
+  FileText, FolderOpen, FileSignature, Receipt, Mail, Phone, MapPin,
+  Pencil, Trash2, Eye, Languages, Upload as UploadIcon,
+} from 'lucide-react';
 import type { CargoRepresentante } from '@/lib/types';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
+import DocumentViewer from '@/components/admin/document-viewer';
+import { EditarDocumentoModal, type DocumentoParaEditar } from '@/components/admin/editar-documento-modal';
+import { EnviarReciboEmailModal } from '@/components/admin/enviar-recibo-email-modal';
 import {
   type OrigenExpediente,
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL, FASE_LABEL,
@@ -133,17 +140,19 @@ interface ExpedienteRow {
   plazo_proximo?: { fecha_vencimiento: string; descripcion: string; dias_restantes: number } | null;
 }
 
-type TabKey = 'datos' | 'citas' | 'expedientes' | 'mercantil' | 'laboral' | 'documentos' | 'cotizaciones' | 'pagos' | 'notas';
+type TabKey = 'resumen' | 'documentos' | 'expedientes' | 'cotizaciones' | 'recibos' | 'mercantil' | 'laboral' | 'citas' | 'pagos' | 'datos' | 'notas';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'datos', label: 'Datos generales', icon: '👤' },
-  { key: 'citas', label: 'Citas', icon: '📅' },
+  { key: 'resumen', label: 'Resumen', icon: '📊' },
+  { key: 'documentos', label: 'Documentos', icon: '📁' },
   { key: 'expedientes', label: 'Expedientes', icon: '⚖️' },
+  { key: 'cotizaciones', label: 'Cotizaciones', icon: '📋' },
+  { key: 'recibos', label: 'Recibos', icon: '🧾' },
   { key: 'mercantil', label: 'Mercantil', icon: '🏢' },
   { key: 'laboral', label: 'Laboral', icon: '👷' },
-  { key: 'documentos', label: 'Documentos', icon: '📁' },
-  { key: 'cotizaciones', label: 'Cotizaciones', icon: '📋' },
+  { key: 'citas', label: 'Citas', icon: '📅' },
   { key: 'pagos', label: 'Pagos', icon: '💰' },
+  { key: 'datos', label: 'Datos', icon: '👤' },
   { key: 'notas', label: 'Notas', icon: '📝' },
 ];
 
@@ -160,8 +169,12 @@ export default function ClienteDetallePage() {
   );
   const { mutate, loading: saving } = useMutate();
 
-  const [tab, setTab] = useState<TabKey>('datos');
+  const [tab, setTab] = useState<TabKey>('resumen');
   const [editing, setEditing] = useState(false);
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [headerForm, setHeaderForm] = useState<{ telefono: string; email: string; direccion: string }>({ telefono: '', email: '', direccion: '' });
+  const [savingHeader, setSavingHeader] = useState(false);
+  const [headerError, setHeaderError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -278,6 +291,33 @@ export default function ClienteDetallePage() {
     });
   }, [id, mutate, router]);
 
+  const startEditHeader = useCallback(() => {
+    if (!c) return;
+    setHeaderForm({
+      telefono: c.telefono ?? '',
+      email: c.email ?? '',
+      direccion: c.direccion ?? '',
+    });
+    setHeaderError(null);
+    setEditingHeader(true);
+  }, [c]);
+
+  const saveHeader = useCallback(async () => {
+    setHeaderError(null);
+    setSavingHeader(true);
+    await mutate(`/api/admin/clientes/${id}`, {
+      method: 'PATCH',
+      body: {
+        telefono: headerForm.telefono.trim() || null,
+        email: headerForm.email.trim() || null,
+        direccion: headerForm.direccion.trim() || null,
+      },
+      onSuccess: () => { setEditingHeader(false); refetch(); },
+      onError: (err) => setHeaderError(typeof err === 'string' ? err : 'Error al guardar'),
+    });
+    setSavingHeader(false);
+  }, [headerForm, id, mutate, refetch]);
+
   // ── Loading / Error ─────────────────────────────────────────────────────
 
   if (loading) return (
@@ -295,72 +335,139 @@ export default function ClienteDetallePage() {
   // ── Stats ───────────────────────────────────────────────────────────────
 
   const totalPagado = c.stats.total_pagado;
-  const saldoPendiente = (c.citas ?? [])
-    .filter((ci: CitaRow) => ci.estado !== 'cancelada')
-    .reduce((s: number, ci: CitaRow) => s + (ci.costo ?? 0), 0) - totalPagado;
 
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      {/* Header */}
-      <div>
-        <button onClick={() => router.push('/admin/clientes')}
-          className="text-sm text-slate-500 hover:text-slate-700 mb-2 inline-flex items-center gap-1">
-          ← Clientes
-        </button>
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
-              c.tipo === 'empresa' ? 'bg-blue-100' : 'bg-slate-100'
-            }`}>{c.tipo === 'empresa' ? '🏢' : '👤'}</div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">{c.nombre}</h1>
-              <p className="text-sm text-slate-500">
-                {c.codigo} · NIT: {c.nit} · {c.tipo === 'empresa' ? 'Empresa' : 'Individual'}
-                {!c.activo && <Badge variant="danger" className="ml-2">Inactivo</Badge>}
-                {c.grupo_empresarial && (
-                  <span className="ml-2 text-xs px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded-full">
-                    {c.grupo_empresarial.nombre}
-                  </span>
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-slate-500">
+        <Link href="/admin/clientes" className="hover:text-slate-900 transition-colors">Clientes</Link>
+        <ChevronRight size={14} className="text-slate-400" />
+        <span className="text-slate-900 font-medium truncate">{c.nombre}</span>
+      </nav>
+
+      {/* Header card */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+            <div className="flex items-start gap-4 min-w-0 flex-1">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0 ${
+                c.tipo === 'empresa' ? 'bg-blue-50 border border-blue-100' : 'bg-slate-50 border border-slate-100'
+              }`}>{c.tipo === 'empresa' ? '🏢' : '👤'}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <h1 className="text-xl font-bold text-slate-900">{c.nombre}</h1>
+                  {c.activo
+                    ? <Badge variant="success">Activo</Badge>
+                    : <Badge variant="danger">Inactivo</Badge>}
+                  {c.grupo_empresarial && (
+                    <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full font-medium">
+                      {c.grupo_empresarial.nombre}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                  <span className="font-mono">{c.codigo}</span>
+                  <span>·</span>
+                  <span><span className="text-slate-400">NIT:</span> <span className="font-mono">{c.nit}</span></span>
+                  <span>·</span>
+                  <span>{c.tipo === 'empresa' ? 'Empresa' : 'Individual'}</span>
+                </div>
+
+                {/* Contact info row — inline editable */}
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  {editingHeader ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5"><Phone size={12} /> Teléfono</label>
+                        <input type="tel" value={headerForm.telefono}
+                          onChange={e => setHeaderForm(p => ({ ...p, telefono: e.target.value }))}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5"><Mail size={12} /> Email</label>
+                        <input type="email" value={headerForm.email}
+                          onChange={e => setHeaderForm(p => ({ ...p, email: e.target.value }))}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5"><MapPin size={12} /> Dirección</label>
+                        <input type="text" value={headerForm.direccion}
+                          onChange={e => setHeaderForm(p => ({ ...p, direccion: e.target.value }))}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2 text-slate-600">
+                        <Phone size={14} className="mt-0.5 text-slate-400 shrink-0" />
+                        <span>{c.telefono ?? <span className="text-slate-400">—</span>}</span>
+                      </div>
+                      <div className="flex items-start gap-2 text-slate-600 min-w-0">
+                        <Mail size={14} className="mt-0.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{c.email ?? <span className="text-slate-400">—</span>}</span>
+                      </div>
+                      <div className="flex items-start gap-2 text-slate-600 min-w-0">
+                        <MapPin size={14} className="mt-0.5 text-slate-400 shrink-0" />
+                        <span className="truncate" title={c.direccion ?? ''}>{c.direccion ?? <span className="text-slate-400">—</span>}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {headerError && (
+                  <div className="mt-3 p-2 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">{headerError}</div>
                 )}
-              </p>
+              </div>
+            </div>
+
+            {/* Right column: edit + quick actions */}
+            <div className="flex flex-col gap-2 shrink-0">
+              <div className="flex flex-wrap gap-2 justify-end">
+                {editingHeader ? (
+                  <>
+                    <button onClick={() => { setEditingHeader(false); setHeaderError(null); }} disabled={savingHeader}
+                      className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50">
+                      Cancelar
+                    </button>
+                    <button onClick={saveHeader} disabled={savingHeader}
+                      className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-[#1E40AF] to-[#0891B2] rounded-lg hover:shadow-lg transition-all disabled:opacity-50">
+                      {savingHeader ? 'Guardando…' : 'Guardar'}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={startEditHeader}
+                    className="px-3 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5">
+                    <Pencil size={14} /> Editar datos
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 justify-end">
+                {c.email && (
+                  <Link href={`/admin/ai?prompt=Mándale un email a ${c.nombre}`}
+                    className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5">
+                    ✉️ Email
+                  </Link>
+                )}
+                <Link href={`/admin/calendario?accion=nueva&cliente_id=${id}`}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5">
+                  📅 Cita
+                </Link>
+                <Link href={`/admin/ai?prompt=Genera una cotización para ${c.nombre}`}
+                  className="px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all inline-flex items-center gap-1.5">
+                  + Cotización
+                </Link>
+                {c.activo && (
+                  <button onClick={() => setShowDeleteModal(true)}
+                    className="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors inline-flex items-center gap-1.5">
+                    Desactivar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-
-          {/* Quick actions */}
-          <div className="flex flex-wrap gap-2">
-            {c.email && (
-              <Link href={`/admin/ai?prompt=Mándale un email a ${c.nombre}`}
-                className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5">
-                ✉️ Enviar email
-              </Link>
-            )}
-            <Link href={`/admin/calendario?accion=nueva&cliente_id=${id}`}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5">
-              📅 Agendar cita
-            </Link>
-            <Link href={`/admin/ai?prompt=Genera una cotización para ${c.nombre}`}
-              className="px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all inline-flex items-center gap-1.5">
-              + Cotización
-            </Link>
-            {c.activo && (
-              <button onClick={() => setShowDeleteModal(true)}
-                className="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors inline-flex items-center gap-1.5">
-                Desactivar
-              </button>
-            )}
-          </div>
         </div>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Cotizaciones" value={String(c.stats.cotizaciones)} />
-        <StatCard label="Facturas" value={String(c.stats.facturas)} />
-        <StatCard label="Total pagado" value={Q(totalPagado)} accent="emerald" />
-        <StatCard label="Saldo pendiente" value={Q(Math.max(0, saldoPendiente))}
-          accent={saldoPendiente > 0 ? 'amber' : 'emerald'} />
       </div>
 
       {/* Tabs */}
@@ -393,6 +500,9 @@ export default function ClienteDetallePage() {
       </div>
 
       {/* Tab content */}
+      {tab === 'resumen' && (
+        <TabResumen c={c} clienteId={id} setTab={setTab} totalPagado={totalPagado} />
+      )}
       {tab === 'datos' && (
         <TabDatos c={c} editing={editing} form={form} set={set}
           onStartEdit={startEdit} onCancel={cancelEdit} onSave={saveEdit}
@@ -411,8 +521,9 @@ export default function ClienteDetallePage() {
       {tab === 'expedientes' && <TabExpedientes expedientes={c.expedientes ?? []} clienteId={id} clienteNombre={c.nombre} grupoEmpresas={c.grupo_empresarial?.empresas ?? null} />}
       {tab === 'mercantil' && <TabMercantil clienteId={id} />}
       {tab === 'laboral' && <TabLaboral clienteId={id} />}
-      {tab === 'documentos' && <TabDocumentos documentos={c.documentos} />}
-      {tab === 'cotizaciones' && <TabCotizaciones cotizaciones={c.cotizaciones} clienteNombre={c.nombre} />}
+      {tab === 'documentos' && <TabDocumentos clienteId={id} onRefetch={refetch} />}
+      {tab === 'cotizaciones' && <TabCotizaciones clienteId={id} clienteNombre={c.nombre} />}
+      {tab === 'recibos' && <TabRecibos clienteId={id} />}
       {tab === 'pagos' && <TabPagos pagos={c.pagos} clienteId={id} />}
       {tab === 'notas' && <TabNotas c={c} id={id} mutate={mutate} refetch={refetch} />}
 
@@ -439,6 +550,259 @@ export default function ClienteDetallePage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Tab: Resumen ────────────────────────────────────────────────────────────
+
+function TabResumen({ c, clienteId, setTab, totalPagado }: {
+  c: ClienteDetalle;
+  clienteId: string;
+  setTab: (t: TabKey) => void;
+  totalPagado: number;
+}) {
+  const router = useRouter();
+
+  // Fetch cotizaciones with monto_pagado for accurate saldo
+  const { data: cotData } = useFetch<{ data: CotizacionConPagos[]; total: number }>(
+    `/api/admin/contabilidad/cotizaciones?cliente_id=${clienteId}&limit=100`
+  );
+  const cotizaciones = cotData?.data ?? [];
+
+  const saldoCotizaciones = cotizaciones
+    .filter(co => co.estado !== 'rechazada' && co.estado !== 'vencida')
+    .reduce((s, co) => s + Math.max(0, co.total - (co.monto_pagado ?? 0)), 0);
+
+  const expedientes = c.expedientes ?? [];
+  const expedientesActivos = expedientes.filter(e => e.estado === 'activo');
+  const ultimosDocumentos = (c.documentos ?? []).slice(0, 5);
+
+  // Aggregate "última actividad": pick the most recent of doc, expediente actuación, cita, pago
+  const actividades: { fecha: string; tipo: string; descripcion: string; tab?: TabKey }[] = [];
+  for (const d of (c.documentos ?? []).slice(0, 3)) {
+    actividades.push({
+      fecha: d.created_at,
+      tipo: 'Documento',
+      descripcion: d.titulo ?? d.nombre_archivo,
+      tab: 'documentos',
+    });
+  }
+  for (const e of expedientes.slice(0, 3)) {
+    if (e.fecha_ultima_actuacion) {
+      actividades.push({
+        fecha: e.fecha_ultima_actuacion,
+        tipo: 'Expediente',
+        descripcion: getExpedienteNumero(e),
+        tab: 'expedientes',
+      });
+    }
+  }
+  for (const ci of (c.citas ?? []).slice(0, 3)) {
+    actividades.push({
+      fecha: ci.fecha,
+      tipo: 'Cita',
+      descripcion: ci.titulo,
+      tab: 'citas',
+    });
+  }
+  actividades.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const recientes = actividades.slice(0, 5);
+
+  const proximaCita = (c.citas ?? [])
+    .filter(ci => ci.estado !== 'cancelada' && ci.fecha >= new Date().toISOString().slice(0, 10))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1))[0];
+
+  // Plazos urgentes (≤ 5 días) en expedientes
+  const plazosUrgentes = expedientes
+    .filter(e => e.plazo_proximo && e.plazo_proximo.dias_restantes <= 5)
+    .sort((a, b) => (a.plazo_proximo!.dias_restantes - b.plazo_proximo!.dias_restantes));
+
+  return (
+    <div className="space-y-5">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiTile icon={<FolderOpen size={18} />} label="Documentos" value={String(c.documentos.length)}
+          onClick={() => setTab('documentos')} />
+        <KpiTile icon={<Scale size={18} />} label="Expedientes" value={`${expedientesActivos.length} / ${expedientes.length}`}
+          sub={`${expedientesActivos.length} activos`} onClick={() => setTab('expedientes')} />
+        <KpiTile icon={<FileSignature size={18} />} label="Cotizaciones" value={String(cotizaciones.length || c.stats.cotizaciones)}
+          onClick={() => setTab('cotizaciones')} />
+        <KpiTile icon={<Receipt size={18} />} label="Saldo pendiente" value={Q(saldoCotizaciones)}
+          accent={saldoCotizaciones > 0 ? 'amber' : 'emerald'} onClick={() => setTab('cotizaciones')} />
+      </div>
+
+      {/* Plazos urgentes alert */}
+      {plazosUrgentes.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-900">
+                {plazosUrgentes.length} plazo{plazosUrgentes.length > 1 ? 's' : ''} urgente{plazosUrgentes.length > 1 ? 's' : ''} (≤5 días)
+              </p>
+              <ul className="mt-2 space-y-1">
+                {plazosUrgentes.slice(0, 3).map(e => (
+                  <li key={e.id} className="text-sm text-red-800">
+                    <button onClick={() => router.push(`/admin/expedientes/${e.id}`)} className="hover:underline font-mono">
+                      {getExpedienteNumero(e)}
+                    </button>
+                    <span className="ml-2">— {e.plazo_proximo!.descripcion} ({e.plazo_proximo!.dias_restantes} día{e.plazo_proximo!.dias_restantes !== 1 ? 's' : ''})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Últimos documentos */}
+        <Section title="Últimos documentos" action={{ label: 'Ver todos', onClick: () => setTab('documentos') }} noPadding>
+          {ultimosDocumentos.length === 0 ? (
+            <p className="px-5 py-8 text-sm text-slate-400 text-center">Sin documentos</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {ultimosDocumentos.map(d => (
+                <li key={d.id} className="px-5 py-3 hover:bg-slate-50/50 transition-colors">
+                  <div className="flex items-start gap-3">
+                    <FileText size={16} className="text-slate-400 mt-1 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate" title={d.titulo ?? d.nombre_archivo}>
+                        {d.titulo ?? d.nombre_archivo}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {d.tipo ? (TIPOS_DOC[d.tipo] ?? d.tipo) : 'Sin tipo'} · {new Date(d.created_at).toLocaleDateString('es-GT')}
+                      </p>
+                    </div>
+                    <Badge variant={d.estado as any}>{d.estado}</Badge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        {/* Expedientes activos */}
+        <Section title="Expedientes activos" action={{ label: 'Ver todos', onClick: () => setTab('expedientes') }} noPadding>
+          {expedientesActivos.length === 0 ? (
+            <p className="px-5 py-8 text-sm text-slate-400 text-center">Sin expedientes activos</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {expedientesActivos.slice(0, 5).map(e => (
+                <li key={e.id} className="px-5 py-3 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/admin/expedientes/${e.id}`)}>
+                  <div className="flex items-start gap-3">
+                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg shrink-0 ${ORIGEN_COLOR[e.origen]}`}>
+                      <OrigenIcon origen={e.origen} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 font-mono truncate">{getExpedienteNumero(e)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 truncate">
+                        {TIPO_PROCESO_LABEL[e.tipo_proceso as keyof typeof TIPO_PROCESO_LABEL] ?? e.tipo_proceso}
+                        {' · '}
+                        {FASE_LABEL[e.fase_actual as keyof typeof FASE_LABEL] ?? e.fase_actual}
+                      </p>
+                    </div>
+                    {e.plazo_proximo && e.plazo_proximo.dias_restantes <= 5 && (
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                        e.plazo_proximo.dias_restantes <= 2 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        <AlertTriangle size={12} />
+                        {e.plazo_proximo.dias_restantes}d
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        {/* Última actividad */}
+        <Section title="Actividad reciente" noPadding>
+          {recientes.length === 0 ? (
+            <p className="px-5 py-8 text-sm text-slate-400 text-center">Sin actividad reciente</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recientes.map((a, i) => (
+                <li key={i} className="px-5 py-3 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                  onClick={() => a.tab && setTab(a.tab)}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium shrink-0">
+                      {a.tipo}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-900 truncate">{a.descripcion}</p>
+                    </div>
+                    <span className="text-xs text-slate-400 shrink-0">
+                      {new Date(a.fecha).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        {/* Próxima cita / saldo info */}
+        <Section title="Información rápida" noPadding>
+          <div className="divide-y divide-slate-100">
+            <div className="px-5 py-3">
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Próxima cita</p>
+              {proximaCita ? (
+                <button onClick={() => setTab('citas')} className="text-sm text-slate-900 hover:text-[#0891B2] text-left">
+                  <span className="font-medium">{proximaCita.titulo}</span>
+                  <span className="text-slate-500"> · {proximaCita.fecha} {proximaCita.hora_inicio}</span>
+                </button>
+              ) : (
+                <Link href={`/admin/calendario?accion=nueva&cliente_id=${clienteId}`} className="text-sm text-[#0891B2] hover:underline">
+                  + Agendar cita
+                </Link>
+              )}
+            </div>
+            <div className="px-5 py-3">
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total pagado</p>
+              <p className="text-sm font-semibold text-emerald-700">{Q(totalPagado)}</p>
+            </div>
+            {c.grupo_empresarial && (
+              <div className="px-5 py-3">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Grupo empresarial</p>
+                <p className="text-sm font-medium text-slate-900">{c.grupo_empresarial.nombre}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{c.grupo_empresarial.empresas.length} empresas</p>
+              </div>
+            )}
+            {c.notas && (
+              <div className="px-5 py-3">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Notas</p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap line-clamp-3">{c.notas}</p>
+              </div>
+            )}
+          </div>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function KpiTile({ icon, label, value, sub, accent, onClick }: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: 'emerald' | 'amber';
+  onClick?: () => void;
+}) {
+  const valueColor = accent === 'emerald' ? 'text-emerald-700' : accent === 'amber' ? 'text-amber-700' : 'text-slate-900';
+  return (
+    <button onClick={onClick} disabled={!onClick}
+      className="bg-white rounded-xl border border-slate-200 p-4 text-left hover:border-[#0891B2] hover:shadow-sm transition-all disabled:cursor-default group">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-slate-400 group-hover:text-[#0891B2] transition-colors">{icon}</span>
+      </div>
+      <p className={`text-xl font-bold ${valueColor}`}>{value}</p>
+      <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+    </button>
   );
 }
 
@@ -1104,87 +1468,298 @@ function TabExpedientes({ expedientes, clienteId, clienteNombre, grupoEmpresas }
 
 // ── Tab: Documentos ─────────────────────────────────────────────────────────
 
-function TabDocumentos({ documentos }: { documentos: DocRow[] }) {
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+const TIPOS_DOC: Record<string, string> = {
+  acta_notarial: 'Acta Notarial',
+  escritura_publica: 'Escritura Pública',
+  testimonio: 'Testimonio',
+  contrato_comercial: 'Contrato Comercial',
+  contrato_laboral: 'Contrato Laboral',
+  poder: 'Poder',
+  demanda_memorial: 'Demanda / Memorial',
+  resolucion_judicial: 'Resolución Judicial',
+  otro: 'Otro',
+};
 
-  const openSignedUrl = async (doc: DocRow, download = false) => {
-    setLoadingId(doc.id);
+interface DocItemFull {
+  id: string;
+  nombre_archivo: string;
+  nombre_original: string | null;
+  codigo_documento: string | null;
+  tipo: string | null;
+  titulo: string | null;
+  fecha_documento: string | null;
+  estado: string;
+  cliente_id: string | null;
+  archivo_url: string;
+  created_at: string;
+  cliente: { id: string; codigo: string; nombre: string } | null;
+}
+
+function TabDocumentos({ clienteId, onRefetch }: {
+  clienteId: string;
+  onRefetch: () => Promise<void>;
+}) {
+  const router = useRouter();
+  const { mutate } = useMutate();
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [tipoFilter, setTipoFilter] = useState('');
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; nombre: string } | null>(null);
+  const [editingDoc, setEditingDoc] = useState<DocumentoParaEditar | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DocItemFull | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [transcribingId, setTranscribingId] = useState<string | null>(null);
+  const [transcribeStatus, setTranscribeStatus] = useState<{ docName: string; status: string; downloadUrl?: string } | null>(null);
+  const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
+
+  const params = new URLSearchParams();
+  params.set('cliente_id', clienteId);
+  if (tipoFilter) params.set('tipo', tipoFilter);
+  if (search) params.set('q', search);
+  params.set('page', String(page));
+  params.set('limit', '25');
+
+  const { data, loading, refetch } = useFetch<{
+    data: DocItemFull[]; total: number; totalPages: number;
+  }>(`/api/admin/documentos?${params}`);
+
+  const docs = data?.data ?? [];
+
+  const addToast = useCallback((message: string, type: 'success' | 'error') => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
+
+  const verPDF = (d: DocItemFull) => {
+    setPreviewDoc({ id: d.id, nombre: d.nombre_original ?? d.nombre_archivo });
+  };
+
+  const descargar = async (d: DocItemFull) => {
     try {
-      const res = await adminFetch(`/api/admin/documentos/${doc.id}`);
-      const data = await res.json();
-      if (data.signed_url) {
-        const url = download
-          ? `${data.signed_url}&download=${encodeURIComponent(doc.nombre_archivo)}`
-          : data.signed_url;
+      const res = await adminFetch(`/api/admin/documentos/${d.id}`);
+      const json = await res.json();
+      if (json.signed_url) {
+        const url = `${json.signed_url}&download=${encodeURIComponent(d.nombre_original ?? d.nombre_archivo)}`;
         safeWindowOpen(url);
       }
-    } catch {
-      // silently fail
+    } catch { /* ignore */ }
+  };
+
+  const eliminar = useCallback(async (id: string) => {
+    setDeletingIds(prev => new Set([...prev, id]));
+    const result = await mutate(`/api/admin/documentos/${id}`, { method: 'DELETE' });
+    setDeletingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    if (result) {
+      addToast('Documento eliminado', 'success');
+      refetch();
+      onRefetch();
+    } else {
+      addToast('Error al eliminar', 'error');
+    }
+    setDeleteTarget(null);
+  }, [mutate, refetch, onRefetch, addToast]);
+
+  const transcribir = async (d: DocItemFull) => {
+    setTranscribingId(d.id);
+    setTranscribeStatus({ docName: d.titulo ?? d.nombre_archivo, status: 'Transcribiendo…' });
+    try {
+      const res = await adminFetch('/api/admin/documentos/transcribir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documento_id: d.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setTranscribeStatus({ docName: d.titulo ?? d.nombre_archivo, status: `Error: ${json.error}` });
+      } else {
+        setTranscribeStatus({
+          docName: `${json.transcripcion.paginas} páginas transcritas`,
+          status: 'completado',
+          downloadUrl: json.transcripcion.download_url,
+        });
+        refetch();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'desconocido';
+      setTranscribeStatus({ docName: d.titulo ?? d.nombre_archivo, status: `Error: ${msg}` });
     } finally {
-      setLoadingId(null);
+      setTranscribingId(null);
     }
   };
 
-  if (!documentos.length) return (
-    <EmptyState icon="📁" title="Sin documentos" description="No hay documentos clasificados para este cliente" />
-  );
+  const total = data?.total ?? 0;
+  const totalPages = data?.totalPages ?? 1;
 
   return (
-    <Section title={`Documentos (${documentos.length})`} noPadding>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200">
-              {['Archivo', 'Título', 'Tipo', 'Estado', 'Fecha', 'Acciones'].map(h => (
-                <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {documentos.map((d: DocRow) => (
-              <tr key={d.id} className="hover:bg-slate-50/50">
-                <td className="py-3 px-4 max-w-[200px]">
-                  <button
-                    onClick={() => openSignedUrl(d)}
-                    disabled={loadingId === d.id}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate block max-w-full text-left disabled:opacity-50"
-                    title="Abrir vista previa"
-                  >
-                    {d.nombre_archivo}
-                  </button>
-                </td>
-                <td className="py-3 px-4 text-sm text-slate-600">{d.titulo ?? '—'}</td>
-                <td className="py-3 px-4 text-sm text-slate-600">{d.tipo ?? '—'}</td>
-                <td className="py-3 px-4"><Badge variant={d.estado as any}>{d.estado}</Badge></td>
-                <td className="py-3 px-4 text-sm text-slate-500">
-                  {new Date(d.created_at).toLocaleDateString('es-GT')}
-                </td>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => openSignedUrl(d)}
-                      disabled={loadingId === d.id}
-                      className="p-1.5 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50"
-                      title="Ver documento"
-                    >
-                      <span className="text-base">👁</span>
-                    </button>
-                    <button
-                      onClick={() => openSignedUrl(d, true)}
-                      disabled={loadingId === d.id}
-                      className="p-1.5 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50"
-                      title="Descargar"
-                    >
-                      <span className="text-base">📥</span>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <input type="text" placeholder="Buscar por título, archivo…"
+          value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+          className="flex-1 min-w-64 px-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]" />
+        <select value={tipoFilter} onChange={e => { setTipoFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]">
+          <option value="">Todos los tipos</option>
+          {Object.entries(TIPOS_DOC).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <button onClick={() => router.push(`/admin/documentos/upload?cliente_id=${clienteId}`)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
+          <UploadIcon size={14} /> Subir documento
+        </button>
       </div>
-    </Section>
+
+      <Section title={`Documentos (${total})`} noPadding>
+        {loading ? (
+          <div className="p-8 text-center text-sm text-slate-400">Cargando…</div>
+        ) : docs.length === 0 ? (
+          <EmptyState icon="📁" title="Sin documentos" description={search || tipoFilter ? 'No hay documentos con esos filtros' : 'Sube el primer documento de este cliente'}
+            action={{ label: '+ Subir documento', onClick: () => router.push(`/admin/documentos/upload?cliente_id=${clienteId}`) }} />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200">
+                    {['Archivo', 'Título', 'Tipo', 'Estado', 'Fecha', 'Acciones'].map(h => (
+                      <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {docs.map(d => (
+                    <tr key={d.id} className="hover:bg-slate-50/50">
+                      <td className="py-3 px-4 pl-5 max-w-[260px]">
+                        <button onClick={() => verPDF(d)}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate block max-w-full text-left"
+                          title="Vista previa">
+                          {d.nombre_original ?? d.nombre_archivo}
+                        </button>
+                        {d.codigo_documento && (
+                          <p className="text-xs text-slate-400 font-mono mt-0.5">{d.codigo_documento}</p>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700 max-w-[220px] truncate" title={d.titulo ?? ''}>{d.titulo ?? '—'}</td>
+                      <td className="py-3 px-4 text-sm text-slate-600">{d.tipo ? (TIPOS_DOC[d.tipo] ?? d.tipo) : '—'}</td>
+                      <td className="py-3 px-4"><Badge variant={d.estado as any}>{d.estado}</Badge></td>
+                      <td className="py-3 px-4 text-sm text-slate-500">
+                        {d.fecha_documento ? new Date(d.fecha_documento).toLocaleDateString('es-GT') : new Date(d.created_at).toLocaleDateString('es-GT')}
+                      </td>
+                      <td className="py-3 px-4 pr-5">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => verPDF(d)}
+                            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-700"
+                            title="Ver documento">
+                            <Eye size={15} />
+                          </button>
+                          <button onClick={() => descargar(d)}
+                            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-700"
+                            title="Descargar">
+                            <Download size={15} />
+                          </button>
+                          <button onClick={() => setEditingDoc({
+                            id: d.id, titulo: d.titulo, tipo: d.tipo,
+                            cliente_id: d.cliente_id, codigo_documento: d.codigo_documento,
+                            fecha_documento: d.fecha_documento, cliente: d.cliente,
+                          })}
+                            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-700"
+                            title="Editar metadata">
+                            <Pencil size={15} />
+                          </button>
+                          <button onClick={() => transcribir(d)}
+                            disabled={transcribingId === d.id}
+                            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-700 disabled:opacity-40"
+                            title="Transcribir con IA">
+                            <Languages size={15} />
+                          </button>
+                          <button onClick={() => setDeleteTarget(d)}
+                            disabled={deletingIds.has(d.id)}
+                            className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-slate-500 hover:text-red-600 disabled:opacity-40"
+                            title="Eliminar">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+                <p className="text-sm text-slate-500">Página {page} de {totalPages} · {total} documentos</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                    className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30">← Anterior</button>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                    className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30">Siguiente →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {previewDoc && (
+        <DocumentViewer docId={previewDoc.id} fileName={previewDoc.nombre} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {editingDoc && (
+        <EditarDocumentoModal documento={editingDoc} onClose={() => setEditingDoc(null)}
+          onSuccess={() => { setEditingDoc(null); refetch(); onRefetch(); addToast('Documento actualizado', 'success'); }} />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Eliminar documento</h3>
+            <p className="text-sm text-slate-600 mb-5">
+              ¿Eliminar <strong>{deleteTarget.nombre_original ?? deleteTarget.nombre_archivo}</strong>? Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} disabled={deletingIds.has(deleteTarget.id)}
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={() => eliminar(deleteTarget.id)} disabled={deletingIds.has(deleteTarget.id)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {deletingIds.has(deleteTarget.id) ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transcribeStatus && (
+        <div className="fixed bottom-6 right-6 z-40 bg-white border border-slate-200 rounded-xl shadow-lg p-4 max-w-xs">
+          <p className="text-xs font-medium text-slate-500 uppercase mb-1">Transcripción</p>
+          <p className="text-sm text-slate-900">{transcribeStatus.docName}</p>
+          <p className={`text-xs mt-1 ${transcribeStatus.status.startsWith('Error') ? 'text-red-600' : 'text-slate-500'}`}>
+            {transcribeStatus.status}
+          </p>
+          {transcribeStatus.downloadUrl && (
+            <a href={transcribeStatus.downloadUrl} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-[#0891B2] hover:underline mt-1 inline-block">
+              Descargar transcripción
+            </a>
+          )}
+          <button onClick={() => setTranscribeStatus(null)}
+            className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+        </div>
+      )}
+
+      {/* Toasts */}
+      <div className="fixed top-6 right-6 z-50 flex flex-col gap-2">
+        {toasts.map(t => (
+          <div key={t.id} className={`px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium ${
+            t.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+          }`}>
+            {t.message}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1198,58 +1773,307 @@ const ESTADO_COT_BADGE: Record<string, string> = {
   vencida: 'bg-amber-100 text-amber-700',
 };
 
-function TabCotizaciones({ cotizaciones, clienteNombre }: { cotizaciones: CotizacionRow[]; clienteNombre: string }) {
+interface CotizacionConPagos {
+  id: string;
+  numero: string;
+  fecha_emision: string;
+  estado: string;
+  total: number;
+  monto_pagado: number;
+  pdf_url: string | null;
+}
+
+function TabCotizaciones({ clienteId, clienteNombre }: { clienteId: string; clienteNombre: string }) {
+  const router = useRouter();
+  const { data, loading } = useFetch<{ data: CotizacionConPagos[]; total: number }>(
+    `/api/admin/contabilidad/cotizaciones?cliente_id=${clienteId}&limit=100`
+  );
+  const cotizaciones = data?.data ?? [];
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-lg animate-pulse" />)}</div>;
+
   if (!cotizaciones.length) return (
     <EmptyState icon="📋" title="Sin cotizaciones" description="Este cliente no tiene cotizaciones"
       action={{ label: '+ Nueva cotización', onClick: () => window.location.href = `/admin/ai?prompt=Genera una cotización para ${clienteNombre}` }} />
   );
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  // KPIs
+  const totalCotizado = cotizaciones.filter(c => c.estado !== 'rechazada' && c.estado !== 'vencida')
+    .reduce((s, c) => s + c.total, 0);
+  const totalPagado = cotizaciones.reduce((s, c) => s + (c.monto_pagado ?? 0), 0);
+  const saldoPendiente = cotizaciones
+    .filter(c => c.estado !== 'rechazada' && c.estado !== 'vencida')
+    .reduce((s, c) => s + Math.max(0, c.total - (c.monto_pagado ?? 0)), 0);
 
   return (
-    <Section title={`Cotizaciones (${cotizaciones.length})`} noPadding>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200">
-              {['Número', 'Fecha', 'Estado', 'Total', 'PDF'].map(h => (
-                <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {cotizaciones.map((cot: CotizacionRow) => (
-              <tr key={cot.id} className="hover:bg-slate-50/50">
-                <td className="py-3 px-4 text-sm font-medium text-slate-900 font-mono">{cot.numero}</td>
-                <td className="py-3 px-4 text-sm text-slate-600">
-                  {new Date(cot.fecha_emision).toLocaleDateString('es-GT')}
-                </td>
-                <td className="py-3 px-4">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    ESTADO_COT_BADGE[cot.estado] ?? 'bg-slate-100 text-slate-600'
-                  }`}>{cot.estado}</span>
-                </td>
-                <td className="py-3 px-4 text-sm font-medium text-slate-900">{Q(cot.total)}</td>
-                <td className="py-3 px-4">
-                  {cot.pdf_url ? (
-                    <a
-                      href={`${supabaseUrl}/storage/v1/object/public/documentos/${cot.pdf_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
-                    >
-                      Descargar
-                    </a>
-                  ) : (
-                    <span className="text-sm text-slate-400">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <StatCard label="Total cotizado" value={Q(totalCotizado)} />
+        <StatCard label="Total pagado" value={Q(totalPagado)} accent="emerald" />
+        <StatCard label="Saldo pendiente" value={Q(saldoPendiente)} accent={saldoPendiente > 0 ? 'amber' : 'emerald'} />
       </div>
-    </Section>
+
+      <Section title={`Cotizaciones (${cotizaciones.length})`} noPadding>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200">
+                {['Número', 'Fecha', 'Estado', 'Total', 'Pagado', 'Saldo', 'Acciones'].map(h => (
+                  <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cotizaciones.map(cot => {
+                const saldo = Math.max(0, cot.total - (cot.monto_pagado ?? 0));
+                return (
+                  <tr key={cot.id} onClick={() => router.push(`/admin/contabilidad/cotizaciones/${cot.id}`)}
+                    className="hover:bg-slate-50/50 cursor-pointer transition-colors">
+                    <td className="py-3 px-4 pl-5 text-sm font-medium text-slate-900 font-mono">{cot.numero}</td>
+                    <td className="py-3 px-4 text-sm text-slate-600">
+                      {new Date(cot.fecha_emision).toLocaleDateString('es-GT')}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        ESTADO_COT_BADGE[cot.estado] ?? 'bg-slate-100 text-slate-600'
+                      }`}>{cot.estado}</span>
+                    </td>
+                    <td className="py-3 px-4 text-sm font-medium text-slate-900">{Q(cot.total)}</td>
+                    <td className="py-3 px-4 text-sm text-emerald-700">{Q(cot.monto_pagado ?? 0)}</td>
+                    <td className="py-3 px-4 text-sm font-medium" style={{ color: saldo > 0 ? '#b45309' : '#64748b' }}>
+                      {saldo > 0 ? Q(saldo) : '—'}
+                    </td>
+                    <td className="py-3 px-4 pr-5">
+                      <div className="flex items-center gap-3">
+                        {cot.pdf_url ? (
+                          <a
+                            href={`${supabaseUrl}/storage/v1/object/public/documentos/${cot.pdf_url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                            PDF
+                          </a>
+                        ) : null}
+                        <button onClick={e => { e.stopPropagation(); router.push(`/admin/contabilidad/cotizaciones/${cot.id}#tramites`); }}
+                          className="text-sm text-[#0891B2] hover:underline">
+                          Trámites
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+// ── Tab: Recibos de Caja ────────────────────────────────────────────────────
+
+interface ReciboItem {
+  id: string;
+  numero: string;
+  monto: number;
+  fecha_emision: string;
+  concepto: string;
+  email_enviado_at: string | null;
+  email_error: string | null;
+  pdf_url: string | null;
+  origen: 'manual' | 'automatico';
+  pago_id: string | null;
+  cliente: { id: string; nombre: string; nit: string | null; email: string | null } | null;
+  cotizacion: { id: string; numero: string } | null;
+}
+
+function TabRecibos({ clienteId }: { clienteId: string }) {
+  const router = useRouter();
+  const { mutate } = useMutate();
+  const [page, setPage] = useState(1);
+  const [reciboModal, setReciboModal] = useState<ReciboItem | null>(null);
+  const [reciboEliminar, setReciboEliminar] = useState<ReciboItem | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+
+  const params = new URLSearchParams();
+  params.set('cliente_id', clienteId);
+  params.set('page', String(page));
+  params.set('limit', '20');
+
+  const { data, loading, refetch } = useFetch<{
+    data: ReciboItem[]; total: number; page: number; limit: number;
+  }>(`/api/admin/contabilidad/recibos-caja?${params}`);
+
+  const recibos = data?.data ?? [];
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
+  const totalEmitido = recibos.reduce((s, r) => s + (r.monto ?? 0), 0);
+
+  const eliminarRecibo = useCallback(async () => {
+    if (!reciboEliminar) return;
+    setEliminando(true);
+    let ok = false;
+    await mutate(`/api/admin/contabilidad/recibos-caja/${reciboEliminar.id}`, {
+      method: 'DELETE',
+      onSuccess: () => { ok = true; },
+      onError: (err: unknown) => alert(typeof err === 'string' ? err : 'Error al eliminar'),
+    });
+    setEliminando(false);
+    if (ok) {
+      setReciboEliminar(null);
+      refetch();
+    }
+  }, [reciboEliminar, mutate, refetch]);
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-lg animate-pulse" />)}</div>;
+
+  if (recibos.length === 0) {
+    return (
+      <EmptyState icon="🧾" title="Sin recibos de caja"
+        description="Los recibos se generan automáticamente al registrar el pago de gastos del trámite de una cotización."
+        action={{ label: '+ Nuevo recibo manual', onClick: () => router.push(`/admin/contabilidad/recibos-caja/nuevo?cliente_id=${clienteId}`) }} />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="Recibos emitidos" value={String(data?.total ?? 0)} />
+        <StatCard label="Total en página" value={Q(totalEmitido)} accent="emerald" />
+      </div>
+
+      <Section title={`Recibos de Caja (${data?.total ?? 0})`} noPadding>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200">
+                {['Número', 'Cotización', 'Concepto', 'Monto', 'Emisión', 'Email', 'Acciones'].map(h => (
+                  <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {recibos.map(r => (
+                <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="py-3 px-4 pl-5">
+                    <span className="font-mono text-sm font-semibold text-slate-900">{r.numero}</span>
+                  </td>
+                  <td className="py-3 px-4 text-sm">
+                    {r.cotizacion ? (
+                      <button
+                        onClick={() => router.push(`/admin/contabilidad/cotizaciones/${r.cotizacion!.id}`)}
+                        className="text-[#0F172A] hover:underline font-mono text-xs"
+                      >
+                        {r.cotizacion.numero}
+                      </button>
+                    ) : '—'}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-slate-700 max-w-[280px] truncate" title={r.concepto}>{r.concepto}</td>
+                  <td className="py-3 px-4 text-sm font-semibold text-slate-900">{Q(r.monto)}</td>
+                  <td className="py-3 px-4 text-sm text-slate-500">
+                    {new Date(r.fecha_emision).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' })}
+                  </td>
+                  <td className="py-3 px-4 text-xs">
+                    {r.email_enviado_at ? (
+                      <span className="text-emerald-700">✓ Enviado</span>
+                    ) : r.email_error ? (
+                      <span className="text-amber-700" title={r.email_error}>⚠ Falló</span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 pr-5 text-xs">
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={`/api/admin/contabilidad/recibos-caja/${r.id}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#0F172A] hover:underline font-medium"
+                      >
+                        PDF
+                      </a>
+                      <button
+                        onClick={() => setReciboModal(r)}
+                        disabled={!r.pdf_url}
+                        className="text-[#0F172A] hover:underline font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!r.pdf_url ? 'El recibo no tiene PDF' : (r.email_enviado_at ? 'Reenviar' : 'Enviar email')}
+                      >
+                        {r.email_enviado_at ? 'Reenviar' : 'Email'}
+                      </button>
+                      <button
+                        onClick={() => router.push(`/admin/contabilidad/recibos-caja/${r.id}/editar`)}
+                        className="text-[#0F172A] hover:underline font-medium"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => setReciboEliminar(r)}
+                        className="text-red-600 hover:underline font-medium"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+            <p className="text-sm text-slate-500">Página {page} de {totalPages}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30">← Anterior</button>
+              <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                className="px-3 py-1.5 text-sm border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30">Siguiente →</button>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {reciboModal && (
+        <EnviarReciboEmailModal
+          recibo={reciboModal}
+          onClose={() => setReciboModal(null)}
+          onSuccess={() => { setReciboModal(null); refetch(); }}
+        />
+      )}
+
+      {reciboEliminar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !eliminando && setReciboEliminar(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Eliminar recibo {reciboEliminar.numero}</h3>
+            <p className="text-sm text-slate-600 mb-2">
+              ¿Eliminar el recibo <strong className="font-mono">{reciboEliminar.numero}</strong>? Esta acción no se puede deshacer.
+            </p>
+            {reciboEliminar.email_enviado_at && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 mb-3">
+                Este recibo ya fue enviado al cliente. Se eliminará igualmente.
+              </div>
+            )}
+            {(reciboEliminar.origen === 'automatico' || reciboEliminar.pago_id) && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 mb-3">
+                Este recibo proviene de un pago confirmado. El pago vinculado seguirá registrado.
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setReciboEliminar(null)} disabled={eliminando}
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={eliminarRecibo} disabled={eliminando}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {eliminando ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

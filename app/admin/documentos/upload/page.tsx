@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 
@@ -70,6 +71,8 @@ interface ClienteOption {
 }
 
 export default function UploadDocumentos() {
+  const searchParams = useSearchParams();
+  const initialClienteId = searchParams.get('cliente_id') ?? null;
   const [step, setStep] = useState<'select' | 'processing' | 'done'>('select');
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -130,6 +133,22 @@ export default function UploadDocumentos() {
 
     return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
   }, [clienteQuery]);
+
+  // Pre-select client from URL query param (?cliente_id=XXX)
+  useEffect(() => {
+    if (!initialClienteId || selectedCliente) return;
+    (async () => {
+      try {
+        const res = await adminFetch(`/api/admin/clientes/${initialClienteId}`);
+        if (!res.ok) return;
+        const c = await res.json();
+        setSelectedCliente({ id: c.id, codigo: c.codigo, nombre: c.nombre });
+        setClienteQuery(`${c.codigo} — ${c.nombre}`);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [initialClienteId, selectedCliente]);
 
   // Fetch code preview when client is selected
   useEffect(() => {
