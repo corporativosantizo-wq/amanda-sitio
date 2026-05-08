@@ -515,9 +515,19 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-// ── Reenvío manual desde la UI ──────────────────────────────────────────────
+// ── Envío manual personalizado desde la UI (modal con Para/CC/Asunto/Mensaje) ─
 
-export async function reenviarEmailRecibo(reciboId: string): Promise<void> {
+export interface EnviarEmailReciboInput {
+  to: string;          // email destinatario único (validado por el route)
+  cc?: string[];       // lista ya parseada y validada
+  asunto: string;
+  mensaje: string;     // texto plano desde el textarea
+}
+
+export async function enviarEmailReciboPersonalizado(
+  reciboId: string,
+  input: EnviarEmailReciboInput,
+): Promise<void> {
   const recibo = await obtenerRecibo(reciboId);
   if (!recibo.pdf_url) {
     throw new ReciboCajaError('El recibo no tiene PDF en storage');
@@ -532,15 +542,45 @@ export async function reenviarEmailRecibo(reciboId: string): Promise<void> {
   }
 
   const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
+  const cuerpoHtml = emailWrapper(textoToHtml(input.mensaje));
 
-  await intentarEnviarEmail(recibo.id, {
-    destinatarioEmail: recibo.cliente.email ?? null,
-    clienteNombre: recibo.cliente.nombre,
-    numero: recibo.numero,
-    monto: Number(recibo.monto),
-    concepto: recibo.concepto,
-    pdfBuffer,
-  });
+  try {
+    await enviarComprobantePorEmail({
+      tipo: 'recibo_caja',
+      destinatario: input.to,
+      cc: input.cc && input.cc.length > 0 ? input.cc : undefined,
+      asunto: input.asunto,
+      cuerpoHtml,
+      pdfBuffer,
+      nombreArchivo: `${recibo.numero}.pdf`,
+    });
+
+    await db()
+      .from('recibos_caja')
+      .update({
+        email_enviado_at: new Date().toISOString(),
+        email_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reciboId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[recibos-caja] Error al enviar email personalizado', reciboId, msg);
+    await db()
+      .from('recibos_caja')
+      .update({
+        email_error: msg.slice(0, 500),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reciboId);
+    throw new ReciboCajaError(`Error al enviar email: ${msg}`);
+  }
+}
+
+function textoToHtml(texto: string): string {
+  const escaped = escapeHtml(texto);
+  const conSaltos = escaped.replace(/\n/g, '<br>');
+  return `<div style="color:#334155;font-size:14px;line-height:1.6;white-space:normal;">${conSaltos}</div>`;
 }
 
 // ── Signed URL para descarga ────────────────────────────────────────────────

@@ -7,10 +7,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
+import { useFetch } from '@/lib/hooks/use-fetch';
 import {
   PageHeader, Q, EmptyState, TableSkeleton,
 } from '@/components/admin/ui';
+import { EnviarReciboEmailModal } from '@/components/admin/enviar-recibo-email-modal';
 
 interface ReciboItem {
   id: string;
@@ -27,12 +28,11 @@ interface ReciboItem {
 
 export default function RecibosCajaListPage() {
   const router = useRouter();
-  const { mutate } = useMutate();
   const [search, setSearch] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [page, setPage] = useState(1);
-  const [reenviando, setReenviando] = useState<string | null>(null);
+  const [reciboModal, setReciboModal] = useState<ReciboItem | null>(null);
 
   const params = new URLSearchParams();
   if (search) params.set('q', search);
@@ -47,16 +47,6 @@ export default function RecibosCajaListPage() {
 
   const recibos = data?.data ?? [];
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
-
-  const reenviarEmail = async (id: string) => {
-    setReenviando(id);
-    await mutate(`/api/admin/contabilidad/recibos-caja/${id}/reenviar`, {
-      body: {},
-      onSuccess: () => { refetch(); alert('Email reenviado'); },
-      onError: (err: any) => alert(`Error: ${err}`),
-    });
-    setReenviando(null);
-  };
 
   return (
     <div className="space-y-5">
@@ -159,22 +149,18 @@ export default function RecibosCajaListPage() {
                           PDF
                         </a>
                         <button
-                          onClick={() => reenviarEmail(r.id)}
-                          disabled={reenviando === r.id || !r.cliente?.email}
+                          onClick={() => setReciboModal(r)}
+                          disabled={!r.pdf_url}
                           className="text-[#0F172A] hover:underline font-medium disabled:opacity-30 disabled:cursor-not-allowed"
                           title={
-                            !r.cliente?.email
-                              ? 'El cliente no tiene email'
+                            !r.pdf_url
+                              ? 'El recibo no tiene PDF'
                               : r.email_enviado_at
-                                ? 'Reenviar email al cliente'
-                                : 'Enviar email al cliente'
+                                ? 'Reenviar por email (con CC opcional)'
+                                : 'Enviar por email (con CC opcional)'
                           }
                         >
-                          {reenviando === r.id
-                            ? 'Enviando…'
-                            : r.email_enviado_at
-                              ? 'Reenviar'
-                              : 'Enviar email'}
+                          {r.email_enviado_at ? 'Reenviar' : 'Enviar email'}
                         </button>
                       </div>
                     </td>
@@ -197,6 +183,14 @@ export default function RecibosCajaListPage() {
             </div>
           )}
         </div>
+      )}
+
+      {reciboModal && (
+        <EnviarReciboEmailModal
+          recibo={reciboModal}
+          onClose={() => setReciboModal(null)}
+          onSuccess={() => { setReciboModal(null); refetch(); }}
+        />
       )}
     </div>
   );

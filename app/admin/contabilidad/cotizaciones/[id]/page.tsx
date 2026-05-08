@@ -13,6 +13,7 @@ import {
   PageHeader, Badge, Section, KPICard,
   EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
+import { EnviarReciboEmailModal } from '@/components/admin/enviar-recibo-email-modal';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -176,17 +177,7 @@ export default function CotizacionDetallePage() {
     setGastosEnviando(false);
   }, [id, cot?.monto_gastos, gastosMetodo, gastosRef, gastosFecha, gastosNotas, mutate, refetch, refetchRecibo]);
 
-  const reenviarEmailReciboCot = useCallback(async () => {
-    if (!recibo) return;
-    await mutate(`/api/admin/contabilidad/recibos-caja/${recibo.id}/reenviar`, {
-      body: {},
-      onSuccess: () => {
-        alert('Email reenviado');
-        refetchRecibo();
-      },
-      onError: (err: any) => alert(`Error: ${err}`),
-    });
-  }, [recibo, mutate, refetchRecibo]);
+  const [showReciboEmailModal, setShowReciboEmailModal] = useState(false);
   const descargarPdf = useCallback(async () => {
     setDescargando(true);
     try {
@@ -664,7 +655,7 @@ export default function CotizacionDetallePage() {
                     ) : null}
                     {(recibo.email_error || !recibo.email_enviado_at) && (
                       <button
-                        onClick={reenviarEmailReciboCot}
+                        onClick={() => setShowReciboEmailModal(true)}
                         className="mt-1 text-xs font-medium text-[#0F172A] hover:underline"
                       >
                         Reintentar envío de email
@@ -931,6 +922,14 @@ export default function CotizacionDetallePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showReciboEmailModal && recibo && (
+        <EnviarReciboEmailModal
+          recibo={recibo}
+          onClose={() => setShowReciboEmailModal(false)}
+          onSuccess={() => { setShowReciboEmailModal(false); refetchRecibo(); }}
+        />
       )}
     </div>
   );
