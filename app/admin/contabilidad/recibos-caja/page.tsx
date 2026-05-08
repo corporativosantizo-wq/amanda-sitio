@@ -5,9 +5,9 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFetch } from '@/lib/hooks/use-fetch';
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
   PageHeader, Q, EmptyState, TableSkeleton,
 } from '@/components/admin/ui';
@@ -22,6 +22,8 @@ interface ReciboItem {
   email_enviado_at: string | null;
   email_error: string | null;
   pdf_url: string | null;
+  origen: 'manual' | 'automatico';
+  pago_id: string | null;
   cliente: { id: string; nombre: string; nit: string | null; email: string | null } | null;
   cotizacion: { id: string; numero: string } | null;
 }
@@ -33,6 +35,7 @@ export default function RecibosCajaListPage() {
   const [hasta, setHasta] = useState('');
   const [page, setPage] = useState(1);
   const [reciboModal, setReciboModal] = useState<ReciboItem | null>(null);
+  const [reciboEliminar, setReciboEliminar] = useState<ReciboItem | null>(null);
 
   const params = new URLSearchParams();
   if (search) params.set('q', search);
@@ -162,6 +165,20 @@ export default function RecibosCajaListPage() {
                         >
                           {r.email_enviado_at ? 'Reenviar' : 'Enviar email'}
                         </button>
+                        <button
+                          onClick={() => router.push(`/admin/contabilidad/recibos-caja/${r.id}/editar`)}
+                          className="text-[#0F172A] hover:underline font-medium"
+                          title="Editar recibo"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => setReciboEliminar(r)}
+                          className="text-red-600 hover:underline font-medium"
+                          title="Eliminar recibo"
+                        >
+                          Eliminar
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -192,6 +209,115 @@ export default function RecibosCajaListPage() {
           onSuccess={() => { setReciboModal(null); refetch(); }}
         />
       )}
+
+      {reciboEliminar && (
+        <ConfirmarEliminarModal
+          recibo={reciboEliminar}
+          onClose={() => setReciboEliminar(null)}
+          onSuccess={() => { setReciboEliminar(null); refetch(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal de confirmación de eliminación ────────────────────────────────────
+
+function ConfirmarEliminarModal({
+  recibo,
+  onClose,
+  onSuccess,
+}: {
+  recibo: ReciboItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { mutate } = useMutate();
+  const [eliminando, setEliminando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const esAutomatico = recibo.origen === 'automatico' || recibo.pago_id !== null;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !eliminando) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, eliminando]);
+
+  const eliminar = async () => {
+    setError(null);
+    setEliminando(true);
+    let ok = false;
+    await mutate(`/api/admin/contabilidad/recibos-caja/${recibo.id}`, {
+      method: 'DELETE',
+      onSuccess: () => { ok = true; },
+      onError: (err: unknown) => setError(typeof err === 'string' ? err : 'Error al eliminar'),
+    });
+    setEliminando(false);
+    if (ok) onSuccess();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={() => { if (!eliminando) onClose(); }}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-md"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold text-slate-900">Eliminar Recibo de Caja</h2>
+        </div>
+
+        <div className="px-6 py-5 space-y-3">
+          <p className="text-sm text-slate-700">
+            ¿Estás seguro de que deseas eliminar el recibo <strong className="font-mono">{recibo.numero}</strong>?
+            Esta acción no se puede deshacer.
+          </p>
+
+          {recibo.email_enviado_at && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <strong>Este recibo ya fue enviado al cliente</strong> el{' '}
+              {new Date(recibo.email_enviado_at).toLocaleDateString('es-GT', {
+                day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala',
+              })}. ¿Deseas eliminarlo de todas formas?
+            </div>
+          )}
+
+          {esAutomatico && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              <strong>Este recibo proviene de un pago confirmado</strong> de gastos del trámite.
+              Al eliminarlo, el pago vinculado <strong>seguirá registrado</strong> contra la
+              cotización (la cotización seguirá marcada como pagada). Si querés revertir todo,
+              hay que anular primero el pago en el módulo de Pagos.
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/50 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={eliminando}
+            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 disabled:opacity-30"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={eliminar}
+            disabled={eliminando}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {eliminando ? 'Eliminando…' : 'Eliminar'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

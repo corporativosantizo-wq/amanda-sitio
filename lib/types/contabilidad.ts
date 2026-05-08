@@ -344,6 +344,17 @@ export interface CrearReciboManualInput {
   notas?: string | null;
 }
 
+// Edit: para automáticos sólo concepto/fecha/notas se aplican; cliente_id/
+// cotizacion_id/monto se ignoran (desincronizan del pago vinculado).
+export interface ActualizarReciboInput {
+  concepto?: string;
+  fecha_emision?: string;            // YYYY-MM-DD
+  notas?: string | null;
+  cliente_id?: string;               // sólo manuales
+  cotizacion_id?: string | null;     // sólo manuales
+  monto?: number;                    // sólo manuales
+}
+
 // --- Cobros ---
 
 export interface Cobro {

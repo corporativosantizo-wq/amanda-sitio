@@ -24,6 +24,7 @@ import {
   type ReciboCajaConRelaciones,
   type RegistrarPagoGastosInput,
   type CrearReciboManualInput,
+  type ActualizarReciboInput,
 } from '@/lib/types';
 import { EMISOR } from '@/lib/config/emisor';
 
@@ -71,7 +72,7 @@ export async function listarRecibos(params: ListParams = {}) {
     .select(`
       id, numero, monto, fecha_emision, concepto,
       pdf_url, email_enviado_at, email_error, notas,
-      cotizacion_id, cliente_id, pago_id, created_at, updated_at,
+      cotizacion_id, cliente_id, pago_id, origen, created_at, updated_at,
       cliente:clientes!cliente_id (id, codigo, nombre, nit, email),
       cotizacion:cotizaciones!cotizacion_id (id, numero)
     `, { count: 'exact' })
@@ -581,6 +582,198 @@ function textoToHtml(texto: string): string {
   const escaped = escapeHtml(texto);
   const conSaltos = escaped.replace(/\n/g, '<br>');
   return `<div style="color:#334155;font-size:14px;line-height:1.6;white-space:normal;">${conSaltos}</div>`;
+}
+
+// ── Editar recibo (regenera PDF) ────────────────────────────────────────────
+//
+// Para automáticos (origen='automatico', con pago_id) sólo se aplican
+// concepto / fecha_emision / notas. Cualquier intento de cambiar
+// monto/cliente_id/cotizacion_id en automáticos se ignora silenciosamente
+// para no desincronizar del pago vinculado (la UI ya bloquea esos campos).
+//
+// Tras actualizar la fila, regenera el PDF y lo sube al mismo path en storage
+// (overwrite). No mueve el archivo aunque cambie el año de fecha_emision.
+
+export async function actualizarRecibo(
+  id: string,
+  input: ActualizarReciboInput,
+): Promise<ReciboCajaConRelaciones> {
+  const actual = await obtenerRecibo(id);
+  const esAutomatico = actual.origen === 'automatico' || actual.pago_id !== null;
+
+  // ── Construir patch validado ──
+  const patch: Record<string, unknown> = {};
+
+  if (input.concepto !== undefined) {
+    const c = input.concepto.trim();
+    if (!c) throw new ReciboCajaError('El concepto es obligatorio');
+    patch.concepto = c;
+  }
+
+  if (input.fecha_emision !== undefined && input.fecha_emision !== '') {
+    // YYYY-MM-DD interpretado a mediodía en GT (UTC-6) — mismo patrón que crearReciboManual
+    const iso = new Date(`${input.fecha_emision}T12:00:00-06:00`).toISOString();
+    const limiteFuturo = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    if (new Date(iso).getTime() > limiteFuturo) {
+      throw new ReciboCajaError('La fecha de emisión no puede ser más de 30 días en el futuro');
+    }
+    patch.fecha_emision = iso;
+  }
+
+  if (input.notas !== undefined) {
+    patch.notas = input.notas?.trim() || null;
+  }
+
+  // Campos restringidos: sólo manuales
+  if (!esAutomatico) {
+    if (input.monto !== undefined) {
+      if (!input.monto || input.monto <= 0) {
+        throw new ReciboCajaError('El monto debe ser mayor a 0');
+      }
+      patch.monto = input.monto;
+    }
+
+    if (input.cliente_id !== undefined && input.cliente_id !== actual.cliente_id) {
+      const { data: cli, error: cliErr } = await db()
+        .from('clientes')
+        .select('id, estado')
+        .eq('id', input.cliente_id)
+        .single();
+      if (cliErr || !cli) throw new ReciboCajaError('Cliente no encontrado', cliErr);
+      if ((cli as { estado?: string }).estado === 'inactivo') {
+        throw new ReciboCajaError('El cliente está inactivo');
+      }
+      patch.cliente_id = input.cliente_id;
+    }
+
+    if (input.cotizacion_id !== undefined) {
+      if (input.cotizacion_id === null || input.cotizacion_id === '') {
+        patch.cotizacion_id = null;
+      } else {
+        const { data: cot, error: cotErr } = await db()
+          .from('cotizaciones')
+          .select('id, cliente_id')
+          .eq('id', input.cotizacion_id)
+          .single();
+        if (cotErr || !cot) throw new ReciboCajaError('Cotización no encontrada', cotErr);
+        const clienteFinal = (patch.cliente_id as string | undefined) ?? actual.cliente_id;
+        if (cot.cliente_id !== clienteFinal) {
+          throw new ReciboCajaError('La cotización no pertenece al cliente seleccionado');
+        }
+        patch.cotizacion_id = input.cotizacion_id;
+      }
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return actual;
+  }
+
+  patch.updated_at = new Date().toISOString();
+
+  // ── UPDATE ──
+  const { error: upErr } = await db()
+    .from('recibos_caja')
+    .update(patch)
+    .eq('id', id);
+  if (upErr) throw new ReciboCajaError('Error al actualizar el recibo', upErr);
+
+  // ── Regenerar PDF (con datos frescos: cliente, cotización, expediente) ──
+  const actualizado = await obtenerRecibo(id);
+
+  const { data: cliFull, error: cliFullErr } = await db()
+    .from('clientes')
+    .select('nombre, nit, dpi, direccion')
+    .eq('id', actualizado.cliente_id)
+    .single();
+  if (cliFullErr || !cliFull) {
+    throw new ReciboCajaError('Error al obtener datos del cliente para regenerar PDF', cliFullErr);
+  }
+
+  let expedienteNumero: string | null = null;
+  if (actualizado.cotizacion_id) {
+    const { data: cot } = await db()
+      .from('cotizaciones')
+      .select('expediente_id')
+      .eq('id', actualizado.cotizacion_id)
+      .maybeSingle();
+    if (cot?.expediente_id) {
+      const { data: exp } = await db()
+        .from('expedientes')
+        .select('numero')
+        .eq('id', cot.expediente_id)
+        .maybeSingle();
+      expedienteNumero = exp?.numero ?? null;
+    }
+  }
+
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await generarPDFReciboCaja({
+      numero: actualizado.numero,
+      fechaEmision: actualizado.fecha_emision,
+      monto: Number(actualizado.monto),
+      concepto: actualizado.concepto,
+      cliente: {
+        nombre: (cliFull as { nombre: string }).nombre,
+        nit: (cliFull as { nit: string | null }).nit,
+        dpi: (cliFull as { dpi: string | null }).dpi,
+        direccion: (cliFull as { direccion: string | null }).direccion,
+      },
+      cotizacionNumero: actualizado.cotizacion?.numero ?? null,
+      expedienteNumero,
+    });
+  } catch (err) {
+    throw new ReciboCajaError('Error al regenerar el PDF del recibo', err);
+  }
+
+  if (actualizado.pdf_url) {
+    const { error: upPdfErr } = await db()
+      .storage.from('recibos-caja')
+      .upload(actualizado.pdf_url, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+    if (upPdfErr) {
+      throw new ReciboCajaError('Error al subir el PDF regenerado', upPdfErr);
+    }
+  } else {
+    // Edge case: recibo sin pdf_url. Subir a path estándar y persistir.
+    const year = new Date(actualizado.fecha_emision).getFullYear();
+    const storagePath = `${year}/${actualizado.numero}.pdf`;
+    const { error: upPdfErr } = await db()
+      .storage.from('recibos-caja')
+      .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+    if (upPdfErr) {
+      throw new ReciboCajaError('Error al subir el PDF regenerado', upPdfErr);
+    }
+    await db().from('recibos_caja').update({ pdf_url: storagePath }).eq('id', id);
+  }
+
+  return obtenerRecibo(id);
+}
+
+// ── Eliminar recibo (hard delete + best-effort PDF cleanup) ─────────────────
+//
+// Para automáticos (con pago_id) NO se anula el pago vinculado — la UI ya
+// muestra el warning correspondiente. La cotización seguirá registrada como
+// pagada porque el pago permanece. Audit trigger registra la eliminación.
+
+export async function eliminarRecibo(id: string): Promise<void> {
+  const recibo = await obtenerRecibo(id);
+
+  const { error: delErr } = await db()
+    .from('recibos_caja')
+    .delete()
+    .eq('id', id);
+  if (delErr) throw new ReciboCajaError('Error al eliminar el recibo', delErr);
+
+  // Best-effort cleanup del PDF — si falla, el registro ya se borró.
+  if (recibo.pdf_url) {
+    const { error: rmErr } = await db()
+      .storage.from('recibos-caja')
+      .remove([recibo.pdf_url]);
+    if (rmErr) {
+      console.error('[recibos-caja] Error al eliminar PDF de storage', recibo.pdf_url, rmErr);
+    }
+  }
 }
 
 // ── Signed URL para descarga ────────────────────────────────────────────────
