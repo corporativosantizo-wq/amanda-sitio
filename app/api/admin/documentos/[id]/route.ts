@@ -53,6 +53,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (body.titulo !== undefined) updates.titulo = body.titulo;
     if (body.fecha_documento !== undefined) updates.fecha_documento = body.fecha_documento;
     if (body.cliente_id !== undefined) updates.cliente_id = body.cliente_id;
+    if (body.codigo_documento !== undefined) updates.codigo_documento = body.codigo_documento;
     if (body.notas !== undefined) updates.notas = body.notas;
 
     const { data, error } = await db

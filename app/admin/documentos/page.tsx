@@ -11,6 +11,7 @@ import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import DocumentViewer from '@/components/admin/document-viewer';
+import { EditarDocumentoModal, type DocumentoParaEditar } from '@/components/admin/editar-documento-modal';
 
 const TIPOS: Record<string, string> = {
   contrato_comercial: 'Contrato Comercial',
@@ -140,6 +141,9 @@ export default function DocumentosPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; nombre: string } | null>(null);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  // Edit state
+  const [editingDoc, setEditingDoc] = useState<DocumentoParaEditar | null>(null);
   const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error'; message: string }[]>([]);
   const { mutate } = useMutate();
 
@@ -896,6 +900,33 @@ export default function DocumentosPage() {
                                   Descargar
                                 </button>
                               )}
+                              {(doc.nombre_archivo ?? '').toLowerCase().endsWith('.pdf') && (
+                                <button
+                                  onClick={() => transcribirUno(doc.id)}
+                                  className="text-xs font-medium text-[#0891B2] hover:text-[#1E40AF] transition-colors"
+                                >
+                                  Transcribir
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setEditingDoc({
+                                  id: doc.id,
+                                  titulo: doc.titulo,
+                                  tipo: doc.tipo,
+                                  cliente_id: doc.cliente_id,
+                                  codigo_documento: doc.numero_documento,
+                                  fecha_documento: doc.fecha_documento,
+                                  cliente: doc.cliente_id && doc.cliente_nombre
+                                    ? { id: doc.cliente_id, codigo: '', nombre: doc.cliente_nombre }
+                                    : null,
+                                })}
+                                className="p-1.5 text-slate-500 hover:text-[#0891B2] hover:bg-cyan-50 rounded-lg transition-colors"
+                                title="Editar documento"
+                              >
+                                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
                               <button
                                 onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
                                 disabled={deletingIds.has(doc.id)}
@@ -1128,6 +1159,19 @@ export default function DocumentosPage() {
                           </button>
                         )}
                         <button
+                          onClick={() => setEditingDoc({
+                            id: doc.id, titulo: doc.titulo, tipo: doc.tipo,
+                            cliente_id: doc.cliente_id, codigo_documento: doc.codigo_documento,
+                            fecha_documento: doc.fecha_documento, cliente: doc.cliente,
+                          })}
+                          className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors flex items-center gap-1.5 justify-center"
+                        >
+                          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          Editar
+                        </button>
+                        <button
                           onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
                           disabled={deletingIds.has(doc.id)}
                           className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 flex items-center gap-1.5 justify-center"
@@ -1224,6 +1268,19 @@ export default function DocumentosPage() {
                           Transcribir
                         </button>
                       )}
+                      <button
+                        onClick={() => setEditingDoc({
+                          id: doc.id, titulo: doc.titulo, tipo: doc.tipo,
+                          cliente_id: doc.cliente_id, codigo_documento: doc.codigo_documento,
+                          fecha_documento: doc.fecha_documento, cliente: doc.cliente,
+                        })}
+                        className="px-3 py-1.5 text-xs font-medium text-[#0891B2] bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors flex items-center gap-1.5 justify-center"
+                      >
+                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Editar
+                      </button>
                       <button
                         onClick={() => aprobar(doc.id)}
                         disabled={processing.has(doc.id)}
@@ -1373,6 +1430,19 @@ export default function DocumentosPage() {
                                   Transcribir
                                 </button>
                               )}
+                              <button
+                                onClick={() => setEditingDoc({
+                                  id: doc.id, titulo: doc.titulo, tipo: doc.tipo,
+                                  cliente_id: doc.cliente_id, codigo_documento: doc.codigo_documento,
+                                  fecha_documento: doc.fecha_documento, cliente: doc.cliente,
+                                })}
+                                className="p-1.5 text-slate-500 hover:text-[#0891B2] hover:bg-cyan-50 rounded-lg transition-colors"
+                                title="Editar documento"
+                              >
+                                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
                               <button
                                 onClick={() => setDeleteTarget({ id: doc.id, nombre: doc.titulo ?? doc.nombre_original ?? doc.nombre_archivo })}
                                 disabled={deletingIds.has(doc.id)}
@@ -1658,6 +1728,15 @@ export default function DocumentosPage() {
           docId={previewDoc.id}
           fileName={previewDoc.nombre}
           onClose={() => setPreviewDoc(null)}
+        />
+      )}
+
+      {/* Edit Document Modal */}
+      {editingDoc && (
+        <EditarDocumentoModal
+          documento={editingDoc}
+          onClose={() => setEditingDoc(null)}
+          onSuccess={() => { setEditingDoc(null); refetch(); }}
         />
       )}
     </div>
