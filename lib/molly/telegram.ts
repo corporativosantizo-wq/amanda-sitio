@@ -17,12 +17,14 @@ export async function sendTelegramMessage(
   options?: {
     parse_mode?: 'HTML' | 'MarkdownV2';
     reply_markup?: unknown;
+    chatId?: string;
   },
 ): Promise<void> {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  const targetChatId = options?.chatId || CHAT_ID;
 
   const body: Record<string, unknown> = {
-    chat_id: CHAT_ID,
+    chat_id: targetChatId,
     text,
     parse_mode: options?.parse_mode ?? 'HTML',
   };

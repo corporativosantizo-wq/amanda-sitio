@@ -12,6 +12,7 @@ import { sendTelegramMessage } from '@/lib/molly/telegram';
 import { getCalendarEvents, getDayBounds } from '@/lib/molly/calendar';
 import { getAppToken } from '@/lib/services/outlook.service';
 import { crearTarea, listarTareas } from '@/lib/services/tareas.service';
+import { plazosProximos, plazosVencidos } from '@/lib/services/expedientes.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CategoriaTarea } from '@/lib/types';
 
@@ -57,7 +58,13 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3. Financial summary — cobros pendientes y vencidos
+    // 3. Plazos procesales próximos a vencer / vencidos
+    const plazosDigest = await buildPlazosDigest();
+    if (plazosDigest) {
+      await sendTelegramMessage(plazosDigest, { parse_mode: 'HTML' });
+    }
+
+    // 4. Financial summary — cobros pendientes y vencidos
     const cobrosDigest = await buildCobrosDigest();
     await sendTelegramMessage(cobrosDigest.text, {
       parse_mode: 'HTML',
@@ -187,6 +194,63 @@ async function buildCobrosDigest(): Promise<CobrosDigest> {
   } catch (err) {
     console.error('[agenda-matutina] Error building cobros digest:', err);
     return { text: '\u{1F4B0} <b>Cobros:</b> Error al consultar \u26A0\uFE0F' };
+  }
+}
+
+// ── Plazos procesales digest ────────────────────────────────────────────────
+
+function getNumeroExpediente(exp: any): string {
+  return exp?.numero_expediente
+    || exp?.numero_mp
+    || exp?.numero_administrativo
+    || 'sin número';
+}
+
+async function buildPlazosDigest(): Promise<string | null> {
+  try {
+    const [proximos, vencidos] = await Promise.all([
+      plazosProximos(7).catch(() => []),
+      plazosVencidos().catch(() => []),
+    ]);
+
+    if (proximos.length === 0 && vencidos.length === 0) {
+      return '⚖️ <b>Plazos procesales:</b> Ninguno próximo ni vencido ✅';
+    }
+
+    const lines: string[] = ['⚖️ <b>Plazos procesales</b>'];
+
+    if (vencidos.length > 0) {
+      lines.push('');
+      lines.push(`\u{1F534} <b>Vencidos no atendidos (${vencidos.length}):</b>`);
+      for (const p of vencidos.slice(0, 5)) {
+        const exp = (p as any).expediente;
+        const cliente = exp?.cliente?.nombre ?? 'Sin cliente';
+        const num = getNumeroExpediente(exp);
+        const desc = (p as any).descripcion ?? 'plazo';
+        lines.push(`  • <code>${num}</code> — ${cliente} — ${desc} (${(p as any).fecha_vencimiento})`);
+      }
+      if (vencidos.length > 5) lines.push(`  <i>...y ${vencidos.length - 5} más</i>`);
+    }
+
+    if (proximos.length > 0) {
+      lines.push('');
+      lines.push(`\u{1F7E1} <b>Próximos 7 días (${proximos.length}):</b>`);
+      for (const p of proximos.slice(0, 6)) {
+        const exp = (p as any).expediente;
+        const cliente = exp?.cliente?.nombre ?? 'Sin cliente';
+        const num = getNumeroExpediente(exp);
+        const desc = (p as any).descripcion ?? 'plazo';
+        const dias = (p as any).dias_restantes;
+        const label = dias === 0 ? 'HOY' : dias === 1 ? 'mañana' : `en ${dias}d`;
+        lines.push(`  • <code>${num}</code> — ${cliente} — ${desc} (${label})`);
+      }
+      if (proximos.length > 6) lines.push(`  <i>...y ${proximos.length - 6} más</i>`);
+    }
+
+    return lines.join('\n');
+  } catch (err) {
+    console.error('[agenda-matutina] Error building plazos digest:', err);
+    return null;
   }
 }
 

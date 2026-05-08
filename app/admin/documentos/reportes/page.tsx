@@ -721,7 +721,7 @@ function ProductividadTab() {
           ))}
         </div>
         <span className="text-sm text-slate-500">
-          Trabajador: <strong className="text-slate-700">Brandon (Asistente)</strong>
+          Trabajador: <strong className="text-slate-700">Mariano (Asistente)</strong>
         </span>
       </div>
 
