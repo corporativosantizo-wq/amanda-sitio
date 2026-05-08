@@ -47,8 +47,8 @@
       "schedule": "*/15 * * * *"
     },
     {
-      "path": "/api/cron/mensajes-mariano",
-      "schedule": "0 14,18,21 * * 1-5"
+      "path": "/api/cron/mensajes-telegram",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
