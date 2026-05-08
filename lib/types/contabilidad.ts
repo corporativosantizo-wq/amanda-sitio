@@ -355,6 +355,63 @@ export interface ActualizarReciboInput {
   monto?: number;                    // sólo manuales
 }
 
+// --- Trámites y avances ---
+
+export type EstadoTramite = 'pendiente' | 'en_proceso' | 'completado' | 'suspendido';
+
+export interface Tramite {
+  id: string;
+  cotizacion_id: string;
+  nombre: string;
+  estado: EstadoTramite;
+  orden: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TramiteAvance {
+  id: string;
+  tramite_id: string;
+  fecha: string;             // YYYY-MM-DD
+  descripcion: string;
+  documento_url: string | null;
+  notificado: boolean;
+  notificado_at: string | null;
+  created_at: string;
+}
+
+export interface TramiteItemMin {
+  id: string;
+  descripcion: string;
+  total: number;
+  orden: number;
+}
+
+export interface TramiteConDetalle extends Tramite {
+  avances: TramiteAvance[];
+  items: TramiteItemMin[];
+}
+
+export interface CrearTramiteInput {
+  cotizacion_id: string;
+  nombre: string;
+  estado?: EstadoTramite;
+  item_ids?: string[];          // ítems que se asignan a este nuevo trámite
+}
+
+export interface ActualizarTramiteInput {
+  nombre?: string;
+  estado?: EstadoTramite;
+  orden?: number;
+}
+
+export interface CrearAvanceInput {
+  tramite_id: string;
+  fecha?: string;               // YYYY-MM-DD; default = hoy
+  descripcion: string;
+  documento_path?: string | null; // path en bucket "documentos"
+}
+
 // --- Cobros ---
 
 export interface Cobro {

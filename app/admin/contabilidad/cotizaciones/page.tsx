@@ -298,6 +298,7 @@ export default function CotizacionesPage() {
                             onAccion={(accion) => ejecutarAccion(cot.id, accion)}
                             onDuplicar={() => ejecutarAccion(cot.id, 'duplicar')}
                             onReenviar={() => setReenviarCot(cot)}
+                            onTramites={() => router.push(`/admin/contabilidad/cotizaciones/${cot.id}/tramites`)}
                             disabled={mutating}
                           />
                         </td>
@@ -409,12 +410,13 @@ export default function CotizacionesPage() {
 
 // ── Row Actions ─────────────────────────────────────────────────────────
 
-function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled }: {
+function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, onTramites, disabled }: {
   estado: string;
   cotId: string;
   onAccion: (accion: string) => void;
   onDuplicar: () => void;
   onReenviar: () => void;
+  onTramites: () => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -455,6 +457,9 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled 
     acciones.push({ label: 'Aceptar', accion: 'aceptar', icon: '✅' });
     acciones.push({ label: 'Rechazar', accion: 'rechazar', icon: '❌' });
   }
+  if (estado === 'aceptada') {
+    acciones.push({ label: 'Reportar avance', accion: 'tramites', icon: '📋' });
+  }
   acciones.push({ label: 'Duplicar', accion: 'duplicar', icon: '📋' });
 
   return (
@@ -477,6 +482,7 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, disabled 
                   if (a.accion === 'pdf') descargarPDF();
                   else if (a.accion === 'duplicar') { setOpen(false); onDuplicar(); }
                   else if (a.accion === 'reenviar') { setOpen(false); onReenviar(); }
+                  else if (a.accion === 'tramites') { setOpen(false); onTramites(); }
                   else { setOpen(false); onAccion(a.accion); }
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"

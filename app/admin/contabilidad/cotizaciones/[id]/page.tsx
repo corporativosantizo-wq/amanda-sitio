@@ -345,6 +345,14 @@ export default function CotizacionDetallePage() {
               </button>
             </>
           )}
+          {cot.estado === 'aceptada' && (
+            <button
+              onClick={() => router.push(`/admin/contabilidad/cotizaciones/${id}/tramites`)}
+              className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-all"
+            >
+              📋 Trámites y avances
+            </button>
+          )}
           {cot.estado === 'aceptada' && !cot.factura_generada && (
             <button
               onClick={crearFactura}
