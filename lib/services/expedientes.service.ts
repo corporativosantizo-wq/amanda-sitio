@@ -273,6 +273,65 @@ export async function crearActuacion(input: ActuacionInsert): Promise<ActuacionP
   return data as ActuacionProcesal;
 }
 
+export async function obtenerActuacion(id: string): Promise<ActuacionProcesal> {
+  const { data, error } = await db()
+    .from('actuaciones_procesales')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) throw new ExpedienteError('Actuación no encontrada', error);
+  return data as ActuacionProcesal;
+}
+
+export async function actualizarActuacion(
+  id: string,
+  updates: Partial<ActuacionInsert>,
+): Promise<ActuacionProcesal> {
+  const payload: Record<string, unknown> = {};
+  if (updates.fecha !== undefined) payload.fecha = updates.fecha;
+  if (updates.sede !== undefined) payload.sede = updates.sede;
+  if (updates.tipo !== undefined) payload.tipo = updates.tipo;
+  if (updates.descripcion !== undefined) payload.descripcion = updates.descripcion;
+  if (updates.realizado_por !== undefined) payload.realizado_por = updates.realizado_por;
+  if ((updates as any).documento_url !== undefined) payload.documento_url = (updates as any).documento_url;
+
+  const { data, error } = await db()
+    .from('actuaciones_procesales')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error || !data) throw new ExpedienteError('Error al actualizar actuación', error);
+  return data as ActuacionProcesal;
+}
+
+export async function eliminarActuacion(id: string): Promise<void> {
+  // Fetch first to know if there's a file to delete
+  const { data: existing } = await db()
+    .from('actuaciones_procesales')
+    .select('documento_url')
+    .eq('id', id)
+    .single();
+
+  if (existing?.documento_url) {
+    const { error: storageErr } = await db()
+      .storage.from('documentos')
+      .remove([existing.documento_url]);
+    if (storageErr) {
+      console.error('[Actuaciones] No se pudo eliminar archivo:', storageErr.message);
+    }
+  }
+
+  const { error } = await db()
+    .from('actuaciones_procesales')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw new ExpedienteError('Error al eliminar actuación', error);
+}
+
 // --- Plazos procesales ---
 
 export async function listarPlazos(expedienteId: string) {

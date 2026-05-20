@@ -10,7 +10,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, ExternalLink, Download, FileText } from 'lucide-react';
 
 interface DocumentViewerProps {
-  docId: string;
+  docId?: string;
+  previewUrl?: string;
   fileName: string;
   onClose: () => void;
 }
@@ -39,14 +40,14 @@ const EXT_COLORS: Record<string, string> = {
   png: 'bg-amber-100 text-amber-700',
 };
 
-export default function DocumentViewer({ docId, fileName, onClose }: DocumentViewerProps) {
+export default function DocumentViewer({ docId, previewUrl, fileName, onClose }: DocumentViewerProps) {
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [docxError, setDocxError] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
 
   const ext = getFileExt(fileName);
   const viewType = getViewType(ext);
-  const proxyUrl = `/api/admin/documentos/${docId}/preview`;
+  const proxyUrl = previewUrl ?? `/api/admin/documentos/${docId}/preview`;
 
   // For DOCX: fetch via proxy and convert with mammoth
   useEffect(() => {

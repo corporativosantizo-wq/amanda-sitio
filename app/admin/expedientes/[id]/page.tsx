@@ -18,7 +18,7 @@ import DocumentViewer from '@/components/admin/document-viewer';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
   FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
-  Upload, Search, Unlink, Eye,
+  Upload, Search, Unlink, Eye, Paperclip, Trash2,
 } from 'lucide-react';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
@@ -1050,39 +1050,176 @@ function TabActuaciones({ actuaciones, expedienteId, origen, mutate, refetch }: 
   refetch: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [sede, setSede] = useState<SedeActuacion>(origen === 'fiscal' ? 'fiscal' : origen === 'administrativo' ? 'administrativa' : 'judicial');
   const [tipo, setTipo] = useState<TipoActuacion>('memorial');
   const [descripcion, setDescripcion] = useState('');
   const [realizadoPor, setRealizadoPor] = useState<RealizadoPor>('bufete');
+  const [archivo, setArchivo] = useState<File | null>(null);
+  const [documentoActual, setDocumentoActual] = useState<string | null>(null);
+  const [eliminarDocumento, setEliminarDocumento] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [previewActuacion, setPreviewActuacion] = useState<ActuacionProcesal | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'];
+
+  const resetForm = useCallback(() => {
+    setEditingId(null);
+    setFecha(new Date().toISOString().slice(0, 10));
+    setSede(origen === 'fiscal' ? 'fiscal' : origen === 'administrativo' ? 'administrativa' : 'judicial');
+    setTipo('memorial');
+    setDescripcion('');
+    setRealizadoPor('bufete');
+    setArchivo(null);
+    setDocumentoActual(null);
+    setEliminarDocumento(false);
+    setErrorMsg(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [origen]);
+
+  function abrirNueva() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  function abrirEditar(a: ActuacionProcesal) {
+    setEditingId(a.id);
+    setFecha(a.fecha);
+    setSede(a.sede);
+    setTipo(a.tipo);
+    setDescripcion(a.descripcion);
+    setRealizadoPor(a.realizado_por);
+    setArchivo(null);
+    setDocumentoActual(a.documento_url);
+    setEliminarDocumento(false);
+    setErrorMsg(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowForm(true);
+  }
+
+  function cerrarForm() {
+    setShowForm(false);
+    resetForm();
+  }
+
+  function onSelectFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const ext = (file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '');
+    if (!ALLOWED_EXTS.includes(ext)) {
+      setErrorMsg(`Formato no permitido. Aceptados: ${ALLOWED_EXTS.join(', ')}`);
+      ev.target.value = '';
+      return;
+    }
+    setArchivo(file);
+    setEliminarDocumento(false);
+    setErrorMsg(null);
+  }
+
+  async function subirArchivo(file: File): Promise<string> {
+    const urlRes = await adminFetch(`/api/admin/expedientes/${expedienteId}/actuaciones/upload-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, filesize: file.size }),
+    });
+    const urlData = await urlRes.json();
+    if (!urlRes.ok) throw new Error(urlData.error || 'No se pudo obtener URL de subida');
+
+    const result = await signedUrlUpload(urlData.signed_url, file, file.type || 'application/octet-stream');
+    if (!result.ok) throw new Error('Error al subir archivo a Storage');
+
+    return urlData.storage_path as string;
+  }
 
   async function handleSubmit() {
     if (!descripcion.trim()) return;
     setSubmitting(true);
-    await mutate(`/api/admin/expedientes/${expedienteId}/actuaciones`, {
-      method: 'POST',
-      body: { fecha, sede, tipo, descripcion: descripcion.trim(), realizado_por: realizadoPor },
-      onSuccess: () => {
-        setShowForm(false);
-        setDescripcion('');
-        refetch();
-      },
-    });
+    setErrorMsg(null);
+
+    try {
+      if (editingId) {
+        let documentoUrl: string | null | undefined;
+        if (archivo) {
+          documentoUrl = await subirArchivo(archivo);
+        } else if (eliminarDocumento) {
+          documentoUrl = null;
+        }
+
+        const updates: Record<string, unknown> = {
+          fecha, sede, tipo,
+          descripcion: descripcion.trim(),
+          realizado_por: realizadoPor,
+        };
+        if (documentoUrl !== undefined) updates.documento_url = documentoUrl;
+
+        const res = await adminFetch(`/api/admin/expedientes/${expedienteId}/actuaciones/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || 'Error al actualizar actuación');
+        }
+      } else {
+        let documentoUrl: string | null = null;
+        if (archivo) documentoUrl = await subirArchivo(archivo);
+
+        const res = await adminFetch(`/api/admin/expedientes/${expedienteId}/actuaciones`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fecha, sede, tipo,
+            descripcion: descripcion.trim(),
+            realizado_por: realizadoPor,
+            documento_url: documentoUrl,
+          }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || 'Error al crear actuación');
+        }
+      }
+
+      cerrarForm();
+      refetch();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error inesperado');
+    }
+
     setSubmitting(false);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('¿Eliminar esta actuación? Esta acción no se puede deshacer.')) return;
+    await mutate(`/api/admin/expedientes/${expedienteId}/actuaciones/${id}`, {
+      method: 'DELETE',
+      onSuccess: refetch,
+    });
+  }
+
+  function descargar(a: ActuacionProcesal) {
+    const url = `/api/admin/expedientes/${expedienteId}/actuaciones/${a.id}/preview`;
+    const a_ = document.createElement('a');
+    a_.href = url;
+    a_.download = a.documento_url?.split('/').pop() || `actuacion-${a.id.slice(0, 8)}`;
+    a_.click();
   }
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => setShowForm(v => !v)}
+        <button onClick={() => showForm ? cerrarForm() : abrirNueva()}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
           <Plus size={14} /> Nueva actuación
         </button>
       </div>
 
       {showForm && (
-        <Section title="Nueva actuación">
+        <Section title={editingId ? 'Editar actuación' : 'Nueva actuación'}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
@@ -1111,14 +1248,102 @@ function TabActuaciones({ actuaciones, expedienteId, origen, mutate, refetch }: 
               <textarea value={descripcion} onChange={ev => setDescripcion(ev.target.value)}
                 rows={3} className={INPUT} placeholder="Describe la actuación..." />
             </div>
+
+            {/* Adjuntar documento */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Documento adjunto (opcional)</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ALLOWED_EXTS.join(',')}
+                onChange={onSelectFile}
+                className="hidden"
+              />
+
+              {archivo ? (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip size={14} className="text-blue-600 shrink-0" />
+                    <span className="text-sm text-blue-900 truncate">{archivo.name}</span>
+                    <span className="text-xs text-blue-500 shrink-0">
+                      {archivo.size < 1024 * 1024 ? `${(archivo.size / 1024).toFixed(0)} KB` : `${(archivo.size / (1024 * 1024)).toFixed(1)} MB`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setArchivo(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                    className="p-1 text-blue-500 hover:text-red-600 transition-colors"
+                    title="Quitar archivo"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : documentoActual && !eliminarDocumento ? (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip size={14} className="text-emerald-600 shrink-0" />
+                    <span className="text-sm text-emerald-900 truncate">
+                      Documento actual: {documentoActual.split('/').pop()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100 rounded transition-colors"
+                      title="Reemplazar"
+                    >
+                      Reemplazar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEliminarDocumento(true)}
+                      className="p-1 text-emerald-500 hover:text-red-600 transition-colors"
+                      title="Eliminar documento"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-50 border border-dashed border-slate-300 rounded-lg hover:border-cyan-400 hover:bg-cyan-50/30 transition-colors"
+                >
+                  <Paperclip size={14} /> Adjuntar documento
+                  <span className="text-xs text-slate-400">(PDF, DOCX, DOC, JPG, PNG)</span>
+                </button>
+              )}
+
+              {eliminarDocumento && (
+                <div className="mt-2 flex items-center justify-between gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-xs text-amber-800">⚠️ El documento adjunto se eliminará al guardar</span>
+                  <button
+                    type="button"
+                    onClick={() => setEliminarDocumento(false)}
+                    className="text-xs font-medium text-amber-700 hover:underline"
+                  >
+                    Deshacer
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+
+          {errorMsg && (
+            <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {errorMsg}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setShowForm(false)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">
+            <button onClick={cerrarForm} className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">
               Cancelar
             </button>
             <button onClick={handleSubmit} disabled={submitting || !descripcion.trim()}
               className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1e3a8a] disabled:opacity-50 transition-colors">
-              {submitting ? 'Guardando...' : 'Guardar'}
+              {submitting ? (archivo ? 'Subiendo...' : 'Guardando...') : editingId ? 'Actualizar' : 'Guardar'}
             </button>
           </div>
         </Section>
@@ -1151,10 +1376,53 @@ function TabActuaciones({ actuaciones, expedienteId, origen, mutate, refetch }: 
                   <span className="text-xs text-slate-400 ml-auto">{a.fecha}</span>
                 </div>
                 <p className="text-sm text-slate-700 mt-1.5 whitespace-pre-wrap">{a.descripcion}</p>
+
+                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                  {a.documento_url && (
+                    <>
+                      <button
+                        onClick={() => setPreviewActuacion(a)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                        title="Ver documento adjunto"
+                      >
+                        <Paperclip size={12} /> Adjunto
+                      </button>
+                      <button
+                        onClick={() => descargar(a)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+                        title="Descargar"
+                      >
+                        <Download size={12} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => abrirEditar(a)}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+                    title="Editar"
+                  >
+                    <Edit3 size={12} /> Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(a.id)}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                    title="Eliminar"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {previewActuacion && (
+        <DocumentViewer
+          previewUrl={`/api/admin/expedientes/${expedienteId}/actuaciones/${previewActuacion.id}/preview`}
+          fileName={previewActuacion.documento_url?.split('/').pop() || 'documento'}
+          onClose={() => setPreviewActuacion(null)}
+        />
       )}
     </div>
   );
