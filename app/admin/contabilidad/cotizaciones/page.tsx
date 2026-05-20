@@ -53,6 +53,7 @@ export default function CotizacionesPage() {
   const [busqueda, setBusqueda] = useState('');
   const [page, setPage] = useState(1);
   const [reenviarCot, setReenviarCot] = useState<any>(null);
+  const [facturaCot, setFacturaCot] = useState<any>(null);
 
   // ── Selección múltiple ──────────────────────────────────────────────
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
@@ -295,10 +296,12 @@ export default function CotizacionesPage() {
                           <RowActions
                             estado={cot.estado}
                             cotId={cot.id}
+                            facturaSolicitada={!!(cot as any).factura_solicitada}
                             onAccion={(accion) => ejecutarAccion(cot.id, accion)}
                             onDuplicar={() => ejecutarAccion(cot.id, 'duplicar')}
                             onReenviar={() => setReenviarCot(cot)}
                             onTramites={() => router.push(`/admin/contabilidad/cotizaciones/${cot.id}/tramites`)}
+                            onSolicitarFactura={() => setFacturaCot(cot)}
                             disabled={mutating}
                           />
                         </td>
@@ -393,6 +396,20 @@ export default function CotizacionesPage() {
         />
       )}
 
+      {/* ── Modal: Solicitar factura ────────────────────────────────────── */}
+      {facturaCot && (
+        <SolicitarFacturaModal
+          cotizacion={facturaCot}
+          onClose={() => setFacturaCot(null)}
+          onSuccess={(msg) => {
+            setFacturaCot(null);
+            setToast({ type: 'success', message: msg });
+            refetch();
+          }}
+          onError={(msg) => setToast({ type: 'error', message: msg })}
+        />
+      )}
+
       {/* ── Toast ───────────────────────────────────────────────────────── */}
       {toast && (
         <div className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-in slide-in-from-right-4 ${
@@ -410,13 +427,15 @@ export default function CotizacionesPage() {
 
 // ── Row Actions ─────────────────────────────────────────────────────────
 
-function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, onTramites, disabled }: {
+function RowActions({ estado, cotId, facturaSolicitada, onAccion, onDuplicar, onReenviar, onTramites, onSolicitarFactura, disabled }: {
   estado: string;
   cotId: string;
+  facturaSolicitada: boolean;
   onAccion: (accion: string) => void;
   onDuplicar: () => void;
   onReenviar: () => void;
   onTramites: () => void;
+  onSolicitarFactura: () => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -444,7 +463,7 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, onTramite
     setDescargando(false);
   };
 
-  const acciones: Array<{ label: string; accion: string; icon: string }> = [];
+  const acciones: Array<{ label: string; accion: string; icon: string; disabled?: boolean }> = [];
 
   acciones.push({ label: descargando ? 'Generando...' : 'Descargar PDF', accion: 'pdf', icon: '📄' });
   if (estado === 'borrador') {
@@ -461,6 +480,13 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, onTramite
     acciones.push({ label: 'Reportar avance', accion: 'tramites', icon: '📋' });
   }
   acciones.push({ label: 'Duplicar', accion: 'duplicar', icon: '📋' });
+  if (estado === 'aceptada') {
+    if (facturaSolicitada) {
+      acciones.push({ label: 'Factura solicitada', accion: 'factura', icon: '✅', disabled: true });
+    } else {
+      acciones.push({ label: 'Solicitar factura', accion: 'factura', icon: '🧾' });
+    }
+  }
 
   return (
     <div className="relative">
@@ -477,15 +503,22 @@ function RowActions({ estado, cotId, onAccion, onDuplicar, onReenviar, onTramite
           <div className="absolute right-0 top-8 z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px]">
             {acciones.map(a => (
               <button
-                key={a.accion}
+                key={a.accion + a.label}
+                disabled={a.disabled}
                 onClick={() => {
+                  if (a.disabled) return;
                   if (a.accion === 'pdf') descargarPDF();
                   else if (a.accion === 'duplicar') { setOpen(false); onDuplicar(); }
                   else if (a.accion === 'reenviar') { setOpen(false); onReenviar(); }
                   else if (a.accion === 'tramites') { setOpen(false); onTramites(); }
+                  else if (a.accion === 'factura') { setOpen(false); onSolicitarFactura(); }
                   else { setOpen(false); onAccion(a.accion); }
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                  a.disabled
+                    ? 'text-emerald-600 bg-emerald-50/50 cursor-default'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
               >
                 <span>{a.icon}</span>
                 <span>{a.label}</span>
@@ -888,6 +921,106 @@ function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
             className="px-4 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {sending ? 'Enviando...' : 'Enviar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal: Solicitar factura ────────────────────────────────────────────
+
+function SolicitarFacturaModal({ cotizacion, onClose, onSuccess, onError }: {
+  cotizacion: any;
+  onClose: () => void;
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [enviando, setEnviando] = useState(false);
+
+  const clienteNombre = cotizacion.cliente?.nombre ?? '—';
+  const nit = cotizacion.cliente?.nit?.trim() || 'CF';
+  const concepto = `Servicios profesionales según cotización ${cotizacion.numero}`;
+
+  const handleConfirmar = async () => {
+    setEnviando(true);
+    try {
+      const res = await adminFetch('/api/admin/contabilidad/solicitar-factura', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cotizacion_id: cotizacion.id }),
+      });
+
+      if (res.type === 'opaqueredirect' || res.status === 405 || res.status === 401 || (res.status >= 300 && res.status < 400)) {
+        onError('Sesión expirada. Recarga la página para continuar.');
+        setEnviando(false);
+        return;
+      }
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        onError(result.error || 'Error al solicitar factura');
+        setEnviando(false);
+        return;
+      }
+
+      onSuccess(result.mensaje || 'Solicitud de factura enviada a RE Contadores');
+    } catch (err: any) {
+      onError(err.message || 'Error de conexión');
+    }
+    setEnviando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-slate-900 mb-1">Solicitar factura</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Se enviará un correo a <span className="font-medium text-slate-700">RE Contadores</span> con los siguientes datos:
+        </p>
+
+        <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-4">
+          <div className="px-3 py-2 flex justify-between gap-3">
+            <span className="text-xs text-slate-500">Cliente</span>
+            <span className="text-sm font-medium text-slate-800 text-right">{clienteNombre}</span>
+          </div>
+          <div className="px-3 py-2 flex justify-between gap-3">
+            <span className="text-xs text-slate-500">NIT</span>
+            <span className="text-sm font-mono font-medium text-slate-800">{nit}</span>
+          </div>
+          <div className="px-3 py-2 flex justify-between gap-3">
+            <span className="text-xs text-slate-500">Monto</span>
+            <span className="text-sm font-semibold text-slate-900">{Q(cotizacion.total)}</span>
+          </div>
+          <div className="px-3 py-2 flex justify-between gap-3">
+            <span className="text-xs text-slate-500">Concepto</span>
+            <span className="text-sm text-slate-700 text-right">{concepto}</span>
+          </div>
+          <div className="px-3 py-2 flex justify-between gap-3">
+            <span className="text-xs text-slate-500">Cotización</span>
+            <span className="text-sm font-mono text-slate-700">{cotizacion.numero}</span>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 text-xs text-amber-800">
+          ⚠️ Requiere al menos un pago confirmado (no anticipo) registrado para esta cotización.
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={enviando}
+            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleConfirmar}
+            disabled={enviando}
+            className="px-4 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          >
+            {enviando ? 'Enviando...' : <>🧾 Confirmar solicitud</>}
           </button>
         </div>
       </div>

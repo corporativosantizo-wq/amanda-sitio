@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerDatosPago, solicitarFacturaRE } from '@/lib/services/factura-re.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { handleApiError } from '@/lib/api-error';
 
 export async function POST(request: NextRequest) {
@@ -15,13 +16,46 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { pago_id } = body;
+    const { pago_id: pagoIdInput, cotizacion_id } = body;
 
-    if (!pago_id) {
-      return NextResponse.json({ error: 'pago_id requerido' }, { status: 400 });
+    if (!pagoIdInput && !cotizacion_id) {
+      return NextResponse.json(
+        { error: 'pago_id o cotizacion_id requerido' },
+        { status: 400 },
+      );
     }
 
-    const datos = await obtenerDatosPago(pago_id);
+    let pagoId: string | undefined = pagoIdInput;
+
+    if (!pagoId && cotizacion_id) {
+      const db = createAdminClient();
+      const { data: pagos } = await db
+        .from('pagos')
+        .select('id, es_anticipo, cobro:cobros!cobro_id (factura_solicitada)')
+        .eq('cotizacion_id', cotizacion_id)
+        .eq('estado', 'confirmado')
+        .order('fecha_pago', { ascending: false });
+
+      const eligible = (pagos ?? []).find(
+        (p: any) => !p.es_anticipo && !p.cobro?.factura_solicitada,
+      );
+
+      if (!eligible) {
+        const tienePagos = (pagos ?? []).length > 0;
+        return NextResponse.json(
+          {
+            error: tienePagos
+              ? 'Esta cotización solo tiene anticipos o ya tiene factura solicitada. Registra el pago final antes de solicitar la factura.'
+              : 'Esta cotización aún no tiene pagos confirmados. Registra el pago antes de solicitar la factura.',
+          },
+          { status: 400 },
+        );
+      }
+
+      pagoId = eligible.id;
+    }
+
+    const datos = await obtenerDatosPago(pagoId!);
     if (!datos) {
       return NextResponse.json(
         { error: 'Pago no encontrado o sin cliente asociado' },
@@ -33,7 +67,6 @@ export async function POST(request: NextRequest) {
 
     const montoFmt = `Q${datos.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
 
-    // Notify via Telegram
     try {
       await sendTelegramMessage(
         `📄 Factura solicitada a RE para <b>${escapeHtml(datos.cliente_nombre)}</b> — ${montoFmt}`,

@@ -101,6 +101,7 @@ export async function listarCotizaciones(params: ListParams = {}) {
   // Fetch confirmed payment totals for these cotizaciones
   const ids = (data ?? []).map((c: any) => c.id);
   let pagosPorCot: Record<string, number> = {};
+  let facturaSolicitadaPorCot: Record<string, boolean> = {};
   if (ids.length > 0) {
     const { data: pagos } = await db()
       .from('pagos')
@@ -110,11 +111,20 @@ export async function listarCotizaciones(params: ListParams = {}) {
     for (const p of (pagos ?? [])) {
       pagosPorCot[p.cotizacion_id] = (pagosPorCot[p.cotizacion_id] ?? 0) + p.monto;
     }
+
+    const { data: cobros } = await db()
+      .from('cobros')
+      .select('cotizacion_id, factura_solicitada')
+      .in('cotizacion_id', ids);
+    for (const c of (cobros ?? [])) {
+      if (c.factura_solicitada) facturaSolicitadaPorCot[c.cotizacion_id] = true;
+    }
   }
 
   const dataConPagos = (data ?? []).map((c: any) => ({
     ...c,
     monto_pagado: pagosPorCot[c.id] ?? 0,
+    factura_solicitada: facturaSolicitadaPorCot[c.id] ?? false,
   }));
 
   return {
