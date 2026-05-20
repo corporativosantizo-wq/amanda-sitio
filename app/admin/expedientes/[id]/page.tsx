@@ -15,6 +15,7 @@ import { adminFetch } from '@/lib/utils/admin-fetch';
 import { safeWindowOpen } from '@/lib/utils/validate-url';
 import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
 import DocumentViewer from '@/components/admin/document-viewer';
+import { toast } from 'sonner';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
   FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
@@ -1737,6 +1738,28 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
     });
   };
 
+  const eliminarDoc = async (docId: string, nombre: string) => {
+    const confirmacion = window.confirm(
+      `¿Estás seguro de que deseas eliminar "${nombre}"? Esta acción no se puede deshacer.`
+    );
+    if (!confirmacion) return;
+
+    try {
+      const res = await adminFetch(`/api/admin/documentos/${docId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let msg = `Error ${res.status}`;
+        try { const j = await res.json(); msg = j.error ?? msg; } catch { /* noop */ }
+        toast.error(`No se pudo eliminar: ${msg}`);
+        return;
+      }
+      toast.success(`Documento eliminado: ${nombre}`);
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Error al eliminar: ${msg}`);
+    }
+  };
+
   const TIPO_LABELS: Record<string, string> = {
     contrato_comercial: 'Contrato Comercial', escritura_publica: 'Escritura Pública',
     testimonio: 'Testimonio', acta_notarial: 'Acta Notarial', poder: 'Poder',
@@ -1886,10 +1909,17 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
                         </button>
                         <button
                           onClick={() => desvincular(doc.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                          title="Desvincular"
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                          title="Desvincular del expediente"
                         >
                           <Unlink size={13} />
+                        </button>
+                        <button
+                          onClick={() => eliminarDoc(doc.id, doc.titulo || doc.nombre_archivo || 'documento')}
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                          title="Eliminar definitivamente"
+                        >
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </td>
