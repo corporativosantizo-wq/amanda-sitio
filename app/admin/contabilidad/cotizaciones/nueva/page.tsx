@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { PageHeader, Q } from '@/components/admin/ui';
 import {
-  CATALOGO, CATEGORIAS, CATEGORIA_COLORES,
+  CATEGORIAS, colorCategoria,
   buscarServicios,
   type ServicioCatalogo, type CategoriaServicio,
 } from '@/lib/data/catalogo-servicios';
@@ -105,6 +105,10 @@ export default function NuevaCotizacionPage() {
     : null;
   const { data: clientesResult } = useFetch<{ data: ClienteBusqueda[] }>(clienteUrl);
 
+  // Catalogo desde la BD (legal.catalogo_servicios, activo=true)
+  const { data: catalogoData } = useFetch<{ data: ServicioCatalogo[] }>('/api/admin/catalogo-servicios');
+  const catalogo = useMemo(() => catalogoData?.data ?? [], [catalogoData]);
+
   // ── Calculations ────────────────────────────────────────────────────
 
   const calc = useMemo(() => {
@@ -124,11 +128,8 @@ export default function NuevaCotizacionPage() {
   // ── Catalog filtering ───────────────────────────────────────────────
 
   const catalogoFiltrado = useMemo(() => {
-    return buscarServicios(
-      catalogoBusqueda,
-      catFiltro || undefined,
-    );
-  }, [catFiltro, catalogoBusqueda]);
+    return buscarServicios(catalogo, catalogoBusqueda, catFiltro || undefined);
+  }, [catalogo, catFiltro, catalogoBusqueda]);
 
   // ── Item actions ────────────────────────────────────────────────────
 
@@ -391,10 +392,11 @@ export default function NuevaCotizacionPage() {
                     !catFiltro ? 'bg-[#1E40AF] text-white border-[#1E40AF]' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                   }`}
                 >
-                  Todos ({CATALOGO.length})
+                  Todos ({catalogo.length})
                 </button>
                 {CATEGORIAS.map(cat => {
-                  const count = CATALOGO.filter(s => s.categoria === cat).length;
+                  const count = catalogo.filter(s => s.categoria === cat).length;
+                  if (count === 0) return null;
                   return (
                     <button
                       key={cat}
@@ -402,7 +404,7 @@ export default function NuevaCotizacionPage() {
                       className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap border transition-all ${
                         catFiltro === cat
                           ? 'bg-[#1E40AF] text-white border-[#1E40AF]'
-                          : `${CATEGORIA_COLORES[cat]} hover:opacity-80`
+                          : `${colorCategoria(cat)} hover:opacity-80`
                       }`}
                     >
                       {cat} ({count})
@@ -431,7 +433,7 @@ export default function NuevaCotizacionPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-900 leading-tight">{srv.nombre}</p>
                         <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{srv.descripcion}</p>
-                        <span className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded border ${CATEGORIA_COLORES[srv.categoria]}`}>
+                        <span className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded border ${colorCategoria(srv.categoria)}`}>
                           {srv.categoria}
                         </span>
                       </div>
