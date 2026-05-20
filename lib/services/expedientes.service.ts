@@ -134,8 +134,8 @@ export async function obtenerExpediente(id: string) {
     db().from('actuaciones_procesales')
       .select('*')
       .eq('expediente_id', id)
-      .order('fecha', { ascending: false })
-      .limit(50),
+      .order('fecha', { ascending: true })
+      .limit(500),
     db().from('plazos_procesales')
       .select('*')
       .eq('expediente_id', id)

@@ -18,7 +18,7 @@ import DocumentViewer from '@/components/admin/document-viewer';
 import {
   Scale, Shield, Building2, Plus, Clock, AlertTriangle, Link2,
   FileText, ChevronRight, CheckCircle, XCircle, Calendar, Edit3, Save, X, Download,
-  Upload, Search, Unlink, Eye, Paperclip, Trash2,
+  Upload, Search, Unlink, Eye, Paperclip, Trash2, ArrowUpDown, Package,
 } from 'lucide-react';
 import {
   type OrigenExpediente, type TipoProceso, type FaseExpediente,
@@ -140,6 +140,39 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
 
 const INPUT = 'w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
 const SELECT = `${INPUT} bg-white`;
+
+// Color por tipo de actuación (índice de expediente judicial GT)
+const TIPO_ACTUACION_COLOR: Record<TipoActuacion, string> = {
+  memorial: 'bg-blue-100 text-blue-700 border-blue-200',
+  resolucion: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  resolucion_administrativa: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  notificacion: 'bg-amber-100 text-amber-800 border-amber-200',
+  audiencia: 'bg-purple-100 text-purple-700 border-purple-200',
+  sentencia: 'bg-rose-100 text-rose-700 border-rose-200',
+  recurso: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  diligencia: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  requerimiento_fiscal: 'bg-orange-100 text-orange-700 border-orange-200',
+  declaracion: 'bg-violet-100 text-violet-700 border-violet-200',
+  peritaje: 'bg-teal-100 text-teal-700 border-teal-200',
+  providencia: 'bg-slate-100 text-slate-700 border-slate-200',
+  otro: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+
+function formatFechaDDMMYYYY(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  // Soporta 'YYYY-MM-DD' y full ISO. Forzamos mediodía local para evitar drift.
+  const ymd = iso.slice(0, 10);
+  const [y, m, d] = ymd.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+function formatTamano(bytes: number | null | undefined): string {
+  if (bytes == null) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const OrigenIcon = ({ origen, size = 16 }: { origen: OrigenExpediente; size?: number }) => {
   switch (origen) {
@@ -1209,9 +1242,27 @@ function TabActuaciones({ actuaciones, expedienteId, origen, mutate, refetch }: 
     a_.click();
   }
 
+  const [sortAsc, setSortAsc] = useState(true);
+  const actuacionesSorted = [...actuaciones].sort((a, b) => {
+    const cmp = a.fecha.localeCompare(b.fecha);
+    if (cmp !== 0) return sortAsc ? cmp : -cmp;
+    // Desempate por created_at para mantener orden estable dentro del mismo día
+    const ac = a.created_at ?? '';
+    const bc = b.created_at ?? '';
+    return sortAsc ? ac.localeCompare(bc) : bc.localeCompare(ac);
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button
+          onClick={() => setSortAsc(v => !v)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          title="Cambiar orden cronológico"
+        >
+          <ArrowUpDown size={14} />
+          Orden: {sortAsc ? 'Más antiguo primero' : 'Más reciente primero'}
+        </button>
         <button onClick={() => showForm ? cerrarForm() : abrirNueva()}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white rounded-lg hover:shadow-lg transition-all">
           <Plus size={14} /> Nueva actuación
@@ -1352,68 +1403,86 @@ function TabActuaciones({ actuaciones, expedienteId, origen, mutate, refetch }: 
       {actuaciones.length === 0 ? (
         <EmptyState icon="📋" title="Sin actuaciones" description="Registra la primera actuación procesal" />
       ) : (
-        <div className="space-y-3">
-          {actuaciones.map(a => (
-            <div key={a.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex gap-4">
-              <div className="flex flex-col items-center gap-1">
-                <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${
-                  a.sede === 'judicial' ? 'bg-blue-100 text-blue-700' :
-                  a.sede === 'fiscal' ? 'bg-amber-100 text-amber-700' :
-                  'bg-purple-100 text-purple-700'
-                }`}>
-                  {a.sede === 'judicial' ? <Scale size={14} /> :
-                   a.sede === 'fiscal' ? <Shield size={14} /> :
-                   <Building2 size={14} />}
-                </span>
-                <span className="text-[10px] text-slate-400">{SEDE_LABEL[a.sede]}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    {TIPO_ACTUACION_LABEL[a.tipo]}
-                  </span>
-                  <span className="text-xs text-slate-400">{REALIZADO_POR_LABEL[a.realizado_por]}</span>
-                  <span className="text-xs text-slate-400 ml-auto">{a.fecha}</span>
-                </div>
-                <p className="text-sm text-slate-700 mt-1.5 whitespace-pre-wrap">{a.descripcion}</p>
-
-                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-                  {a.documento_url && (
-                    <>
-                      <button
-                        onClick={() => setPreviewActuacion(a)}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-                        title="Ver documento adjunto"
-                      >
-                        <Paperclip size={12} /> Adjunto
-                      </button>
-                      <button
-                        onClick={() => descargar(a)}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
-                        title="Descargar"
-                      >
-                        <Download size={12} />
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => abrirEditar(a)}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
-                    title="Editar"
-                  >
-                    <Edit3 size={12} /> Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(a.id)}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
-                    title="Eliminar"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-slate-200 bg-slate-50">
+                  <th className="text-center text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-12">#</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-28">Fecha</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-40">Tipo</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3">Descripción</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-32">Adjunto</th>
+                  <th className="text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-28">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {actuacionesSorted.map((a, idx) => (
+                  <tr key={a.id} className="hover:bg-slate-50/70 transition-colors align-top">
+                    <td className="py-2.5 px-3 text-center">
+                      <span className="text-xs font-mono font-semibold text-slate-500">{idx + 1}</span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="text-sm text-slate-700 font-mono whitespace-nowrap">
+                        {formatFechaDDMMYYYY(a.fecha)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded border ${TIPO_ACTUACION_COLOR[a.tipo]}`}>
+                        {TIPO_ACTUACION_LABEL[a.tipo]}
+                      </span>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {SEDE_LABEL[a.sede]} · {REALIZADO_POR_LABEL[a.realizado_por]}
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{a.descripcion}</p>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {a.documento_url ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setPreviewActuacion(a)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors"
+                            title="Ver documento adjunto"
+                          >
+                            <Paperclip size={12} /> Ver
+                          </button>
+                          <button
+                            onClick={() => descargar(a)}
+                            className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                            title="Descargar adjunto"
+                          >
+                            <Download size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => abrirEditar(a)}
+                          className="p-1.5 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 rounded transition-colors"
+                          title="Editar"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(a.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1609,6 +1678,8 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
   const [showVincular, setShowVincular] = useState(false);
   const [showSubir, setShowSubir] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ id: string; nombre: string } | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+  const [descargandoZip, setDescargandoZip] = useState(false);
 
   const descargarDoc = async (docId: string, nombre?: string) => {
     try {
@@ -1627,6 +1698,38 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
     } catch (err) { console.error('[DocumentViewer] Error descargando:', err); }
   };
 
+  const descargarTodos = async () => {
+    if (docs.length === 0 || descargandoZip) return;
+    setDescargandoZip(true);
+    try {
+      const res = await adminFetch(`/api/admin/expedientes/${expedienteId}/descargar-todos`);
+      if (!res.ok) {
+        let msg = `Error ${res.status}`;
+        try { const j = await res.json(); msg = j.error ?? msg; } catch { /* noop */ }
+        alert(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') ?? '';
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
+      const filename = match ? decodeURIComponent(match[1]) : `Expediente_${expedienteId}_documentos.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[descargar-todos] Error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Error al descargar: ${msg}`);
+    } finally {
+      setDescargandoZip(false);
+    }
+  };
+
   const desvincular = async (docId: string) => {
     await mutate(`/api/admin/expedientes/${expedienteId}/documentos`, {
       body: { accion: 'desvincular', documento_id: docId },
@@ -1641,6 +1744,18 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
     resolucion_judicial: 'Resolución Judicial', otro: 'Otro',
   };
 
+  const TIPO_COLOR: Record<string, string> = {
+    contrato_comercial: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    contrato_laboral: 'bg-teal-100 text-teal-700 border-teal-200',
+    escritura_publica: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    testimonio: 'bg-violet-100 text-violet-700 border-violet-200',
+    acta_notarial: 'bg-purple-100 text-purple-700 border-purple-200',
+    poder: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    demanda_memorial: 'bg-blue-100 text-blue-700 border-blue-200',
+    resolucion_judicial: 'bg-amber-100 text-amber-800 border-amber-200',
+    otro: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+
   function getFileIcon(name: string): string {
     const ext = name?.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
     if (ext === '.pdf') return '\u{1F4C4}';
@@ -1650,12 +1765,43 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
     return '\u{1F4C4}';
   }
 
+  // Orden cronológico: fecha_documento (con fallback a created_at) ascendente
+  type DocLite = { fecha_documento?: string | null; created_at?: string | null };
+  const docsSorted = [...docs].sort((a: DocLite, b: DocLite) => {
+    const af = ((a.fecha_documento ?? a.created_at) ?? '').slice(0, 10);
+    const bf = ((b.fecha_documento ?? b.created_at) ?? '').slice(0, 10);
+    const cmp = af.localeCompare(bf);
+    if (cmp !== 0) return sortAsc ? cmp : -cmp;
+    const ac = a.created_at ?? '';
+    const bc = b.created_at ?? '';
+    return sortAsc ? ac.localeCompare(bc) : bc.localeCompare(ac);
+  });
+
   if (loading) return <Skeleton className="h-40" />;
 
   return (
     <div className="space-y-4">
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setSortAsc(v => !v)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          title="Cambiar orden cronológico"
+        >
+          <ArrowUpDown size={14} />
+          {sortAsc ? 'Más antiguo primero' : 'Más reciente primero'}
+        </button>
+        <div className="flex-1" />
+        {docs.length > 0 && (
+          <button
+            onClick={descargarTodos}
+            disabled={descargandoZip}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-lg hover:shadow-lg transition-all disabled:opacity-60"
+            title="Descargar todos los documentos en un ZIP numerado"
+          >
+            <Package size={14} /> {descargandoZip ? 'Generando ZIP…' : 'Descargar todos'}
+          </button>
+        )}
         <button
           onClick={() => setShowVincular(true)}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
@@ -1676,74 +1822,82 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
           description="No hay documentos vinculados a este expediente. Vincula uno existente o sube uno nuevo." />
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/50">
-                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Documento</th>
-                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Tipo</th>
-                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Fecha</th>
-                <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {docs.map((doc: any) => (
-                <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">{getFileIcon(doc.nombre_archivo ?? '')}</span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate max-w-xs">
-                          {doc.titulo || doc.nombre_archivo}
-                        </p>
-                        {doc.numero_documento && (
-                          <p className="text-xs text-slate-400 font-mono">{doc.numero_documento}</p>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                      {TIPO_LABELS[doc.tipo] ?? doc.tipo}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm text-slate-500">
-                      {doc.fecha_documento
-                        ? new Date(doc.fecha_documento + 'T12:00:00').toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' })
-                        : doc.created_at
-                          ? new Date(doc.created_at).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' })
-                          : '—'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => setPreviewDoc({ id: doc.id, nombre: doc.nombre_archivo ?? doc.titulo ?? 'documento' })}
-                        className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
-                        title="Vista previa"
-                      >
-                        <Eye size={15} />
-                      </button>
-                      <button
-                        onClick={() => descargarDoc(doc.id, doc.nombre_archivo)}
-                        className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="Descargar"
-                      >
-                        <Download size={15} />
-                      </button>
-                      <button
-                        onClick={() => desvincular(doc.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Desvincular"
-                      >
-                        <Unlink size={15} />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-slate-200 bg-slate-50">
+                  <th className="text-center text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-12">#</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-28">Fecha</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-44">Tipo</th>
+                  <th className="text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3">Documento</th>
+                  <th className="text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-24">Tamaño</th>
+                  <th className="text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wider py-2.5 px-3 w-32">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {docsSorted.map((doc: any, idx: number) => (
+                  <tr key={doc.id} className="hover:bg-slate-50/70 transition-colors align-top">
+                    <td className="py-2.5 px-3 text-center">
+                      <span className="text-xs font-mono font-semibold text-slate-500">{idx + 1}</span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="text-sm text-slate-700 font-mono whitespace-nowrap">
+                        {formatFechaDDMMYYYY(doc.fecha_documento ?? doc.created_at)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded border ${TIPO_COLOR[doc.tipo] ?? TIPO_COLOR.otro}`}>
+                        {TIPO_LABELS[doc.tipo] ?? doc.tipo}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span className="text-base shrink-0">{getFileIcon(doc.nombre_archivo ?? '')}</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900 break-words">
+                            {doc.titulo || doc.nombre_archivo}
+                          </p>
+                          {doc.numero_documento && (
+                            <p className="text-xs text-slate-400 font-mono mt-0.5">{doc.numero_documento}</p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span className="text-xs text-slate-500 font-mono whitespace-nowrap">
+                        {formatTamano(doc.archivo_tamano)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setPreviewDoc({ id: doc.id, nombre: doc.nombre_archivo ?? doc.titulo ?? 'documento' })}
+                          className="p-1.5 text-cyan-600 hover:bg-cyan-50 rounded transition-colors"
+                          title="Vista previa"
+                        >
+                          <Eye size={13} />
+                        </button>
+                        <button
+                          onClick={() => descargarDoc(doc.id, doc.nombre_archivo)}
+                          className="p-1.5 text-slate-500 hover:bg-slate-100 rounded transition-colors"
+                          title="Descargar"
+                        >
+                          <Download size={13} />
+                        </button>
+                        <button
+                          onClick={() => desvincular(doc.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                          title="Desvincular"
+                        >
+                          <Unlink size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
