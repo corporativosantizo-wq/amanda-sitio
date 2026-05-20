@@ -68,6 +68,8 @@ interface DocItem {
   codigo_documento: string | null;
   tipo: string | null;
   titulo: string | null;
+  descripcion: string | null;
+  notas: string | null;
   fecha_documento: string | null;
   confianza_ia: number;
   estado: string;
@@ -89,6 +91,8 @@ interface Carpeta {
 interface BuscarDocItem {
   id: string;
   titulo: string | null;
+  descripcion: string | null;
+  notas: string | null;
   tipo: string | null;
   nombre_archivo: string;
   nombre_original: string | null;
@@ -912,6 +916,8 @@ export default function DocumentosPage() {
                                 onClick={() => setEditingDoc({
                                   id: doc.id,
                                   titulo: doc.titulo,
+                                  descripcion: doc.descripcion,
+                                  notas: doc.notas,
                                   tipo: doc.tipo,
                                   cliente_id: doc.cliente_id,
                                   codigo_documento: doc.numero_documento,
@@ -1160,7 +1166,9 @@ export default function DocumentosPage() {
                         )}
                         <button
                           onClick={() => setEditingDoc({
-                            id: doc.id, titulo: doc.titulo, tipo: doc.tipo,
+                            id: doc.id, titulo: doc.titulo,
+                            descripcion: doc.descripcion, notas: doc.notas,
+                            tipo: doc.tipo,
                             cliente_id: doc.cliente_id, codigo_documento: doc.codigo_documento,
                             fecha_documento: doc.fecha_documento, cliente: doc.cliente,
                           })}
@@ -1432,7 +1440,9 @@ export default function DocumentosPage() {
                               )}
                               <button
                                 onClick={() => setEditingDoc({
-                                  id: doc.id, titulo: doc.titulo, tipo: doc.tipo,
+                                  id: doc.id, titulo: doc.titulo,
+                                  descripcion: doc.descripcion, notas: doc.notas,
+                                  tipo: doc.tipo,
                                   cliente_id: doc.cliente_id, codigo_documento: doc.codigo_documento,
                                   fecha_documento: doc.fecha_documento, cliente: doc.cliente,
                                 })}

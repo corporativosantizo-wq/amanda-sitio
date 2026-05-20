@@ -1880,6 +1880,9 @@ function TabDocumentos({ expedienteId, clienteId }: { expedienteId: string; clie
                           <p className="text-sm font-medium text-slate-900 break-words">
                             {doc.titulo || doc.nombre_archivo}
                           </p>
+                          {doc.descripcion && (
+                            <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{doc.descripcion}</p>
+                          )}
                           {doc.numero_documento && (
                             <p className="text-xs text-slate-400 font-mono mt-0.5">{doc.numero_documento}</p>
                           )}
@@ -2059,11 +2062,18 @@ function VincularDocModal({ expedienteId, clienteId, onClose, onLinked }: {
 
 // ── Modal: Subir documento al expediente ────────────────────────────────
 
+interface SubirFileEntry {
+  id: string;
+  file: File;
+  titulo: string;
+  descripcion: string;
+}
+
 function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
   expedienteId: string; clienteId?: string;
   onClose: () => void; onUploaded: () => void;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<SubirFileEntry[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
@@ -2071,17 +2081,30 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
 
   const ALLOWED = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png'];
 
+  const stripExt = (name: string) => name.replace(/\.[^.]+$/, '');
+
   const addFiles = (fileList: FileList | null) => {
     if (!fileList) return;
-    const valid = Array.from(fileList).filter(f => {
-      const ext = f.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
-      return ALLOWED.includes(ext);
-    });
+    const valid: SubirFileEntry[] = Array.from(fileList)
+      .filter(f => {
+        const ext = f.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? '';
+        return ALLOWED.includes(ext);
+      })
+      .map(f => ({
+        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        file: f,
+        titulo: stripExt(f.name),
+        descripcion: '',
+      }));
     setFiles(prev => [...prev, ...valid]);
   };
 
-  const removeFile = (idx: number) => {
-    setFiles(prev => prev.filter((_: File, i: number) => i !== idx));
+  const removeFile = (id: string) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const updateFile = (id: string, patch: Partial<Pick<SubirFileEntry, 'titulo' | 'descripcion'>>) => {
+    setFiles(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)));
   };
 
   const handleUpload = async () => {
@@ -2089,14 +2112,14 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
     setUploading(true);
     setError('');
 
-    const uploaded: { storage_path: string; filename: string; filesize: number }[] = [];
+    const uploaded: { storage_path: string; filename: string; filesize: number; titulo: string; descripcion: string }[] = [];
 
     for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+      const entry = files[i];
+      const f = entry.file;
       setProgress(`Subiendo ${i + 1}/${files.length}: ${f.name}`);
 
       try {
-        // Get signed URL
         const urlRes = await adminFetch('/api/admin/documentos/upload-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2105,27 +2128,40 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
         const urlData = await urlRes.json();
         if (!urlRes.ok) throw new Error(urlData.error);
 
-        // Upload to storage
         const result = await signedUrlUpload(urlData.signed_url, f, f.type || 'application/octet-stream');
         if (!result.ok) throw new Error('Error al subir archivo');
 
-        uploaded.push({ storage_path: urlData.storage_path, filename: f.name, filesize: f.size });
-      } catch (err: any) {
-        setError(`Error en ${f.name}: ${err.message}`);
+        uploaded.push({
+          storage_path: urlData.storage_path,
+          filename: f.name,
+          filesize: f.size,
+          titulo: entry.titulo.trim(),
+          descripcion: entry.descripcion.trim(),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`Error en ${f.name}: ${msg}`);
         setUploading(false);
         setProgress('');
         return;
       }
     }
 
-    // Register documents in DB
     setProgress('Registrando documentos...');
     try {
       const res = await adminFetch('/api/admin/documentos/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: uploaded.map(u => ({ ...u, cliente_id: clienteId, expediente_id: expedienteId })),
+          files: uploaded.map(u => ({
+            storage_path: u.storage_path,
+            filename: u.filename,
+            filesize: u.filesize,
+            titulo: u.titulo || null,
+            descripcion: u.descripcion || null,
+            cliente_id: clienteId,
+            expediente_id: expedienteId,
+          })),
         }),
       });
       if (!res.ok) {
@@ -2133,8 +2169,8 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
         throw new Error(data.error || 'Error al registrar');
       }
       onUploaded();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
 
     setUploading(false);
@@ -2148,8 +2184,8 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-bold text-slate-900 mb-3">Subir documento al expediente</h2>
 
         {/* Drop zone */}
@@ -2157,46 +2193,76 @@ function SubirDocModal({ expedienteId, clienteId, onClose, onUploaded }: {
           onClick={() => inputRef.current?.click()}
           onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
           onDrop={e => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer.files); }}
-          className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 transition-colors"
+          className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 transition-colors shrink-0"
         >
-          <Upload size={24} className="mx-auto text-slate-400 mb-2" />
+          <Upload size={22} className="mx-auto text-slate-400 mb-1.5" />
           <p className="text-sm text-slate-600">Arrastra archivos aquí o haz clic para seleccionar</p>
           <p className="text-xs text-slate-400 mt-1">PDF, DOCX, XLSX, JPG, PNG</p>
           <input ref={inputRef} type="file" multiple accept={ALLOWED.join(',')} className="hidden"
             onChange={e => addFiles(e.target.files)} />
         </div>
 
-        {/* File list */}
+        {/* File list with editable metadata */}
         {files.length > 0 && (
-          <div className="mt-3 space-y-1 max-h-40 overflow-y-auto">
-            {files.map((f: File, i: number) => (
-              <div key={i} className="flex items-center justify-between py-1.5 px-2 bg-slate-50 rounded-lg">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-700 truncate">{f.name}</p>
-                  <p className="text-xs text-slate-400">{formatSize(f.size)}</p>
+          <div className="mt-3 space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
+            {files.map((entry, i) => (
+              <div key={entry.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-mono text-slate-500 truncate">
+                      #{i + 1} · {entry.file.name}
+                    </p>
+                    <p className="text-[11px] text-slate-400">{formatSize(entry.file.size)}</p>
+                  </div>
+                  <button
+                    onClick={() => removeFile(entry.id)}
+                    disabled={uploading}
+                    className="p-1 text-slate-400 hover:text-red-500 disabled:opacity-40"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-                <button onClick={() => removeFile(i)} className="p-1 text-slate-400 hover:text-red-500">
-                  <X size={14} />
-                </button>
+
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Título *</label>
+                <input
+                  type="text"
+                  value={entry.titulo}
+                  onChange={e => updateFile(entry.id, { titulo: e.target.value })}
+                  placeholder="Ej: Resolución de amparo 160-2025 del 12 de febrero"
+                  disabled={uploading}
+                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2] disabled:bg-slate-100 disabled:cursor-not-allowed"
+                />
+
+                <label className="block text-[11px] font-medium text-slate-600 mb-1 mt-2">
+                  Descripción <span className="text-slate-400 font-normal">(opcional)</span>
+                </label>
+                <textarea
+                  value={entry.descripcion}
+                  onChange={e => updateFile(entry.id, { descripcion: e.target.value })}
+                  placeholder="Ej: Esta resolución otorga la suspensión provisional…"
+                  rows={2}
+                  disabled={uploading}
+                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2] resize-y disabled:bg-slate-100 disabled:cursor-not-allowed"
+                />
               </div>
             ))}
           </div>
         )}
 
         {progress && (
-          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 shrink-0">
             {progress}
           </div>
         )}
-        {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+        {error && <p className="text-xs text-red-500 mt-2 shrink-0">{error}</p>}
 
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex justify-end gap-2 mt-4 shrink-0">
           <button onClick={onClose} disabled={uploading} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-50">
             Cancelar
           </button>
           <button
             onClick={handleUpload}
-            disabled={uploading || files.length === 0}
+            disabled={uploading || files.length === 0 || files.some(f => !f.titulo.trim())}
             className="px-4 py-2 bg-[#1E40AF] text-white text-sm font-semibold rounded-lg hover:bg-[#1E3A8A] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {uploading ? 'Subiendo...' : `Subir ${files.length > 0 ? `(${files.length})` : ''}`}

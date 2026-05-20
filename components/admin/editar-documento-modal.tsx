@@ -25,6 +25,8 @@ const TIPOS: Array<{ value: string; label: string }> = [
 export interface DocumentoParaEditar {
   id: string;
   titulo: string | null;
+  descripcion?: string | null;
+  notas?: string | null;
   tipo: string | null;
   cliente_id: string | null;
   codigo_documento: string | null;
@@ -50,6 +52,8 @@ export function EditarDocumentoModal({
   const { mutate } = useMutate();
 
   const [titulo, setTitulo]                     = useState(documento.titulo ?? '');
+  const [descripcion, setDescripcion]           = useState(documento.descripcion ?? '');
+  const [notas, setNotas]                       = useState(documento.notas ?? '');
   const [tipo, setTipo]                         = useState(documento.tipo ?? '');
   const [clienteId, setClienteId]               = useState(documento.cliente_id ?? '');
   const [clienteBusqueda, setClienteBusqueda]   = useState(documento.cliente?.nombre ?? '');
@@ -100,6 +104,8 @@ export function EditarDocumentoModal({
       method: 'PATCH',
       body: {
         titulo:           titulo.trim() || null,
+        descripcion:      descripcion.trim() || null,
+        notas:            notas.trim() || null,
         tipo:             tipo || null,
         cliente_id:       clienteId || null,
         codigo_documento: codigo.trim() || null,
@@ -139,8 +145,36 @@ export function EditarDocumentoModal({
               type="text"
               value={titulo}
               onChange={e => setTitulo(e.target.value)}
-              placeholder="Ej: Escritura constitutiva — Empresa XYZ"
+              placeholder="Ej: Resolución de amparo 160-2025 del 12 de febrero"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2]"
+            />
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Descripción <span className="text-slate-400 font-normal">(visible en el listado)</span>
+            </label>
+            <textarea
+              value={descripcion}
+              onChange={e => setDescripcion(e.target.value)}
+              placeholder="Ej: Esta resolución otorga la suspensión provisional…"
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2] resize-y"
+            />
+          </div>
+
+          {/* Notas internas */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Notas internas <span className="text-slate-400 font-normal">(no se muestran en el listado)</span>
+            </label>
+            <textarea
+              value={notas}
+              onChange={e => setNotas(e.target.value)}
+              placeholder="Anotaciones privadas del equipo…"
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2] resize-y bg-amber-50/30"
             />
           </div>
 

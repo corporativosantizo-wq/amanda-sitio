@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
     const { data, error } = await db()
       .from('documentos')
-      .select('id, titulo, tipo, nombre_archivo, nombre_original, fecha_documento, numero_documento, archivo_url, estado, archivo_tamano, created_at')
+      .select('id, titulo, descripcion, notas, tipo, nombre_archivo, nombre_original, fecha_documento, numero_documento, archivo_url, estado, archivo_tamano, created_at')
       .eq('expediente_id', id)
       .order('created_at', { ascending: false });
 

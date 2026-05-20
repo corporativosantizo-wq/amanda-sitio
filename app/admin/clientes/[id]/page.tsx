@@ -1487,6 +1487,8 @@ interface DocItemFull {
   codigo_documento: string | null;
   tipo: string | null;
   titulo: string | null;
+  descripcion: string | null;
+  notas: string | null;
   fecha_documento: string | null;
   estado: string;
   cliente_id: string | null;
@@ -1658,7 +1660,9 @@ function TabDocumentos({ clienteId, onRefetch }: {
                             <Download size={15} />
                           </button>
                           <button onClick={() => setEditingDoc({
-                            id: d.id, titulo: d.titulo, tipo: d.tipo,
+                            id: d.id, titulo: d.titulo,
+                            descripcion: d.descripcion, notas: d.notas,
+                            tipo: d.tipo,
                             cliente_id: d.cliente_id, codigo_documento: d.codigo_documento,
                             fecha_documento: d.fecha_documento, cliente: d.cliente,
                           })}

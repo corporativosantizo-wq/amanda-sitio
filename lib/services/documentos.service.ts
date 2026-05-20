@@ -38,6 +38,8 @@ export interface DocumentoInsert {
   expediente_id?: string | null;
   nombre_original?: string;
   created_by?: string | null;
+  titulo?: string | null;
+  descripcion?: string | null;
 }
 
 export interface ClasificacionIA {
@@ -68,18 +70,20 @@ interface ListParams {
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function crearDocumento(input: DocumentoInsert) {
+  const tituloFinal = input.titulo?.trim() ? input.titulo.trim() : input.nombre_archivo;
   const payload: Record<string, unknown> = {
     archivo_url: input.archivo_url,
     nombre_archivo: input.nombre_archivo,
     archivo_tamano: input.archivo_tamano,
     nombre_original: input.nombre_original ?? input.nombre_archivo,
-    titulo: input.nombre_archivo,
+    titulo: tituloFinal,
     tipo: 'otro',
     estado: 'pendiente',
   };
   if (input.cliente_id) payload.cliente_id = input.cliente_id;
   if (input.expediente_id) payload.expediente_id = input.expediente_id;
   if (input.created_by) payload.created_by = input.created_by;
+  if (input.descripcion?.trim()) payload.descripcion = input.descripcion.trim();
 
   const { data, error } = await db()
     .from('documentos')
