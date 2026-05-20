@@ -213,11 +213,21 @@ export async function enviarCorreoAhora(id: string): Promise<void> {
   // Get pie de confidencialidad
   const pie = await obtenerPieConfidencialidad(correo.cuenta_envio);
 
-  const htmlBody = correo.cuerpo
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;">')
-    .replace(/$/, '</div>')
-    + (pie ? `<div style="margin-top:24px;font-size:11px;color:#94a3b8;">${pie}</div>` : '');
+  // Detect if cuerpo is already HTML (template-generated full document or rich HTML).
+  // Plantillas como "seguimiento-cotizacion" generan el HTML completo en el frontend;
+  // no debemos envolverlo ni convertir saltos de línea (rompe la maquetación).
+  const cuerpoTrim = correo.cuerpo.trim();
+  const esHtml = cuerpoTrim.startsWith('<!DOCTYPE') ||
+                 cuerpoTrim.startsWith('<html') ||
+                 /^<(div|table|p|span|h[1-6]|section|article)\b/i.test(cuerpoTrim);
+
+  const htmlBody = esHtml
+    ? correo.cuerpo
+    : correo.cuerpo
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;">')
+        .replace(/$/, '</div>')
+      + (pie ? `<div style="margin-top:24px;font-size:11px;color:#94a3b8;">${pie}</div>` : '');
 
   const ccList = correo.cc_emails
     ? correo.cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)

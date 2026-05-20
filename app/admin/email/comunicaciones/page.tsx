@@ -13,6 +13,11 @@ import {
   PageHeader, Badge, EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
 import type { CampoExtra, CampoExtraLookup, LookupResult } from '@/lib/types/plantillas-correo';
+import {
+  generarHtmlSeguimientoCotizacion,
+  asuntoSeguimientoCotizacion,
+  type EstadoTramiteEmail,
+} from '@/lib/templates/seguimiento-cotizacion-email';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -116,6 +121,16 @@ export default function ComunicacionesPage() {
   );
 }
 
+// Detecta si el cuerpo del correo es HTML completo (template-generated). Decide
+// si se renderiza un iframe de vista previa o un textarea plano.
+function esContenidoHtml(s: string): boolean {
+  const t = s.trim();
+  if (!t) return false;
+  return t.startsWith('<!DOCTYPE') ||
+         t.startsWith('<html') ||
+         /^<(div|table|p|span|h[1-6]|section|article)\b/i.test(t);
+}
+
 // ── Tab: Nuevo Correo ────────────────────────────────────────────────────
 
 function NuevoCorreoTab() {
@@ -141,6 +156,18 @@ function NuevoCorreoTab() {
   const [cuerpo, setCuerpo] = useState('');
   const [camposExtra, setCamposExtra] = useState<Record<string, string>>({});
   const [cuenta, setCuenta] = useState('amanda@papeleo.legal');
+
+  // Seguimiento de cotización — datos para generar el HTML
+  const [seguimientoData, setSeguimientoData] = useState<{
+    cotizacion: {
+      id: string; numero: string; fecha_emision: string; asunto: string;
+      cliente: { id: string; nombre: string; email: string | null; nit: string | null } | null;
+    };
+    tramites: Array<{
+      id: string; nombre: string; estado: EstadoTramiteEmail;
+      avances: Array<{ id: string; fecha: string; descripcion: string }>;
+    }>;
+  } | null>(null);
 
   // Attachments
   const [adjuntos, setAdjuntos] = useState<AdjuntoMeta[]>([]);
@@ -199,6 +226,7 @@ function NuevoCorreoTab() {
   // Select plantilla → advance to step 2
   const seleccionarPlantilla = (id: string | null) => {
     setPlantillaId(id);
+    setSeguimientoData(null);
     if (id) {
       const p = config?.plantillas.find((t: Plantilla) => t.id === id);
       if (p) {
@@ -237,6 +265,29 @@ function NuevoCorreoTab() {
 
     setPaso(3);
   };
+
+  // Es la plantilla de seguimiento? Genera HTML dinámico desde trámites/avances.
+  const esSeguimientoCotizacion = plantilla?.slug === 'seguimiento-cotizacion';
+
+  // Cargar datos de seguimiento (cliente + trámites + avances) para una cotización.
+  // Usado al seleccionar una cotización desde el lookup cuando la plantilla es
+  // "seguimiento-cotizacion". Devuelve la data por si el caller la necesita en
+  // el mismo render (state updates son asíncronos).
+  const cargarSeguimiento = useCallback(async (cotizacionId: string) => {
+    try {
+      const res = await adminFetch(`/api/admin/contabilidad/cotizaciones/${cotizacionId}/seguimiento`);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'No se pudo cargar el seguimiento');
+      }
+      const data = await res.json();
+      setSeguimientoData(data);
+      return data;
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Error al cargar seguimiento' });
+      return null;
+    }
+  }, []);
 
   // Handler para campos type:'lookup'. Recibe el populated_data del row elegido
   // (ya resuelto server-side) y propaga los valores: meta-keys (destinatario_*,
@@ -285,6 +336,28 @@ function NuevoCorreoTab() {
         }
       }
 
+      // Si la plantilla es seguimiento-cotizacion y el source es "cotizaciones",
+      // cargar trámites y avances para armar el HTML profesional.
+      if (esSeguimientoCotizacion && source === 'cotizaciones' && populated.cliente_id) {
+        // populated incluye el id de la cotización? No directamente; tenemos
+        // numero y cliente_id. Necesitamos el id para fetch. La query del lookup
+        // no expone el id en populated_data, pero el value devuelto es numero.
+        // Estrategia: buscar la cotización por numero para obtener su id.
+        // Optimización futura: agregar "id" como alias en LOOKUP_CONFIG.
+        (async () => {
+          try {
+            const lookupRes = await adminFetch(
+              `/api/admin/contabilidad/cotizaciones?q=${encodeURIComponent(lookupValue)}&limit=1`,
+            );
+            const lookupData = await lookupRes.json();
+            const cotId = lookupData?.data?.[0]?.id;
+            if (cotId) await cargarSeguimiento(cotId);
+          } catch (err) {
+            console.error('[Seguimiento] Error resolviendo cotización:', err);
+          }
+        })();
+      }
+
       if (nombreActualizado) {
         setToast({
           type: 'success',
@@ -292,11 +365,48 @@ function NuevoCorreoTab() {
         });
       }
     },
-    [],
+    [esSeguimientoCotizacion, cargarSeguimiento],
   );
 
   // Apply extra fields to content
   const aplicarCampos = useCallback(() => {
+    // Caso especial: seguimiento-cotizacion → generar HTML profesional con
+    // trámites/avances en lugar de hacer string replacement sobre el template.
+    if (esSeguimientoCotizacion && seguimientoData) {
+      const cot = seguimientoData.cotizacion;
+      const nombreCliente = cot.cliente?.nombre || clienteNombre || 'Cliente';
+      const numeroCot = cot.numero;
+      const asuntoCot = camposExtra.asunto_cotizacion?.trim() || cot.asunto || 'Servicios profesionales';
+      const detalle = camposExtra.detalle_avance?.trim() || '';
+
+      const html = generarHtmlSeguimientoCotizacion({
+        numeroCotizacion: numeroCot,
+        clienteNombre: nombreCliente,
+        asuntoCotizacion: asuntoCot,
+        fechaReporte: new Date().toISOString().slice(0, 10),
+        detalleAvance: detalle,
+        tramites: seguimientoData.tramites.map((t, idx, arr) => ({
+          nombre: t.nombre,
+          estado: t.estado,
+          avances: t.avances.map((a, ai) => ({
+            fecha: a.fecha,
+            descripcion: a.descripcion,
+            // Heurística: si el trámite está completado, todos los avances son ✓;
+            // si está pendiente/suspendido todos son →; si en_proceso, el último
+            // (por fecha ascendente) es → y los demás ✓.
+            completado: t.estado === 'completado' ? true
+              : t.estado === 'en_proceso'
+                ? ai !== t.avances.length - 1
+                : false,
+          })),
+        })),
+      });
+
+      setAsunto(asuntoSeguimientoCotizacion(numeroCot, nombreCliente));
+      setCuerpo(html);
+      return;
+    }
+
     let a = asunto;
     let c = cuerpo;
     for (const [key, val] of Object.entries(camposExtra)) {
@@ -311,7 +421,7 @@ function NuevoCorreoTab() {
     }
     setAsunto(a);
     setCuerpo(c);
-  }, [asunto, cuerpo, camposExtra]);
+  }, [asunto, cuerpo, camposExtra, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
 
   // Upload attachments
   const handleUploadAdjuntos = async (files: FileList) => {
@@ -393,6 +503,7 @@ function NuevoCorreoTab() {
         setCuerpo('');
         setCamposExtra({});
         setAdjuntos([]);
+        setSeguimientoData(null);
       },
       onError: (err: any) => setToast({ type: 'error', msg: String(err) }),
     });
@@ -623,13 +734,41 @@ function NuevoCorreoTab() {
 
           {/* Cuerpo */}
           <div>
-            <label className="text-xs text-slate-500 font-medium">Contenido</label>
-            <textarea
-              value={cuerpo}
-              onChange={e => setCuerpo(e.target.value)}
-              rows={12}
-              className="w-full mt-1 px-4 py-3 text-sm border border-slate-200 rounded-lg font-sans leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
-            />
+            <label className="text-xs text-slate-500 font-medium flex items-center justify-between">
+              <span>Contenido</span>
+              {esContenidoHtml(cuerpo) && (
+                <span className="text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                  HTML · Vista previa
+                </span>
+              )}
+            </label>
+            {esContenidoHtml(cuerpo) ? (
+              <div className="mt-1 border border-slate-200 rounded-lg overflow-hidden bg-slate-100">
+                <iframe
+                  title="Vista previa del correo"
+                  srcDoc={cuerpo}
+                  sandbox=""
+                  className="w-full bg-white"
+                  style={{ height: '560px', border: 0 }}
+                />
+                <div className="px-3 py-2 border-t border-slate-200 bg-white text-xs text-slate-500 flex items-center justify-between">
+                  <span>Se enviará exactamente este HTML al cliente.</span>
+                  <button
+                    onClick={() => { setCuerpo(''); setSeguimientoData(null); }}
+                    className="text-xs font-medium text-red-600 hover:underline"
+                  >
+                    Limpiar HTML
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <textarea
+                value={cuerpo}
+                onChange={e => setCuerpo(e.target.value)}
+                rows={12}
+                className="w-full mt-1 px-4 py-3 text-sm border border-slate-200 rounded-lg font-sans leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]"
+              />
+            )}
           </div>
 
           {/* Adjuntos */}
@@ -716,12 +855,24 @@ function NuevoCorreoTab() {
           </div>
 
           {/* Preview */}
-          <div className="border border-slate-200 rounded-lg p-5">
-            <p className="text-xs text-slate-400 mb-3">Vista previa del correo</p>
-            <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{cuerpo}</div>
-            {pieTexto && (
-              <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-slate-400 leading-relaxed">
-                {pieTexto}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <p className="text-xs text-slate-400 px-4 pt-3 pb-2">Vista previa del correo</p>
+            {esContenidoHtml(cuerpo) ? (
+              <iframe
+                title="Vista previa del correo (envío)"
+                srcDoc={cuerpo}
+                sandbox=""
+                className="w-full bg-white"
+                style={{ height: '560px', border: 0 }}
+              />
+            ) : (
+              <div className="px-5 pb-5">
+                <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{cuerpo}</div>
+                {pieTexto && (
+                  <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-slate-400 leading-relaxed">
+                    {pieTexto}
+                  </div>
+                )}
               </div>
             )}
           </div>
