@@ -804,21 +804,24 @@ export async function obtenerConfiguracion() {
   return data;
 }
 
-function generarCondicionesDefault(config: Record<string, unknown>): string {
-  const banco = config.banco ?? 'Banco Industrial';
-  const cuenta = config.numero_cuenta ?? '455-008846-4';
-  const nombre = config.cuenta_nombre ?? 'Invest & Jure-Advisor, S.A.';
-  const emailContador = config.email_contador ?? 'contador@papeleo.legal';
-  const validez = config.validez_cotizacion_dias ?? 30;
+function generarCondicionesDefault(_config: Record<string, unknown>): string {
+  return `TÉRMINOS Y CONDICIONES GENERALES
 
-  return [
-    `Depositar en cuenta monetaria de ${banco} No. ${cuenta} a nombre de ${nombre}.`,
-    `Enviar comprobante de pago y número de NIT para facturación al correo: ${emailContador}`,
-    `Los servicios contratados son exclusivamente los descritos en esta cotización.`,
-    `Esta cotización tiene una validez de ${validez} días a partir de la fecha de emisión.`,
-    `Si los servicios cotizados son trámites notariales o mercantiles, la cotización incluye dos consultas de seguimiento o dudas vía Teams (virtual).`,
-    `Consultas adicionales tienen un costo de Q100.00 cada una.`,
-  ].join('\n');
+I. ALCANCE DE LOS SERVICIOS. La presente cotización comprende exclusivamente los servicios profesionales descritos en el detalle anterior. Cualquier gestión, trámite o servicio adicional no contemplado expresamente deberá ser cotizado por separado.
+
+II. HONORARIOS Y GASTOS. Los honorarios profesionales indicados no incluyen gastos de registro, timbres fiscales, timbres notariales, tasas judiciales, aranceles, publicaciones, ni cualquier otro desembolso ante entidades públicas o privadas, salvo que se indique expresamente en el desglose de la cotización.
+
+III. FORMA DE PAGO. El monto total de los honorarios profesionales deberá cancelarse previo al inicio de las gestiones, salvo acuerdo en contrario por escrito. En caso de servicios que incluyan gastos ante terceros, estos deberán cubrirse por anticipado. El incumplimiento en los pagos faculta al Despacho a suspender las gestiones hasta regularizar el saldo.
+
+IV. CONSULTAS Y ASESORÍA. La cotización incluye dos (2) consultas de seguimiento o aclaración de dudas por vía virtual (Microsoft Teams). Consultas adicionales tendrán un costo de Q100.00 cada una. No se incluye asesoría legal ilimitada ni consultas sobre materias ajenas al servicio contratado.
+
+V. VIGENCIA. La presente cotización tiene una vigencia de treinta (30) días calendario contados a partir de su fecha de emisión. Transcurrido dicho plazo, los montos podrán ser actualizados.
+
+VI. CONFIDENCIALIDAD. Toda la información proporcionada por el cliente será tratada con estricta confidencialidad conforme a las obligaciones del secreto profesional del Abogado y Notario.
+
+VII. PLAZO DE EJECUCIÓN. Los plazos de ejecución dependerán de la naturaleza del trámite y de la respuesta oportuna de las entidades correspondientes. El Despacho no se responsabiliza por retrasos atribuibles a terceros, entidades públicas o al propio cliente.
+
+VIII. ACEPTACIÓN. La aceptación de la presente cotización y/o el pago correspondiente constituye la conformidad del cliente con los presentes términos y condiciones.`;
 }
 
 // --- Estadísticas ---
