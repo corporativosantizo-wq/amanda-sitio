@@ -35,7 +35,11 @@ export default function PostActions({ post }: { post: Post }) {
   }
 
   const deletePost = async () => {
-    if (!confirm('¿Estás segura de que quieres eliminar este artículo?')) return
+    if (!confirm(`¿Estás seguro de que deseas eliminar el post '${post.title}'? Esta acción no se puede deshacer.`)) return
+    if (
+      post.status === 'published' &&
+      !confirm('Este post está publicado y es visible públicamente. ¿Deseas eliminarlo de todas formas?')
+    ) return
 
     setIsDeleting(true)
 

@@ -5,21 +5,47 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import { ShareButtons } from '@/components/blog/ShareButtons'
+import TagInput from '@/components/admin/TagInput'
 import { postUrl } from '@/lib/site'
+
+interface Category {
+  id: string
+  name: string
+}
 
 export default function EditarPost() {
   const router = useRouter()
   const params = useParams()
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
+  const [tags, setTags] = useState<string[]>([])
   const [form, setForm] = useState({
     title: '',
     slug: '',
     excerpt: '',
     content: '',
     status: 'draft',
+    category_id: '',
   })
+
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const res = await adminFetch('/api/admin/posts/meta')
+        if (!res.ok) return
+        const data = await res.json()
+        setCategories(data.categories || [])
+        setTagSuggestions((data.tags || []).map((t: { name: string }) => t.name))
+      } catch {
+        // silencioso
+      }
+    }
+    fetchMeta()
+  }, [])
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -33,7 +59,9 @@ export default function EditarPost() {
           excerpt: data.excerpt || '',
           content: data.content || '',
           status: data.status || 'draft',
+          category_id: data.category_id || '',
         })
+        setTags(Array.isArray(data.tags) ? data.tags : [])
       } catch (err: any) {
         setError(err.message)
       }
@@ -51,7 +79,7 @@ export default function EditarPost() {
       const res = await adminFetch(`/api/admin/posts/${params.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, tags }),
       })
 
       const data = await res.json()
@@ -65,6 +93,31 @@ export default function EditarPost() {
       setError(err.message)
       setLoading(false)
     }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar el post '${form.title}'? Esta acción no se puede deshacer.`)) {
+      return
+    }
+    if (
+      form.status === 'published' &&
+      !confirm('Este post está publicado y es visible públicamente. ¿Deseas eliminarlo de todas formas?')
+    ) {
+      return
+    }
+
+    setDeleting(true)
+    setError('')
+
+    const res = await adminFetch(`/api/admin/posts/${params.id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || 'No se pudo eliminar el artículo')
+      setDeleting(false)
+      return
+    }
+
+    router.push('/admin/posts')
   }
 
   if (fetching) {
@@ -102,6 +155,26 @@ export default function EditarPost() {
               className="w-full px-4 py-3 border border-slate-light rounded-lg focus:ring-2 focus:ring-cyan outline-none"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-navy mb-2">Categoría</label>
+            <select
+              value={form.category_id}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-light rounded-lg focus:ring-2 focus:ring-cyan outline-none bg-white"
+              required
+            >
+              <option value="" disabled>Selecciona una categoría…</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-navy mb-2">Etiquetas</label>
+            <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
           </div>
 
           <div>
@@ -180,6 +253,23 @@ export default function EditarPost() {
           </div>
         </div>
       )}
+
+      {/* Zona de peligro: eliminar */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm max-w-3xl mt-6 border border-red-100">
+        <h2 className="font-display text-lg font-bold text-red-700 mb-1">Eliminar artículo</h2>
+        <p className="text-sm text-slate mb-4">Esta acción no se puede deshacer.</p>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          {deleting ? 'Eliminando...' : 'Eliminar'}
+        </button>
+      </div>
     </div>
   )
 }

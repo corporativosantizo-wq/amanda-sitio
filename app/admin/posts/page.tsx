@@ -9,7 +9,8 @@ export default async function AdminPosts() {
     .from('posts')
     .select(`
       *,
-      category:categories(name, slug)
+      category:categories(name, slug),
+      post_tags(tags(name, slug))
     `)
     .order('created_at', { ascending: false })
 
@@ -59,13 +60,28 @@ export default async function AdminPosts() {
                 <tr key={post.id} className="hover:bg-slate-lighter transition-colors">
                   <td className="px-6 py-4">
                     <div>
-                      <Link 
+                      <Link
                         href={`/admin/posts/${post.id}`}
                         className="font-semibold text-navy hover:text-azure transition-colors"
                       >
                         {post.title}
                       </Link>
                       <p className="text-sm text-slate truncate max-w-md">{post.excerpt}</p>
+                      {Array.isArray(post.post_tags) && post.post_tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {post.post_tags
+                            .map((pt: any) => pt.tags?.name)
+                            .filter(Boolean)
+                            .map((name: string) => (
+                              <span
+                                key={name}
+                                className="px-2 py-0.5 bg-cyan/15 text-navy text-xs font-medium rounded-full"
+                              >
+                                #{name}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">

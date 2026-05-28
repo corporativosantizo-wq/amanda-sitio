@@ -7,6 +7,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { SLUG_REGEX } from '@/lib/utils/slug';
+import { setPostTags } from '@/lib/posts/tags';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function getAdminPublicClient() {
   return createClient(
@@ -35,7 +38,16 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
 
-  return NextResponse.json(data);
+  const { data: tagRows } = await db
+    .from('post_tags')
+    .select('tags(name)')
+    .eq('post_id', id);
+
+  const tags = (tagRows ?? [])
+    .map((r: any) => r.tags?.name)
+    .filter(Boolean);
+
+  return NextResponse.json({ ...data, tags });
 }
 
 // PUT /api/admin/posts/[id]
@@ -45,7 +57,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { title, slug, excerpt, content, status } = body;
+  const { title, slug, excerpt, content, status, category_id, tags } = body;
 
   if (!title?.trim() || !slug?.trim() || !content?.trim()) {
     return NextResponse.json(
@@ -62,6 +74,13 @@ export async function PUT(
     );
   }
 
+  if (!category_id || !UUID_REGEX.test(category_id)) {
+    return NextResponse.json(
+      { error: 'La categoría es obligatoria.' },
+      { status: 400 }
+    );
+  }
+
   const db = getAdminPublicClient();
 
   console.log('[Posts API] Updating post', id + ':', 'title=', title, ', slug=', cleanSlug, ', status=', status);
@@ -74,6 +93,7 @@ export async function PUT(
       excerpt: excerpt?.trim() || null,
       content: content.trim(),
       status,
+      category_id,
       published_at: status === 'published' ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
@@ -84,6 +104,13 @@ export async function PUT(
   if (error) {
     console.error('[Posts API] UPDATE error for post', id + ':', JSON.stringify(error));
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  try {
+    await setPostTags(db, id, tags);
+  } catch (e) {
+    console.error('[Posts API] UPDATE tags error for post', id + ':', e);
+    return NextResponse.json({ error: 'No se pudieron guardar las etiquetas.' }, { status: 500 });
   }
 
   console.log('[Posts API] Post', id, 'updated OK');

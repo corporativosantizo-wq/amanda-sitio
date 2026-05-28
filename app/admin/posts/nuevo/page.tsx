@@ -1,27 +1,52 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminFetch } from '@/lib/utils/admin-fetch'
+import TagInput from '@/components/admin/TagInput'
+
+interface Category {
+  id: string
+  name: string
+}
 
 export default function NuevoPost() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
+  const [tags, setTags] = useState<string[]>([])
   const [form, setForm] = useState({
     title: '',
     slug: '',
     excerpt: '',
     content: '',
     status: 'draft',
+    category_id: '',
   })
+
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const res = await adminFetch('/api/admin/posts/meta')
+        if (!res.ok) return
+        const data = await res.json()
+        setCategories(data.categories || [])
+        setTagSuggestions((data.tags || []).map((t: { name: string }) => t.name))
+      } catch {
+        // silencioso: el formulario sigue siendo usable
+      }
+    }
+    fetchMeta()
+  }, [])
 
   const generateSlug = (title: string) => {
     return title
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '')
   }
@@ -40,7 +65,7 @@ export default function NuevoPost() {
       const res = await adminFetch('/api/admin/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, tags }),
       })
 
       const data = await res.json()
@@ -87,6 +112,26 @@ export default function NuevoPost() {
               className="w-full px-4 py-3 border border-slate-light rounded-lg focus:ring-2 focus:ring-cyan outline-none"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-navy mb-2">Categoría</label>
+            <select
+              value={form.category_id}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-light rounded-lg focus:ring-2 focus:ring-cyan outline-none bg-white"
+              required
+            >
+              <option value="" disabled>Selecciona una categoría…</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-navy mb-2">Etiquetas</label>
+            <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
           </div>
 
           <div>
