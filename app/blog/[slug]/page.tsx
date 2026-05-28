@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { SITE_NAME, postUrl } from '@/lib/site'
 import { ShareButtons, BlogShareDock } from '@/components/blog/ShareButtons'
+import ListenArticle from '@/components/blog/ListenArticle'
 import { renderPostContent } from '@/lib/blog/render-content'
 
 interface PageProps {
@@ -90,6 +91,9 @@ export default async function PostPage({ params }: PageProps) {
             <span>Amanda Santizo</span>
             <span>•</span>
             <span>{post.published_at ? formatDate(post.published_at) : ''}</span>
+          </div>
+          <div className="mt-8">
+            <ListenArticle slug={post.slug} />
           </div>
         </div>
       </section>

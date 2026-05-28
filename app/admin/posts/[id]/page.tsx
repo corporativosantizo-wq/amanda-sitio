@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import { ShareButtons } from '@/components/blog/ShareButtons'
+import GenerateAudioButton from '@/components/admin/GenerateAudioButton'
 import TagInput from '@/components/admin/TagInput'
 import RichTextEditor from '@/components/admin/rich-text-editor'
 import { postUrl } from '@/lib/site'
@@ -251,6 +252,11 @@ export default function EditarPost() {
                 📱 Stories (1080×1920)
               </a>
             </div>
+          </div>
+
+          {/* Audio del artículo (TTS) */}
+          <div className="pt-6 border-t border-slate-light">
+            <GenerateAudioButton slug={form.slug} />
           </div>
 
           {/* Compartir en redes */}
