@@ -74,6 +74,15 @@
   }
 }
 
+/* Placeholder del editor Tiptap (extensión Placeholder) */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #94a3b8;
+}
+
 /* Arturia sidebar button hover */
 .arturia-btn:hover {
   transform: translateY(-1px);

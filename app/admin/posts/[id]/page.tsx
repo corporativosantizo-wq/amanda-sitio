@@ -6,7 +6,11 @@ import Link from 'next/link'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import { ShareButtons } from '@/components/blog/ShareButtons'
 import TagInput from '@/components/admin/TagInput'
+import RichTextEditor from '@/components/admin/rich-text-editor'
 import { postUrl } from '@/lib/site'
+
+const isEmptyHtml = (html: string) =>
+  html.replace(/<[^>]*>/g, '').replace(/&nbsp;| /g, '').trim() === ''
 
 interface Category {
   id: string
@@ -72,8 +76,14 @@ export default function EditarPost() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
+
+    if (isEmptyHtml(form.content)) {
+      setError('El contenido es requerido.')
+      return
+    }
+
+    setLoading(true)
 
     try {
       const res = await adminFetch(`/api/admin/posts/${params.id}`, {
@@ -189,12 +199,9 @@ export default function EditarPost() {
 
           <div>
             <label className="block text-sm font-medium text-navy mb-2">Contenido</label>
-            <textarea
+            <RichTextEditor
               value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-              rows={12}
-              className="w-full px-4 py-3 border border-slate-light rounded-lg focus:ring-2 focus:ring-cyan outline-none"
-              required
+              onChange={(html) => setForm({ ...form, content: html })}
             />
           </div>
 

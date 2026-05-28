@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { SITE_NAME, postUrl } from '@/lib/site'
 import { ShareButtons, BlogShareDock } from '@/components/blog/ShareButtons'
+import { renderPostContent } from '@/lib/blog/render-content'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -95,7 +96,19 @@ export default async function PostPage({ params }: PageProps) {
       <section className="py-12">
         <div className="max-w-3xl mx-auto px-6">
           {post.excerpt && <p className="text-xl text-slate mb-8">{post.excerpt}</p>}
-          <div className="prose prose-lg text-slate whitespace-pre-line">{post.content}</div>
+          <div
+            className="prose prose-lg max-w-none
+              prose-p:text-slate prose-p:mb-4 prose-p:leading-relaxed
+              prose-headings:font-display
+              prose-h2:text-navy prose-h2:text-2xl prose-h2:font-bold prose-h2:mt-10 prose-h2:pb-2 prose-h2:border-b-2 prose-h2:border-cyan
+              prose-h3:text-navy prose-h3:text-xl prose-h3:font-semibold prose-h3:mt-6
+              prose-a:text-cyan-dark prose-a:no-underline hover:prose-a:text-cyan hover:prose-a:underline
+              prose-blockquote:border-l-4 prose-blockquote:border-cyan prose-blockquote:bg-slate-lighter prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:rounded-r-lg prose-blockquote:not-italic prose-blockquote:text-slate
+              prose-ul:list-disc prose-ul:pl-6 prose-ol:list-decimal prose-ol:pl-6 prose-li:text-slate prose-li:my-1
+              prose-strong:text-navy
+              prose-img:rounded-lg prose-img:mx-auto prose-img:shadow-sm"
+            dangerouslySetInnerHTML={{ __html: renderPostContent(post.content) }}
+          />
 
           {/* Compartir — al final del artículo */}
           <div className="mt-12 pt-8 border-t border-slate-light">
