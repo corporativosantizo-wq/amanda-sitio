@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
             "script-src 'self' 'unsafe-inline' https://*.clerk.com https://*.clerk.accounts.dev https://js.stripe.com",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https: blob:",
+            "media-src 'self' blob:",
             "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.clerk.com https://*.clerk.accounts.dev https://api.anthropic.com https://api.stripe.com https://graph.microsoft.com https://api.telegram.org https://*.vercel-analytics.com https://*.vercel-insights.com",
             "frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://js.stripe.com",
             "font-src 'self'",

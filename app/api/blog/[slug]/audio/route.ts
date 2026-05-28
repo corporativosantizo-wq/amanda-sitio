@@ -30,15 +30,47 @@ function getPublicClient() {
   );
 }
 
-function audioResponse(buffer: Buffer, slug: string, download: boolean) {
+// Sirve el MP3 desde nuestro propio dominio (mismo origen → sin CORS/CSP).
+// Soporta peticiones Range (206) para que el reproductor permita avanzar/retroceder.
+function serveAudio(req: NextRequest, buffer: Buffer, slug: string, download: boolean) {
+  const total = buffer.length;
+  const baseHeaders: Record<string, string> = {
+    'Content-Type': 'audio/mpeg',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=31536000, immutable',
+    'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${slug}.mp3"`,
+  };
+
+  const range = req.headers.get('range');
+  if (range && !download) {
+    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    if (match) {
+      const start = match[1] ? parseInt(match[1], 10) : 0;
+      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+
+      if (Number.isNaN(start) || start >= total) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' },
+        });
+      }
+
+      const safeEnd = Math.min(end, total - 1);
+      const slice = buffer.subarray(start, safeEnd + 1);
+      return new NextResponse(new Uint8Array(slice), {
+        status: 206,
+        headers: {
+          ...baseHeaders,
+          'Content-Range': `bytes ${start}-${safeEnd}/${total}`,
+          'Content-Length': String(slice.length),
+        },
+      });
+    }
+  }
+
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,
-    headers: {
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': String(buffer.length),
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${slug}.mp3"`,
-    },
+    headers: { ...baseHeaders, 'Content-Length': String(total) },
   });
 }
 
@@ -86,7 +118,7 @@ export async function GET(
       const { data: pub } = db.storage.from(BUCKET).getPublicUrl(path);
       return NextResponse.json({ ok: true, generated: false, url: pub.publicUrl });
     }
-    return audioResponse(buffer, slug, download);
+    return serveAudio(req, buffer, slug, download);
   }
 
   // 4. No está en cache → generar con OpenAI.
@@ -120,5 +152,5 @@ export async function GET(
     return NextResponse.json({ ok: true, generated: true, url: pub.publicUrl });
   }
 
-  return audioResponse(buffer, slug, download);
+  return serveAudio(req, buffer, slug, download);
 }

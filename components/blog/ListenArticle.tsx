@@ -40,23 +40,19 @@ function Spinner() {
 
 export default function ListenArticle({ slug }: { slug: string }) {
   const [status, setStatus] = useState<Status>('idle')
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  useEffect(() => {
-    return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl)
-    }
-  }, [audioUrl])
+  // Mismo origen: el <audio> consume el MP3 desde nuestro endpoint (que hace
+  // streaming desde Storage). Así evitamos CORS/CSP de la URL de Supabase y
+  // habilitamos el seek vía peticiones Range.
+  const audioSrc = `/api/blog/${slug}/audio`
 
   const generate = async () => {
     setStatus('loading')
     try {
-      const res = await fetch(`/api/blog/${slug}/audio`)
+      // Pre-genera y cachea el MP3 (muestra el indicador de carga la 1a vez).
+      const res = await fetch(`${audioSrc}?prewarm=1`)
       if (!res.ok) throw new Error('No se pudo generar el audio')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      setAudioUrl(url)
       setStatus('ready')
     } catch {
       setStatus('error')
@@ -117,7 +113,7 @@ export default function ListenArticle({ slug }: { slug: string }) {
         </span>
         Escuchar artículo
       </div>
-      <audio ref={audioRef} controls preload="auto" src={audioUrl ?? undefined} className="w-full">
+      <audio ref={audioRef} controls preload="auto" src={audioSrc} className="w-full">
         Tu navegador no soporta la reproducción de audio.
       </audio>
       <div className="mt-3 flex justify-end">
