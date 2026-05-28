@@ -409,7 +409,17 @@ function NuevoCorreoTab() {
 
     let a = asunto;
     let c = cuerpo;
-    for (const [key, val] of Object.entries(camposExtra)) {
+    // Sustituye TODOS los placeholders declarados por la plantilla (definidos +
+    // auto-detectados) además de cualquier clave en camposExtra. Los campos
+    // opcionales vacíos se reemplazan por '' para no dejar tokens {asi} literales
+    // en el correo (antes solo se recorrían las claves que el usuario tocó, así
+    // que un campo opcional sin llenar quedaba como "{descripcion_documento}").
+    const keys = new Set<string>([
+      ...camposExtraCompletos.map((campo) => campo.key),
+      ...Object.keys(camposExtra),
+    ]);
+    for (const key of keys) {
+      const val = camposExtra[key] ?? '';
       const formatted = key.includes('fecha') && val
         ? new Date(val + 'T12:00:00').toLocaleDateString('es-GT', {
             weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -421,7 +431,7 @@ function NuevoCorreoTab() {
     }
     setAsunto(a);
     setCuerpo(c);
-  }, [asunto, cuerpo, camposExtra, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
+  }, [asunto, cuerpo, camposExtra, camposExtraCompletos, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
 
   // Upload attachments.
   // Recibe un array de File (snapshot ya tomado en el onChange/onDrop) — NO el
