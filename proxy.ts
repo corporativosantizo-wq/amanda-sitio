@@ -77,15 +77,23 @@ export default clerkMiddleware(async (auth, req) => {
   // Autenticación Clerk obligatoria
   await auth.protect();
 
-  // Para rutas /api/admin/* (excepto auth-only), verificar rol admin
+  // Verificación de rol admin:
+  // - /api/admin/* (excepto auth-only) → 403 JSON si no es admin
+  // - /admin/* (páginas) → redirige a home si no es admin
   const { pathname } = req.nextUrl;
-  if (pathname.startsWith('/api/admin/') && !isAuthOnlyEndpoint(req)) {
+  const isApiAdmin = pathname.startsWith('/api/admin/') && !isAuthOnlyEndpoint(req);
+  const isPageAdmin = pathname.startsWith('/admin');
+
+  if (isApiAdmin || isPageAdmin) {
     const { userId } = await auth();
     if (!userId || !(await checkIsAdmin(userId))) {
-      return NextResponse.json(
-        { error: 'Se requiere rol de administrador' },
-        { status: 403 },
-      );
+      if (isApiAdmin) {
+        return NextResponse.json(
+          { error: 'Se requiere rol de administrador' },
+          { status: 403 },
+        );
+      }
+      return NextResponse.redirect(new URL('/', req.url));
     }
   }
 });
