@@ -1,19 +1,30 @@
 // ============================================================================
 // lib/blog/render-content.ts
 // Prepara el HTML del contenido de un post para renderizar en el blog público.
-// - Sanitiza con DOMPurify (server-side) — CRÍTICO contra XSS aunque venga del admin.
+// - Sanitiza con sanitize-html (puro JS, server-side) — CRÍTICO contra XSS
+//   aunque el contenido venga del admin. (DOMPurify requiere jsdom y rompe en
+//   el runtime serverless de Next; sanitize-html es equivalente y fiable.)
 // - Si el contenido es texto plano (posts antiguos), lo convierte a párrafos.
 // ============================================================================
 
-import DOMPurify from 'isomorphic-dompurify';
+import sanitizeHtml from 'sanitize-html';
 
-const ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's',
-  'h2', 'h3', 'ul', 'ol', 'li', 'blockquote',
-  'a', 'img', 'hr', 'span',
-];
-
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt', 'title', 'class'];
+const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's',
+    'h2', 'h3', 'ul', 'ol', 'li', 'blockquote',
+    'a', 'img', 'hr', 'span',
+  ],
+  allowedAttributes: {
+    a: ['href', 'target', 'rel'],
+    img: ['src', 'alt', 'title'],
+    '*': ['class'],
+  },
+  allowedSchemes: ['http', 'https', 'mailto'],
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer', target: '_blank' }),
+  },
+};
 
 function escapeHtml(s: string): string {
   return s
@@ -41,10 +52,5 @@ export function renderPostContent(content: string | null | undefined): string {
   if (!raw) return '';
 
   const html = looksLikeHtml(raw) ? raw : plainTextToHtml(raw);
-
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-  });
+  return sanitizeHtml(html, SANITIZE_OPTIONS);
 }
