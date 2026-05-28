@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { adminFetch } from '@/lib/utils/admin-fetch'
 import { useRouter } from 'next/navigation'
 
 interface Post {
@@ -17,31 +17,39 @@ export default function PostActions({ post }: { post: Post }) {
   const router = useRouter()
 
   const toggleStatus = async () => {
-    const supabase = createClient()
     const newStatus = post.status === 'published' ? 'draft' : 'published'
-    
-    await supabase
-      .from('posts')
-      .update({ 
-        status: newStatus,
-        published_at: newStatus === 'published' ? new Date().toISOString() : null
-      })
-      .eq('id', post.id)
-    
+
+    const res = await adminFetch(`/api/admin/posts/${post.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert('Error al cambiar el estado: ' + (data.error || res.statusText))
+      return
+    }
+
     router.refresh()
   }
 
   const deletePost = async () => {
     if (!confirm('¿Estás segura de que quieres eliminar este artículo?')) return
-    
+
     setIsDeleting(true)
-    const supabase = createClient()
-    
-    await supabase
-      .from('posts')
-      .delete()
-      .eq('id', post.id)
-    
+
+    const res = await adminFetch(`/api/admin/posts/${post.id}`, {
+      method: 'DELETE',
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert('Error al eliminar el artículo: ' + (data.error || res.statusText))
+      setIsDeleting(false)
+      return
+    }
+
     router.refresh()
   }
 

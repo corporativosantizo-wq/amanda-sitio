@@ -80,3 +80,58 @@ export async function PUT(
   console.log('[Posts API] Post', id, 'updated OK');
   return NextResponse.json(data);
 }
+
+// PATCH /api/admin/posts/[id] — cambio parcial de estado (publicar/despublicar)
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = await req.json();
+  const { status } = body;
+
+  if (status !== 'published' && status !== 'draft') {
+    return NextResponse.json(
+      { error: "status debe ser 'published' o 'draft'." },
+      { status: 400 }
+    );
+  }
+
+  const db = getAdminPublicClient();
+
+  const { data, error } = await db
+    .from('posts')
+    .update({
+      status,
+      published_at: status === 'published' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('[Posts API] PATCH error for post', id + ':', JSON.stringify(error));
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json(data);
+}
+
+// DELETE /api/admin/posts/[id]
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const db = getAdminPublicClient();
+
+  const { error } = await db.from('posts').delete().eq('id', id);
+
+  if (error) {
+    console.error('[Posts API] DELETE error for post', id + ':', JSON.stringify(error));
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}
