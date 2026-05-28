@@ -423,26 +423,59 @@ function NuevoCorreoTab() {
     setCuerpo(c);
   }, [asunto, cuerpo, camposExtra, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
 
-  // Upload attachments
-  const handleUploadAdjuntos = async (files: FileList) => {
+  // Upload attachments.
+  // Recibe un array de File (snapshot ya tomado en el onChange/onDrop) — NO el
+  // FileList vivo del input, que se vacía al resetear el value.
+  const handleUploadAdjuntos = async (files: File[]) => {
+    if (files.length === 0) return;
     setUploadingFiles(true);
+
+    // El stream del FormData se consume al enviarse, así que lo reconstruimos en
+    // cada intento.
+    const buildForm = () => {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      return fd;
+    };
+
     try {
-      const formData = new FormData();
-      for (const f of Array.from(files)) formData.append('files', f);
-      const res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
-        method: 'POST',
-        body: formData,
-      });
+      let res: Response;
+      try {
+        // Intento normal (adminFetch detecta sesión expirada con redirect:'manual').
+        res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
+          method: 'POST',
+          body: buildForm(),
+        });
+        if (!res.ok) throw new Error('retry');
+      } catch {
+        // Reintento: la 1a petición tras abrir el diálogo puede fallar por el
+        // cold-start de la función serverless o por el handshake de sesión de
+        // Clerk (que con redirect:'manual' aborta la petición). Aquí seguimos el
+        // redirect para que el handshake se complete de forma transparente.
+        res = await fetch('/api/admin/comunicaciones/adjuntos', {
+          method: 'POST',
+          body: buildForm(),
+          redirect: 'follow',
+        });
+      }
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Error ${res.status}`);
+      }
+
       const data = await res.json();
       // Guard contra response sin `adjuntos` o malformado: spread de undefined
       // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
       // por state corrupto de uploads previos.
       setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
     } catch (err: any) {
-      setToast({ type: 'error', msg: err.message ?? 'Error al subir archivos' });
+      const msg = err?.message === 'SESSION_EXPIRED'
+        ? 'Tu sesión expiró. Recarga la página.'
+        : (err?.message ?? 'Error al subir archivos');
+      setToast({ type: 'error', msg });
     } finally {
       setUploadingFiles(false);
-      if (adjuntoInputRef.current) adjuntoInputRef.current.value = '';
     }
   };
 
@@ -788,13 +821,19 @@ function NuevoCorreoTab() {
                 multiple
                 accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png"
                 className="hidden"
-                onChange={e => e.target.files && handleUploadAdjuntos(e.target.files)}
+                onChange={e => {
+                  // Snapshot inmediato + reset del value: evita depender del
+                  // FileList vivo y permite re-seleccionar el mismo archivo.
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  e.target.value = '';
+                  if (files.length) handleUploadAdjuntos(files);
+                }}
               />
             </div>
 
             {/* Drop zone */}
             <div
-              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) handleUploadAdjuntos(e.dataTransfer.files); }}
+              onDrop={e => { e.preventDefault(); const files = Array.from(e.dataTransfer.files); if (files.length) handleUploadAdjuntos(files); }}
               onDragOver={e => e.preventDefault()}
               className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center text-xs text-slate-400 hover:border-[#0891B2] hover:bg-cyan-50/20 transition-all cursor-pointer"
               onClick={() => adjuntoInputRef.current?.click()}
