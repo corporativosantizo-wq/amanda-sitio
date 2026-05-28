@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { SLUG_REGEX } from '@/lib/utils/slug';
 
 function getAdminPublicClient() {
   return createClient(
@@ -53,15 +54,23 @@ export async function PUT(
     );
   }
 
+  const cleanSlug = slug.trim().toLowerCase();
+  if (!SLUG_REGEX.test(cleanSlug)) {
+    return NextResponse.json(
+      { error: 'El slug solo puede contener minúsculas, números y guiones (ej. mi-articulo).' },
+      { status: 400 }
+    );
+  }
+
   const db = getAdminPublicClient();
 
-  console.log('[Posts API] Updating post', id + ':', 'title=', title, ', slug=', slug, ', status=', status);
+  console.log('[Posts API] Updating post', id + ':', 'title=', title, ', slug=', cleanSlug, ', status=', status);
 
   const { data, error } = await db
     .from('posts')
     .update({
       title: title.trim(),
-      slug: slug.trim(),
+      slug: cleanSlug,
       excerpt: excerpt?.trim() || null,
       content: content.trim(),
       status,
