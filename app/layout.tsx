@@ -4,6 +4,7 @@ import './globals.css'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import { Providers } from './providers'
 import { Analytics } from "@vercel/analytics/react"
+import { SITE_URL } from '@/lib/site'
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -20,6 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Amanda Santizo | Derecho Internacional',
   description: 'Derecho claro para decisiones inteligentes',
 }

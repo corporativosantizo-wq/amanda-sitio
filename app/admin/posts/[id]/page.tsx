@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { adminFetch } from '@/lib/utils/admin-fetch'
+import { ShareButtons } from '@/components/blog/ShareButtons'
+import { postUrl } from '@/lib/site'
 
 export default function EditarPost() {
   const router = useRouter()
@@ -148,6 +150,36 @@ export default function EditarPost() {
           </button>
         </div>
       </form>
+
+      {form.status === 'published' && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm max-w-3xl mt-6 space-y-6">
+          {/* Imagen para Instagram */}
+          <div>
+            <h2 className="font-display text-lg font-bold text-navy mb-1">📷 Generar imagen para Instagram</h2>
+            <p className="text-sm text-slate mb-4">Tarjeta lista para publicar con título, QR y marca.</p>
+            <div className="flex flex-wrap gap-3">
+              <a
+                href={`/api/admin/posts/${params.id}/social-image?format=feed`}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-azure text-white font-semibold rounded-lg hover:bg-navy transition-colors"
+              >
+                📷 Feed (1080×1080)
+              </a>
+              <a
+                href={`/api/admin/posts/${params.id}/social-image?format=story`}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-azure text-white font-semibold rounded-lg hover:bg-navy transition-colors"
+              >
+                📱 Stories (1080×1920)
+              </a>
+            </div>
+          </div>
+
+          {/* Compartir en redes */}
+          <div className="pt-6 border-t border-slate-light">
+            <h2 className="font-display text-lg font-bold text-navy mb-3">Compartir artículo</h2>
+            <ShareButtons url={postUrl(form.slug)} title={form.title} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

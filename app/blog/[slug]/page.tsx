@@ -1,10 +1,47 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
+import { SITE_NAME, postUrl } from '@/lib/site'
+import { ShareButtons, BlogShareDock } from '@/components/blog/ShareButtons'
 
 interface PageProps {
   params: Promise<{ slug: string }>
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params
+  const supabase = await createClient()
+  const { data: post } = await supabase
+    .from('posts')
+    .select('title, excerpt, slug')
+    .eq('slug', slug)
+    .eq('status', 'published')
+    .single()
+
+  if (!post) return {}
+
+  const url = postUrl(post.slug)
+  const description = post.excerpt ?? undefined
+
+  return {
+    title: post.title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      type: 'article',
+      title: post.title,
+      description,
+      url,
+      siteName: SITE_NAME,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description,
+    },
+  }
 }
 
 export default async function PostPage({ params }: PageProps) {
@@ -31,8 +68,10 @@ export default async function PostPage({ params }: PageProps) {
     })
   }
 
+  const url = postUrl(post.slug)
+
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pb-24 lg:pb-0">
       <section className="bg-gradient-to-br from-navy via-navy-dark to-navy-light py-16">
         <div className="max-w-4xl mx-auto px-6">
           <nav className="flex items-center space-x-2 text-sm mb-8">
@@ -57,6 +96,11 @@ export default async function PostPage({ params }: PageProps) {
         <div className="max-w-3xl mx-auto px-6">
           {post.excerpt && <p className="text-xl text-slate mb-8">{post.excerpt}</p>}
           <div className="prose prose-lg text-slate whitespace-pre-line">{post.content}</div>
+
+          {/* Compartir — al final del artículo */}
+          <div className="mt-12 pt-8 border-t border-slate-light">
+            <ShareButtons url={url} title={post.title} />
+          </div>
         </div>
       </section>
       <section className="py-16 bg-gradient-to-br from-navy to-navy-dark">
@@ -67,6 +111,8 @@ export default async function PostPage({ params }: PageProps) {
           </Link>
         </div>
       </section>
+
+      <BlogShareDock url={url} title={post.title} />
     </div>
   )
 }
