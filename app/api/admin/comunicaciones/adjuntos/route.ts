@@ -7,6 +7,20 @@ import { handleApiError } from '@/lib/api-error';
 const db = () => createAdminClient();
 const BUCKET = 'adjuntos-correo';
 const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+
+// Supabase Storage rechaza con 400 las claves de objeto con caracteres no-ASCII
+// (acentos, ñ, etc.). Saneamos SOLO la clave de almacenamiento; el nombre
+// original se conserva en la metadata (`name`) para mostrarlo y adjuntarlo en el
+// correo con su nombre correcto.
+function safeStorageName(name: string): string {
+  const cleaned = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // elimina diacríticos: É→E, ñ→n
+    .replace(/[^a-zA-Z0-9 ._-]/g, '_') // cualquier otro carácter no seguro → _
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || 'archivo';
+}
 const ALLOWED_TYPES = [
   'application/pdf',
   'application/msword',
@@ -43,7 +57,7 @@ export async function POST(req: NextRequest) {
       }
 
       const id = randomUUID();
-      const path = `correos/${id}/${file.name}`;
+      const path = `correos/${id}/${safeStorageName(file.name)}`;
       const buffer = Buffer.from(await file.arrayBuffer());
 
       const { error } = await db().storage.from(BUCKET).upload(path, buffer, {
