@@ -407,30 +407,63 @@ function NuevoCorreoTab() {
       return;
     }
 
-    let a = asunto;
-    let c = cuerpo;
-    // Sustituye TODOS los placeholders declarados por la plantilla (definidos +
-    // auto-detectados) además de cualquier clave en camposExtra. Los campos
-    // opcionales vacíos se reemplazan por '' para no dejar tokens {asi} literales
-    // en el correo (antes solo se recorrían las claves que el usuario tocó, así
-    // que un campo opcional sin llenar quedaba como "{descripcion_documento}").
+    // Placeholders a sustituir: los declarados por la plantilla (definidos +
+    // auto-detectados) y cualquier clave en camposExtra.
     const keys = new Set<string>([
       ...camposExtraCompletos.map((campo) => campo.key),
       ...Object.keys(camposExtra),
     ]);
-    for (const key of keys) {
+
+    const valorDe = (key: string): string => {
       const val = camposExtra[key] ?? '';
-      const formatted = key.includes('fecha') && val
+      return key.includes('fecha') && val
         ? new Date(val + 'T12:00:00').toLocaleDateString('es-GT', {
             weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
             timeZone: 'America/Guatemala',
           })
         : val;
-      a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
-      c = c.replace(new RegExp(`\\{${key}\\}`, 'g'), formatted || '');
+    };
+
+    // Asunto: sustitución simple (los opcionales vacíos quedan como '').
+    let a = asunto;
+    for (const key of keys) {
+      a = a.replace(new RegExp(`\\{${key}\\}`, 'g'), valorDe(key) || '');
     }
+
+    // Cuerpo: se procesa línea por línea para poder ELIMINAR por completo las
+    // líneas cuyos placeholders quedaron vacíos (ej. "📝 Descripción:" sin valor),
+    // en vez de dejar la etiqueta colgando. Solo se descarta una línea si todos
+    // sus placeholders quedaron vacíos Y lo que queda es una etiqueta (termina en
+    // ":") o está en blanco; las líneas con texto real o algún valor se conservan.
+    const placeholderRe = /\{(\w+)\}/g;
+    const cuerpoFinal = cuerpo
+      .split('\n')
+      .map((linea) => {
+        const enLinea = [...linea.matchAll(placeholderRe)]
+          .map((m) => m[1])
+          .filter((k) => keys.has(k));
+        if (enLinea.length === 0) return linea;
+
+        let algunoConValor = false;
+        let sustituida = linea;
+        for (const key of enLinea) {
+          const v = valorDe(key);
+          if (v && v.trim()) algunoConValor = true;
+          sustituida = sustituida.replace(new RegExp(`\\{${key}\\}`, 'g'), v || '');
+        }
+
+        if (!algunoConValor) {
+          const limpia = sustituida.trim();
+          if (limpia === '' || limpia.endsWith(':')) return null; // elimina la línea
+        }
+        return sustituida;
+      })
+      .filter((linea): linea is string => linea !== null)
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n'); // colapsa saltos de línea sobrantes
+
     setAsunto(a);
-    setCuerpo(c);
+    setCuerpo(cuerpoFinal);
   }, [asunto, cuerpo, camposExtra, camposExtraCompletos, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
 
   // Upload attachments.
