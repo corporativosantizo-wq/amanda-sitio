@@ -735,6 +735,13 @@ function NuevoCorreoTab() {
       ? new Date(`${programarFecha}T${programarHora}:00`).toISOString()
       : null;
 
+    // Seguimiento a proveedor: al ENVIAR (no al programar), el endpoint registra
+    // server-side un seguimiento via='email' por cada gestión incluida.
+    const seguimientoGestionIds =
+      modo === 'ahora' && esSeguimientoProveedor && gestionesSel.size > 0
+        ? [...gestionesSel]
+        : [];
+
     const result = await mutate('/api/admin/comunicaciones', {
       body: {
         accion: modo === 'programar' ? 'programar' : 'crear',
@@ -749,38 +756,16 @@ function NuevoCorreoTab() {
         adjuntos,
         enviar_ahora: modo === 'ahora',
         programado_para: programadoPara,
+        seguimiento_gestion_ids: seguimientoGestionIds,
+        seguimiento_descripcion: seguimientoGestionIds.length
+          ? `Seguimiento enviado por correo: ${asunto}`
+          : null,
       },
       onSuccess: async () => {
-        // Seguimiento a proveedor: al ENVIAR (no al programar), registrar un
-        // seguimiento via='email' por cada gestión incluida en el correo.
-        let segError = false;
-        if (modo === 'ahora' && esSeguimientoProveedor && gestionesSel.size > 0) {
-          try {
-            const res = await adminFetch('/api/admin/gestiones-proveedor/seguimientos-bulk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                gestion_ids: [...gestionesSel],
-                descripcion: `Seguimiento enviado por correo: ${asunto}`,
-                via: 'email',
-              }),
-            });
-            if (!res.ok) segError = true;
-          } catch {
-            // El correo ya se envió; un fallo al registrar el seguimiento no debe
-            // bloquear el flujo, solo avisar.
-            segError = true;
-          }
-        }
-
-        setToast(
-          segError
-            ? { type: 'error', msg: 'Correo enviado, pero no se registró el seguimiento automático.' }
-            : {
-                type: 'success',
-                msg: modo === 'ahora' ? 'Correo enviado exitosamente' : 'Correo programado',
-              },
-        );
+        setToast({
+          type: 'success',
+          msg: modo === 'ahora' ? 'Correo enviado exitosamente' : 'Correo programado',
+        });
         // Reset
         setPaso(1);
         setPlantillaId(null);

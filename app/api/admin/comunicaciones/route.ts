@@ -78,6 +78,28 @@ export async function POST(req: NextRequest) {
       // If crear + enviar_ahora, send immediately
       if (body.enviar_ahora) {
         await enviarCorreoAhora(correo.id);
+
+        // Plantilla seguimiento-proveedor: registrar un seguimiento via='email'
+        // por cada gestión incluida en el correo. Se hace aquí (server-side) y no
+        // con una segunda petición del cliente para que sea atómico con el envío
+        // y no dependa de otra ruta API.
+        const gestionIds: string[] = Array.isArray(body.seguimiento_gestion_ids)
+          ? body.seguimiento_gestion_ids.filter((x: unknown): x is string => typeof x === 'string')
+          : [];
+        if (gestionIds.length > 0) {
+          try {
+            const { crearSeguimientosBulk } = await import('@/lib/services/gestiones-proveedor.service');
+            await crearSeguimientosBulk(gestionIds, {
+              descripcion: body.seguimiento_descripcion?.trim()
+                || `Seguimiento enviado por correo: ${body.asunto ?? ''}`.trim(),
+              via: 'email',
+            });
+          } catch (segErr) {
+            // El correo ya se envió; no bloquear por un fallo al registrar el
+            // seguimiento, solo dejar traza.
+            console.error('[comunicaciones] No se registraron los seguimientos de proveedor:', segErr);
+          }
+        }
       }
 
       return NextResponse.json(correo);
