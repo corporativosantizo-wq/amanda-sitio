@@ -9,6 +9,7 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutate } from '@/lib/hooks/use-fetch';
 import { PageHeader } from '@/components/admin/ui';
+import { EmailChips } from '@/components/admin/email-chips';
 
 const TIPOS = [
   { value: 'freelance', label: 'Freelance' },
@@ -32,6 +33,7 @@ export default function NuevoProveedorPage() {
   const [nit, setNit] = useState('');
   const [dpi, setDpi] = useState('');
   const [email, setEmail] = useState('');
+  const [emailsCc, setEmailsCc] = useState<string[]>([]);
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
   const [banco, setBanco] = useState('');
@@ -51,6 +53,7 @@ export default function NuevoProveedorPage() {
       nit: nit.trim() || null,
       dpi: dpi.trim() || null,
       email: email.trim() || null,
+      emails_cc: emailsCc.length ? emailsCc : null,
       telefono: telefono.trim() || null,
       direccion: direccion.trim() || null,
       banco: banco.trim() || null,
@@ -66,7 +69,7 @@ export default function NuevoProveedorPage() {
       onSuccess: (data: any) => router.push(`/admin/proveedores/${data.id}`),
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [tipo, nombre, especialidad, nit, dpi, email, telefono, direccion, banco, tipoCuenta, numeroCuenta, cuentaNombre, tarifaHora, notas, mutate, router]);
+  }, [tipo, nombre, especialidad, nit, dpi, email, emailsCc, telefono, direccion, banco, tipoCuenta, numeroCuenta, cuentaNombre, tarifaHora, notas, mutate, router]);
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -135,6 +138,14 @@ export default function NuevoProveedorPage() {
               placeholder="+502 5555-1234"
               className={INPUT} />
           </div>
+        </div>
+
+        {/* Emails CC adicionales */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Emails CC <span className="text-slate-400 font-normal">(copia en los correos)</span>
+          </label>
+          <EmailChips value={emailsCc} onChange={setEmailsCc} placeholder="otro@email.com" />
         </div>
 
         {/* Dirección */}

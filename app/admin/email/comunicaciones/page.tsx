@@ -72,6 +72,24 @@ interface ClienteBusqueda {
   codigo: string;
 }
 
+// Plantilla "seguimiento-proveedor": proveedor + sus gestiones.
+interface ProveedorOpt {
+  id: string;
+  nombre: string;
+  email: string | null;
+  emails_cc: string[] | null;
+}
+
+interface GestionProvItem {
+  id: string;
+  numero_expediente: string | null;
+  nombre_gestion: string;
+  entidad: string | null;
+  descripcion: string | null;
+  estado: string;
+  cliente?: { id: string; nombre: string } | null;
+}
+
 const CUENTAS = [
   { value: 'amanda@papeleo.legal', label: 'amanda@papeleo.legal' },
   { value: 'asistente@papeleo.legal', label: 'asistente@papeleo.legal' },
@@ -169,10 +187,17 @@ function NuevoCorreoTab() {
     }>;
   } | null>(null);
 
+  // Seguimiento a proveedor — proveedor seleccionado + sus gestiones
+  const [provSelId, setProvSelId] = useState('');
+  const [gestionesProv, setGestionesProv] = useState<GestionProvItem[]>([]);
+  const [gestionesSel, setGestionesSel] = useState<Set<string>>(new Set());
+  const [pendingProveedorId, setPendingProveedorId] = useState<string | null>(null);
+
   // Attachments
   const [adjuntos, setAdjuntos] = useState<AdjuntoMeta[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const adjuntoInputRef = useRef<HTMLInputElement>(null);
+  const initFromQueryRef = useRef(false);
 
   // Schedule
   const [programarFecha, setProgramarFecha] = useState('');
@@ -227,6 +252,10 @@ function NuevoCorreoTab() {
   const seleccionarPlantilla = (id: string | null) => {
     setPlantillaId(id);
     setSeguimientoData(null);
+    // Limpia estado de seguimiento a proveedor al cambiar de plantilla.
+    setProvSelId('');
+    setGestionesProv([]);
+    setGestionesSel(new Set());
     if (id) {
       const p = config?.plantillas.find((t: Plantilla) => t.id === id);
       if (p) {
@@ -268,6 +297,169 @@ function NuevoCorreoTab() {
 
   // Es la plantilla de seguimiento? Genera HTML dinámico desde trámites/avances.
   const esSeguimientoCotizacion = plantilla?.slug === 'seguimiento-cotizacion';
+
+  // Plantilla de seguimiento a proveedor: dropdown de proveedores + checkboxes
+  // de gestiones que pre-llenan el correo y registran seguimientos al enviar.
+  const esSeguimientoProveedor = plantilla?.slug === 'seguimiento-proveedor';
+
+  const { data: proveedoresData } = useFetch<{ data: ProveedorOpt[] }>(
+    esSeguimientoProveedor ? '/api/admin/proveedores?activo=true&limit=300' : null
+  );
+  const proveedores = proveedoresData?.data ?? [];
+
+  // Construye asunto/cuerpo del correo a partir de la plantilla cruda + el
+  // proveedor y las gestiones seleccionadas. Se llama al elegir proveedor y al
+  // togglear gestiones, de modo que siempre parte del template original.
+  const aplicarSeguimientoProveedor = useCallback(
+    (prov: ProveedorOpt, gestiones: GestionProvItem[]) => {
+      if (!plantilla) return;
+
+      const clientesUnicos = [...new Set(
+        gestiones.map((g) => g.cliente?.nombre).filter((n): n is string => !!n)
+      )];
+      const nombreCliente = clientesUnicos.join(' / ');
+      const asuntoGestion = gestiones.length === 1
+        ? gestiones[0].nombre_gestion
+        : gestiones.length > 1
+          ? `${gestiones.length} gestiones en proceso`
+          : 'Gestión encargada';
+
+      // Detalle formateado: "1. Expediente XXX (Cliente):\n   • detalle"
+      const detalle = gestiones
+        .map((g, i) => {
+          const titulo = g.numero_expediente
+            ? `Expediente ${g.numero_expediente}`
+            : g.nombre_gestion;
+          const cli = g.cliente?.nombre ? ` (${g.cliente.nombre})` : '';
+          const bullet = (g.descripcion?.trim())
+            || (g.entidad ? `Ingreso de expediente ante el ${g.entidad}.` : g.nombre_gestion);
+          return `${i + 1}. ${titulo}${cli}:\n   • ${bullet}`;
+        })
+        .join('\n\n');
+
+      const vals: Record<string, string> = {
+        nombre_proveedor: prov.nombre,
+        nombre_cliente: nombreCliente,
+        asunto_gestion: asuntoGestion,
+        detalle_seguimiento: detalle,
+      };
+      setCamposExtra((prev) => ({ ...prev, ...vals }));
+
+      const subst = (text: string) =>
+        Object.entries(vals).reduce(
+          (out, [k, v]) => out.replace(new RegExp(`\\{${k}\\}`, 'g'), v),
+          text,
+        );
+
+      setAsunto(subst(plantilla.asunto_template));
+
+      // Cuerpo: sustituye placeholder por placeholder y elimina por completo las
+      // líneas-etiqueta que quedaron sin valor (ej. "📋 Cliente:" si no hay
+      // cliente, o el "{detalle_seguimiento}" si no se eligió ninguna gestión).
+      const keys = Object.keys(vals);
+      const placeholderRe = /\{(\w+)\}/g;
+      const cuerpoSub = plantilla.cuerpo_template
+        .split('\n')
+        .map((linea) => {
+          const enLinea = [...linea.matchAll(placeholderRe)]
+            .map((m) => m[1])
+            .filter((k) => keys.includes(k));
+          if (enLinea.length === 0) return linea;
+          let algunoConValor = false;
+          let out = linea;
+          for (const k of enLinea) {
+            const v = vals[k] ?? '';
+            if (v.trim()) algunoConValor = true;
+            out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+          }
+          if (!algunoConValor) {
+            const limpia = out.trim();
+            if (limpia === '' || limpia.endsWith(':')) return null;
+          }
+          return out;
+        })
+        .filter((l): l is string => l !== null)
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n');
+      setCuerpo(cuerpoSub);
+    },
+    [plantilla],
+  );
+
+  // Cargar gestiones (pendiente/en_proceso) de un proveedor y pre-llenar correo.
+  const seleccionarProveedor = useCallback(
+    async (provId: string) => {
+      setProvSelId(provId);
+      const prov = proveedores.find((p) => p.id === provId);
+      if (!prov) return;
+
+      setDestinatarioEmail(prov.email ?? '');
+      setCcEmails((prov.emails_cc ?? []).join(', '));
+      setClienteNombre('');
+      setClienteId(null);
+
+      try {
+        const res = await adminFetch(`/api/admin/proveedores/${provId}/gestiones`);
+        const json = await res.json().catch(() => ({ data: [] }));
+        const todas: GestionProvItem[] = (json?.data ?? []) as GestionProvItem[];
+        const activas = todas.filter((g) => g.estado === 'en_proceso' || g.estado === 'pendiente');
+        setGestionesProv(activas);
+        const sel = new Set(activas.map((g) => g.id));
+        setGestionesSel(sel);
+        aplicarSeguimientoProveedor(prov, activas);
+      } catch {
+        setGestionesProv([]);
+        setGestionesSel(new Set());
+        aplicarSeguimientoProveedor(prov, []);
+      }
+    },
+    [proveedores, aplicarSeguimientoProveedor],
+  );
+
+  const toggleGestion = useCallback(
+    (gid: string) => {
+      const next = new Set(gestionesSel);
+      if (next.has(gid)) next.delete(gid); else next.add(gid);
+      setGestionesSel(next);
+      const prov = proveedores.find((p) => p.id === provSelId);
+      if (prov) {
+        const seleccionadas = gestionesProv.filter((g) => next.has(g.id));
+        aplicarSeguimientoProveedor(prov, seleccionadas);
+      }
+    },
+    [gestionesSel, proveedores, provSelId, gestionesProv, aplicarSeguimientoProveedor],
+  );
+
+  // Auto-selección del proveedor pendiente (entrada por query param) una vez que
+  // la lista de proveedores está cargada.
+  useEffect(() => {
+    if (pendingProveedorId && proveedores.length > 0) {
+      const existe = proveedores.some((p) => p.id === pendingProveedorId);
+      if (existe) {
+        seleccionarProveedor(pendingProveedorId);
+        setPendingProveedorId(null);
+      }
+    }
+  }, [pendingProveedorId, proveedores, seleccionarProveedor]);
+
+  // Entrada por atajo desde la ficha de proveedor:
+  // /admin/email/comunicaciones?plantilla=seguimiento-proveedor&proveedor=<id>
+  // Selecciona la plantilla y deja el proveedor pendiente de auto-selección.
+  useEffect(() => {
+    if (initFromQueryRef.current || !config) return;
+    const sp = new URLSearchParams(window.location.search);
+    const slug = sp.get('plantilla');
+    if (!slug) { initFromQueryRef.current = true; return; }
+    const pl = config.plantillas.find((p) => p.slug === slug);
+    if (!pl) { initFromQueryRef.current = true; return; }
+    initFromQueryRef.current = true;
+    seleccionarPlantilla(pl.id);
+    const provId = sp.get('proveedor');
+    if (provId) setPendingProveedorId(provId);
+    // Limpia el query para no re-disparar en navegaciones internas.
+    window.history.replaceState(null, '', '/admin/email/comunicaciones');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
 
   // Cargar datos de seguimiento (cliente + trámites + avances) para una cotización.
   // Usado al seleccionar una cotización desde el lookup cuando la plantilla es
@@ -466,26 +658,54 @@ function NuevoCorreoTab() {
     setCuerpo(cuerpoFinal);
   }, [asunto, cuerpo, camposExtra, camposExtraCompletos, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
 
-  // Upload attachments
-  const handleUploadAdjuntos = async (files: FileList) => {
+  // Upload attachments.
+  // Recibe un array de File (snapshot ya tomado en el onChange/onDrop) — NO el
+  // FileList vivo del input, que se vacía al resetear el value.
+  const handleUploadAdjuntos = async (files: File[]) => {
+    if (files.length === 0) return;
     setUploadingFiles(true);
+
+    // El stream del FormData se consume al enviarse, así que lo reconstruimos en
+    // cada intento.
+    const buildForm = () => {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      return fd;
+    };
+
+    const enviar = () =>
+      adminFetch('/api/admin/comunicaciones/adjuntos', { method: 'POST', body: buildForm() });
+
     try {
-      const formData = new FormData();
-      for (const f of Array.from(files)) formData.append('files', f);
-      const res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
-        method: 'POST',
-        body: formData,
-      });
+      // La 1a petición tras abrir el diálogo puede fallar por el cold-start de la
+      // función serverless o por el handshake de sesión de Clerk (que con
+      // redirect:'manual' se ve como opaqueredirect → SESSION_EXPIRED). En ambos
+      // casos un reintento inmediato con el MISMO adminFetch (manual) ya pasa,
+      // porque el handshake dejó la cookie fresca. NO reintentar con
+      // fetch(redirect:'follow'): seguir el redirect del handshake en un POST
+      // devuelve HTML no-JSON y rompía la subida (regresión de d9d9b33).
+      let res = await enviar().catch(() => null);
+      if (!res || !res.ok) {
+        res = await enviar();
+      }
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Error ${res.status}`);
+      }
+
       const data = await res.json();
       // Guard contra response sin `adjuntos` o malformado: spread de undefined
       // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
       // por state corrupto de uploads previos.
       setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
     } catch (err: any) {
-      setToast({ type: 'error', msg: err.message ?? 'Error al subir archivos' });
+      const msg = err?.message === 'SESSION_EXPIRED'
+        ? 'Tu sesión expiró. Recarga la página.'
+        : (err?.message ?? 'Error al subir archivos');
+      setToast({ type: 'error', msg });
     } finally {
       setUploadingFiles(false);
-      if (adjuntoInputRef.current) adjuntoInputRef.current.value = '';
     }
   };
 
@@ -530,11 +750,37 @@ function NuevoCorreoTab() {
         enviar_ahora: modo === 'ahora',
         programado_para: programadoPara,
       },
-      onSuccess: () => {
-        setToast({
-          type: 'success',
-          msg: modo === 'ahora' ? 'Correo enviado exitosamente' : 'Correo programado',
-        });
+      onSuccess: async () => {
+        // Seguimiento a proveedor: al ENVIAR (no al programar), registrar un
+        // seguimiento via='email' por cada gestión incluida en el correo.
+        let segError = false;
+        if (modo === 'ahora' && esSeguimientoProveedor && gestionesSel.size > 0) {
+          try {
+            const res = await adminFetch('/api/admin/gestiones-proveedor/seguimientos-bulk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                gestion_ids: [...gestionesSel],
+                descripcion: `Seguimiento enviado por correo: ${asunto}`,
+                via: 'email',
+              }),
+            });
+            if (!res.ok) segError = true;
+          } catch {
+            // El correo ya se envió; un fallo al registrar el seguimiento no debe
+            // bloquear el flujo, solo avisar.
+            segError = true;
+          }
+        }
+
+        setToast(
+          segError
+            ? { type: 'error', msg: 'Correo enviado, pero no se registró el seguimiento automático.' }
+            : {
+                type: 'success',
+                msg: modo === 'ahora' ? 'Correo enviado exitosamente' : 'Correo programado',
+              },
+        );
         // Reset
         setPaso(1);
         setPlantillaId(null);
@@ -547,6 +793,9 @@ function NuevoCorreoTab() {
         setCamposExtra({});
         setAdjuntos([]);
         setSeguimientoData(null);
+        setProvSelId('');
+        setGestionesProv([]);
+        setGestionesSel(new Set());
       },
       onError: (err: any) => setToast({ type: 'error', msg: String(err) }),
     });
@@ -628,7 +877,54 @@ function NuevoCorreoTab() {
             {plantilla && <span className="ml-2 text-xs text-slate-400 font-normal">{plantilla.icono} {plantilla.nombre}</span>}
           </h3>
 
-          {/* Client search */}
+          {/* Seguimiento a proveedor: dropdown de proveedor + gestiones */}
+          {esSeguimientoProveedor ? (
+            <div className="mb-4 space-y-4">
+              <div>
+                <label className="text-xs text-slate-500 font-medium">Proveedor</label>
+                <select
+                  value={provSelId}
+                  onChange={(e) => seleccionarProveedor(e.target.value)}
+                  className="w-full mt-1 px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2] bg-white"
+                >
+                  <option value="">— Elige un proveedor —</option>
+                  {proveedores.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nombre}{p.email ? ` · ${p.email}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              {provSelId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-xs font-medium text-blue-700 mb-2">
+                    Gestiones a incluir ({gestionesSel.size}/{gestionesProv.length})
+                  </p>
+                  {gestionesProv.length === 0 ? (
+                    <p className="text-xs text-slate-500">Este proveedor no tiene gestiones pendientes ni en proceso.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {gestionesProv.map((g) => (
+                        <label key={g.id} className="flex items-start gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={gestionesSel.has(g.id)}
+                            onChange={() => toggleGestion(g.id)}
+                            className="mt-1"
+                          />
+                          <span className="text-slate-700">
+                            {g.numero_expediente && <span className="font-mono text-xs text-slate-500 mr-1">{g.numero_expediente}</span>}
+                            {g.nombre_gestion}
+                            {g.cliente?.nombre && <span className="text-slate-400 text-xs ml-1">· {g.cliente.nombre}</span>}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+          /* Client search */
           <div className="relative mb-4">
             <label className="text-xs text-slate-500 font-medium">Buscar cliente</label>
             <input
@@ -662,6 +958,7 @@ function NuevoCorreoTab() {
               </>
             )}
           </div>
+          )}
 
           {/* Direct email */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -694,6 +991,9 @@ function NuevoCorreoTab() {
                 if (!destinatarioEmail) return setToast({ type: 'error', msg: 'Ingresa un email' });
                 // If no template or no client, populate empty
                 if (!plantilla) { setPaso(3); return; }
+                // Seguimiento a proveedor ya tiene asunto/cuerpo armados desde las
+                // gestiones; no sobreescribir con el template crudo.
+                if (esSeguimientoProveedor) { setPaso(3); return; }
                 if (!clienteId) {
                   setAsunto(plantilla.asunto_template
                     .replace(/\{nombre_cliente\}/g, clienteNombre || 'Cliente')
@@ -831,13 +1131,19 @@ function NuevoCorreoTab() {
                 multiple
                 accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png"
                 className="hidden"
-                onChange={e => e.target.files && handleUploadAdjuntos(e.target.files)}
+                onChange={e => {
+                  // Snapshot inmediato + reset del value: evita depender del
+                  // FileList vivo y permite re-seleccionar el mismo archivo.
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  e.target.value = '';
+                  if (files.length) handleUploadAdjuntos(files);
+                }}
               />
             </div>
 
             {/* Drop zone */}
             <div
-              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) handleUploadAdjuntos(e.dataTransfer.files); }}
+              onDrop={e => { e.preventDefault(); const files = Array.from(e.dataTransfer.files); if (files.length) handleUploadAdjuntos(files); }}
               onDragOver={e => e.preventDefault()}
               className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center text-xs text-slate-400 hover:border-[#0891B2] hover:bg-cyan-50/20 transition-all cursor-pointer"
               onClick={() => adjuntoInputRef.current?.click()}

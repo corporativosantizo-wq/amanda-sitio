@@ -29,7 +29,7 @@ export async function listarProveedores(params: ListParams = {}) {
 
   let query = db()
     .from('proveedores')
-    .select('id, codigo, nombre, tipo, especialidad, nit, email, telefono, tarifa_hora, activo, created_at', { count: 'exact' })
+    .select('id, codigo, nombre, tipo, especialidad, nit, email, emails_cc, telefono, tarifa_hora, activo, created_at', { count: 'exact' })
     .order('nombre', { ascending: true })
     .range(offset, offset + limit - 1);
 
@@ -83,6 +83,7 @@ export async function crearProveedor(input: ProveedorInsert): Promise<Proveedor>
       cuenta_nombre: input.cuenta_nombre ?? null,
       tarifa_hora: input.tarifa_hora ?? null,
       notas: input.notas ?? null,
+      emails_cc: input.emails_cc ?? null,
       activo: true,
     })
     .select()
@@ -107,7 +108,7 @@ export async function actualizarProveedor(
     'nombre', 'tipo', 'especialidad', 'nit', 'dpi',
     'telefono', 'email', 'direccion',
     'banco', 'tipo_cuenta', 'numero_cuenta', 'cuenta_nombre', 'tarifa_hora',
-    'notas', 'activo',
+    'notas', 'emails_cc', 'activo',
   ];
 
   for (const key of fields) {

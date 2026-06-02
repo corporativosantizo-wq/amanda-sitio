@@ -9,6 +9,8 @@ import { useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { Section, Skeleton, EmptyState } from '@/components/admin/ui';
+import { EmailChips } from '@/components/admin/email-chips';
+import { GestionesProveedor } from './gestiones';
 
 const INPUT = 'w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
 
@@ -49,6 +51,7 @@ interface ProveedorDetalle {
   cuenta_nombre: string | null;
   tarifa_hora: number | null;
   notas: string | null;
+  emails_cc: string[] | null;
   activo: boolean;
   created_at: string;
 }
@@ -65,6 +68,7 @@ export default function ProveedorDetallePage() {
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [emailsCc, setEmailsCc] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -87,6 +91,7 @@ export default function ProveedorDetallePage() {
       tarifa_hora: p.tarifa_hora != null ? String(p.tarifa_hora) : '',
       notas: p.notas ?? '',
     });
+    setEmailsCc(p.emails_cc ?? []);
     setEditing(true);
     setSaveError(null);
   }, [p]);
@@ -114,11 +119,12 @@ export default function ProveedorDetallePage() {
         cuenta_nombre: form.cuenta_nombre.trim() || null,
         tarifa_hora: form.tarifa_hora ? parseFloat(form.tarifa_hora) : null,
         notas: form.notas.trim() || null,
+        emails_cc: emailsCc.length ? emailsCc : null,
       },
       onSuccess: () => { setEditing(false); refetch(); },
       onError: (err) => setSaveError(err),
     });
-  }, [form, id, mutate, refetch]);
+  }, [form, emailsCc, id, mutate, refetch]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }));
@@ -229,6 +235,20 @@ export default function ProveedorDetallePage() {
               <Field label="Email" value={p.email} editValue={form.email} editing={editing} onChange={set('email')} type="email" />
               <Field label="Teléfono" value={p.telefono} editValue={form.telefono} editing={editing} onChange={set('telefono')} type="tel" />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Emails CC (copia en correos)</label>
+              {editing ? (
+                <EmailChips value={emailsCc} onChange={setEmailsCc} placeholder="otro@email.com" />
+              ) : (p.emails_cc && p.emails_cc.length > 0) ? (
+                <div className="flex flex-wrap gap-1.5 py-1.5">
+                  {p.emails_cc.map((e) => (
+                    <span key={e} className="inline-flex items-center bg-cyan-50 text-[#0891B2] text-xs font-medium px-2 py-1 rounded-md">{e}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 py-2.5">—</p>
+              )}
+            </div>
             <Field label="Dirección" value={p.direccion} editValue={form.direccion} editing={editing} onChange={set('direccion')} />
           </div>
         </Section>
@@ -260,6 +280,9 @@ export default function ProveedorDetallePage() {
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{p.notas || <span className="text-slate-400">Sin notas</span>}</p>
         )}
       </Section>
+
+      {/* Gestiones asignadas */}
+      <GestionesProveedor proveedorId={p.id} proveedorNombre={p.nombre} />
 
       {/* Meta */}
       <div className="text-xs text-slate-400 flex gap-4">

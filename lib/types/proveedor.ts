@@ -28,6 +28,7 @@ export interface Proveedor {
   cuenta_nombre: string | null;
   tarifa_hora: number | null;
   notas: string | null;
+  emails_cc: string[] | null;
   activo: boolean;
   created_at: string;
   updated_at: string;
@@ -49,5 +50,6 @@ export interface ProveedorInsert {
   cuenta_nombre?: string | null;
   tarifa_hora?: number | null;
   notas?: string | null;
+  emails_cc?: string[] | null;
   activo?: boolean;
 }

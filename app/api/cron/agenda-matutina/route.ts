@@ -64,6 +64,12 @@ export async function GET(req: NextRequest) {
       await sendTelegramMessage(plazosDigest, { parse_mode: 'HTML' });
     }
 
+    // 3b. Gestiones de proveedores sin seguimiento (NULL o > 15 días)
+    const gestionesDigest = await buildGestionesProveedorDigest();
+    if (gestionesDigest) {
+      await sendTelegramMessage(gestionesDigest, { parse_mode: 'HTML' });
+    }
+
     // 4. Financial summary — cobros pendientes y vencidos
     const cobrosDigest = await buildCobrosDigest();
     await sendTelegramMessage(cobrosDigest.text, {
@@ -250,6 +256,57 @@ async function buildPlazosDigest(): Promise<string | null> {
     return lines.join('\n');
   } catch (err) {
     console.error('[agenda-matutina] Error building plazos digest:', err);
+    return null;
+  }
+}
+
+// ── Gestiones de proveedores sin seguimiento ────────────────────────────────
+
+// Lista gestiones (no completadas/canceladas) cuyo último seguimiento es NULL o
+// tiene más de 15 días. Solo retorna mensaje si hay algo que reportar.
+async function buildGestionesProveedorDigest(): Promise<string | null> {
+  try {
+    const db = createAdminClient();
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+
+    const { data: gestiones } = await db
+      .from('gestiones_proveedor')
+      .select(
+        'nombre_gestion, entidad, estado, fecha_asignacion, ultimo_seguimiento, ' +
+        'proveedor:proveedores!gestiones_proveedor_proveedor_id_fkey (nombre)',
+      )
+      .not('estado', 'in', '("completado","cancelado")');
+
+    if (!gestiones || gestiones.length === 0) return null;
+
+    // Gestión sin seguimiento: ultimo_seguimiento NULL, o con más de 15 días.
+    const pendientes = gestiones
+      .map((g: any) => {
+        const ref = g.ultimo_seguimiento ?? g.fecha_asignacion ?? null;
+        const dias = ref ? diasEntre(ref, hoy) : null;
+        const sinSeguimiento = !g.ultimo_seguimiento || (dias !== null && dias > 15);
+        return { ...g, dias, sinSeguimiento };
+      })
+      .filter((g: any) => g.sinSeguimiento)
+      // Más atrasadas primero (las de mayor número de días, NULL al final por -1).
+      .sort((a: any, b: any) => (b.dias ?? -1) - (a.dias ?? -1));
+
+    if (pendientes.length === 0) return null;
+
+    const lines: string[] = ['\u{1F504} <b>Gestiones de proveedores sin seguimiento:</b>'];
+    for (const g of pendientes.slice(0, 10)) {
+      const proveedor = (g.proveedor as any)?.nombre ?? 'Proveedor';
+      const entidad = g.entidad ? ` (${g.entidad})` : '';
+      const cuando = g.dias != null
+        ? `Sin seguimiento hace ${g.dias} días`
+        : 'Sin seguimiento';
+      lines.push(`  ⚠️ ${proveedor} — ${g.nombre_gestion}${entidad} — ${cuando}`);
+    }
+    if (pendientes.length > 10) lines.push(`  <i>...y ${pendientes.length - 10} más</i>`);
+
+    return lines.join('\n');
+  } catch (err) {
+    console.error('[agenda-matutina] Error building gestiones proveedor digest:', err);
     return null;
   }
 }
