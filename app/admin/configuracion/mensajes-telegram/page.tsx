@@ -18,8 +18,10 @@ interface MensajeRow {
   id: string;
   nombre: string;
   destino: Destino;
+  telegram_chat_id: string | null;
   hora_envio: string;       // 'HH:MM:SS'
   dias_semana: number[];    // 1..7
+  dia_mes: number | null;
   mensaje_template: string;
   usar_frase_motivante: boolean;
   activo: boolean;
@@ -31,8 +33,10 @@ interface MensajeRow {
 interface FormState {
   nombre: string;
   destino: Destino;
+  telegram_chat_id: string;
   hora_envio: string;       // 'HH:MM'
   dias_semana: number[];
+  dia_mes: string;          // '' = no mensual; '1'..'31' = mensual
   mensaje_template: string;
   usar_frase_motivante: boolean;
   activo: boolean;
@@ -53,8 +57,10 @@ const DIAS = [
 const EMPTY_FORM: FormState = {
   nombre: '',
   destino: 'grupo',
+  telegram_chat_id: '',
   hora_envio: '08:00',
   dias_semana: [1, 2, 3, 4, 5],
+  dia_mes: '',
   mensaje_template: '',
   usar_frase_motivante: false,
   activo: true,
@@ -71,6 +77,12 @@ function diasResumen(dias: number[]): string {
 
 function horaCorta(h: string): string {
   return h.slice(0, 5);
+}
+
+// Indicador de programación: mensual (día N) o resumen de días de semana.
+function programacionResumen(m: MensajeRow): string {
+  if (m.dia_mes != null) return `📅 Mensual (día ${m.dia_mes})`;
+  return diasResumen(m.dias_semana);
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -150,7 +162,7 @@ export default function MensajesTelegramPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  {['Nombre', 'Destino', 'Hora', 'Días', 'Frase', 'Activo', 'Última', 'Acciones'].map(h => (
+                  {['Nombre', 'Destino', 'Hora', 'Programación', 'Frase', 'Activo', 'Última', 'Acciones'].map(h => (
                     <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
                   ))}
                 </tr>
@@ -164,11 +176,11 @@ export default function MensajesTelegramPage() {
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant={m.destino === 'grupo' ? 'info' : 'default'}>
-                        {m.destino === 'grupo' ? 'Grupo' : 'Privado'}
+                        {m.telegram_chat_id ? 'Chat directo' : m.destino === 'grupo' ? 'Grupo' : 'Privado'}
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-sm font-mono text-slate-700">{horaCorta(m.hora_envio)}</td>
-                    <td className="py-3 px-4 text-xs text-slate-600">{diasResumen(m.dias_semana)}</td>
+                    <td className="py-3 px-4 text-xs text-slate-600">{programacionResumen(m)}</td>
                     <td className="py-3 px-4 text-xs">
                       {m.usar_frase_motivante ? '⭐ Sí' : '—'}
                     </td>
@@ -276,12 +288,16 @@ function MensajeFormModal({
   const [form, setForm] = useState<FormState>(() => mensaje ? {
     nombre: mensaje.nombre,
     destino: mensaje.destino,
+    telegram_chat_id: mensaje.telegram_chat_id ?? '',
     hora_envio: horaCorta(mensaje.hora_envio),
     dias_semana: mensaje.dias_semana,
+    dia_mes: mensaje.dia_mes != null ? String(mensaje.dia_mes) : '',
     mensaje_template: mensaje.mensaje_template,
     usar_frase_motivante: mensaje.usar_frase_motivante,
     activo: mensaje.activo,
   } : EMPTY_FORM);
+
+  const esMensual = form.dia_mes.trim() !== '';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -304,7 +320,16 @@ function MensajeFormModal({
     setError(null);
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return; }
     if (!form.mensaje_template.trim()) { setError('El mensaje no puede estar vacío'); return; }
-    if (form.dias_semana.length === 0) { setError('Selecciona al menos un día'); return; }
+
+    let diaMes: number | null = null;
+    if (esMensual) {
+      diaMes = parseInt(form.dia_mes, 10);
+      if (!Number.isInteger(diaMes) || diaMes < 1 || diaMes > 31) {
+        setError('El día del mes debe estar entre 1 y 31'); return;
+      }
+    } else if (form.dias_semana.length === 0) {
+      setError('Selecciona al menos un día (o define un día del mes para mensaje mensual)'); return;
+    }
 
     setSaving(true);
     try {
@@ -314,7 +339,17 @@ function MensajeFormModal({
       const res = await adminFetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          nombre: form.nombre,
+          destino: form.destino,
+          telegram_chat_id: form.telegram_chat_id.trim() || null,
+          hora_envio: form.hora_envio,
+          dias_semana: form.dias_semana,
+          dia_mes: diaMes,
+          mensaje_template: form.mensaje_template,
+          usar_frase_motivante: form.usar_frase_motivante,
+          activo: form.activo,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `Error (${res.status})`);
@@ -374,22 +409,48 @@ function MensajeFormModal({
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Chat ID de Telegram <span className="text-slate-400 font-normal">(opcional — destino directo, anula grupo/privado)</span>
+            </label>
+            <input type="text" value={form.telegram_chat_id}
+              onChange={e => setForm(f => ({ ...f, telegram_chat_id: e.target.value }))}
+              placeholder="-1001234567890"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2]" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Día del mes <span className="text-slate-400 font-normal">(opcional, 1-31 — mensaje mensual)</span>
+            </label>
+            <input type="number" min={1} max={31} value={form.dia_mes}
+              onChange={e => setForm(f => ({ ...f, dia_mes: e.target.value }))}
+              placeholder="Ej: 1 (se envía solo el día 1 de cada mes)"
+              className="w-full sm:w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/30 focus:border-[#0891B2]" />
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-slate-600 mb-2">Días de la semana</label>
-            <div className="flex flex-wrap gap-2">
-              {DIAS.map(d => {
-                const active = form.dias_semana.includes(d.iso);
-                return (
-                  <button key={d.iso} type="button" onClick={() => toggleDia(d.iso)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-all ${
-                      active
-                        ? 'bg-[#1E40AF] text-white border-[#1E40AF]'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}>
-                    {d.label}
-                  </button>
-                );
-              })}
-            </div>
+            {esMensual ? (
+              <p className="text-xs text-slate-500 italic bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                Mensaje mensual: se envía el <strong>día {form.dia_mes}</strong> de cada mes. Los días de la semana se ignoran.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {DIAS.map(d => {
+                  const active = form.dias_semana.includes(d.iso);
+                  return (
+                    <button key={d.iso} type="button" onClick={() => toggleDia(d.iso)}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-all ${
+                        active
+                          ? 'bg-[#1E40AF] text-white border-[#1E40AF]'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}>
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div>

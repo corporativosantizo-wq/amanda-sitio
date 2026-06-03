@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
     const data = await crearMensaje({
       nombre: body.nombre,
       destino: body.destino,
+      telegram_chat_id: body.telegram_chat_id ?? null,
       hora_envio: body.hora_envio,
       dias_semana: body.dias_semana,
+      dia_mes: body.dia_mes ?? null,
       mensaje_template: body.mensaje_template,
       usar_frase_motivante: body.usar_frase_motivante,
       activo: body.activo,

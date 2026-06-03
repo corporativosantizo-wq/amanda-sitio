@@ -54,8 +54,10 @@ export interface MensajeProgramado {
   id: string;
   nombre: string;
   destino: DestinoMensaje;
+  telegram_chat_id: string | null; // si tiene valor, destino directo (ignora `destino`)
   hora_envio: string;          // 'HH:MM:SS'
   dias_semana: number[];       // 1=lun .. 7=dom
+  dia_mes: number | null;      // 1-31; si tiene valor, mensual (ignora dias_semana)
   mensaje_template: string;
   usar_frase_motivante: boolean;
   activo: boolean;
@@ -67,8 +69,10 @@ export interface MensajeProgramado {
 export interface MensajeInput {
   nombre: string;
   destino: DestinoMensaje;
+  telegram_chat_id?: string | null;
   hora_envio: string;          // 'HH:MM' o 'HH:MM:SS'
   dias_semana: number[];
+  dia_mes?: number | null;
   mensaje_template: string;
   usar_frase_motivante?: boolean;
   activo?: boolean;
@@ -87,7 +91,7 @@ function gtToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 }
 
-function gtNowParts(): { fecha: string; minutosTotales: number; weekdayIso: number } {
+function gtNowParts(): { fecha: string; minutosTotales: number; weekdayIso: number; diaMes: number } {
   const now = new Date();
   const fecha = now.toLocaleDateString('en-CA', { timeZone: TZ });
   const hora = parseInt(
@@ -98,6 +102,10 @@ function gtNowParts(): { fecha: string; minutosTotales: number; weekdayIso: numb
     new Intl.DateTimeFormat('en-US', { timeZone: TZ, minute: 'numeric' }).format(now),
     10,
   );
+  const diaMes = parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: TZ, day: 'numeric' }).format(now),
+    10,
+  );
   // Intl weekday short: Mon=1 .. Sun=7 (we want ISO 1=lun..7=dom)
   const wkShort = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(now);
   const map: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
@@ -105,6 +113,7 @@ function gtNowParts(): { fecha: string; minutosTotales: number; weekdayIso: numb
     fecha,
     minutosTotales: hora * 60 + minuto,
     weekdayIso: map[wkShort] ?? 1,
+    diaMes,
   };
 }
 
@@ -142,6 +151,14 @@ function chatIdFor(destino: DestinoMensaje): string | undefined {
   return undefined;
 }
 
+// Resuelve el chat destino de un mensaje:
+//  - si telegram_chat_id tiene valor → se usa directamente
+//  - si es NULL → mapeo por destino (grupo = TELEGRAM_GROUP_CHAT_ID, privado = default)
+function resolveChatId(m: MensajeProgramado): string | undefined {
+  if (m.telegram_chat_id && m.telegram_chat_id.trim()) return m.telegram_chat_id.trim();
+  return chatIdFor(m.destino);
+}
+
 // ── CRUD ───────────────────────────────────────────────────────────────────
 
 export async function listarMensajes(): Promise<MensajeProgramado[]> {
@@ -169,7 +186,15 @@ function validarInput(input: Partial<MensajeInput>): void {
   if (input.destino && !['grupo', 'privado'].includes(input.destino)) {
     throw new MensajeTelegramError('destino debe ser "grupo" o "privado"');
   }
-  if (input.dias_semana !== undefined) {
+  // Mensaje mensual: dia_mes 1-31. Cuando es mensual, dias_semana se ignora y
+  // no se exige.
+  const esMensual = input.dia_mes != null;
+  if (input.dia_mes != null) {
+    if (typeof input.dia_mes !== 'number' || !Number.isInteger(input.dia_mes) || input.dia_mes < 1 || input.dia_mes > 31) {
+      throw new MensajeTelegramError('dia_mes debe ser un entero entre 1 y 31');
+    }
+  }
+  if (input.dias_semana !== undefined && !esMensual) {
     if (!Array.isArray(input.dias_semana) || input.dias_semana.length === 0) {
       throw new MensajeTelegramError('Selecciona al menos un día de la semana');
     }
@@ -204,8 +229,10 @@ export async function crearMensaje(input: MensajeInput): Promise<MensajePrograma
     .insert({
       nombre: input.nombre.trim(),
       destino: input.destino,
+      telegram_chat_id: input.telegram_chat_id?.trim() || null,
       hora_envio: normalizarHora(input.hora_envio),
       dias_semana: input.dias_semana,
+      dia_mes: input.dia_mes ?? null,
       mensaje_template: input.mensaje_template,
       usar_frase_motivante: input.usar_frase_motivante ?? false,
       activo: input.activo ?? true,
@@ -226,8 +253,10 @@ export async function actualizarMensaje(
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.nombre !== undefined) update.nombre = input.nombre.trim();
   if (input.destino !== undefined) update.destino = input.destino;
+  if (input.telegram_chat_id !== undefined) update.telegram_chat_id = input.telegram_chat_id?.trim() || null;
   if (input.hora_envio !== undefined) update.hora_envio = normalizarHora(input.hora_envio);
   if (input.dias_semana !== undefined) update.dias_semana = input.dias_semana;
+  if (input.dia_mes !== undefined) update.dia_mes = input.dia_mes ?? null;
   if (input.mensaje_template !== undefined) update.mensaje_template = input.mensaje_template;
   if (input.usar_frase_motivante !== undefined) update.usar_frase_motivante = input.usar_frase_motivante;
   if (input.activo !== undefined) update.activo = input.activo;
@@ -270,15 +299,21 @@ export async function processScheduledMessages(): Promise<{
   const mensajes = await listarMensajes();
   const activos = mensajes.filter(m => m.activo);
 
-  const { fecha, minutosTotales, weekdayIso } = gtNowParts();
+  const { fecha, minutosTotales, weekdayIso, diaMes } = gtNowParts();
 
   let enviados = 0;
   let evaluados = 0;
   const errores: Array<{ id: string; nombre: string; error: string }> = [];
 
   for (const m of activos) {
-    // Día de la semana
-    if (!m.dias_semana.includes(weekdayIso)) continue;
+    // Programación: mensual (dia_mes) vs semanal (dias_semana).
+    if (m.dia_mes != null) {
+      // Mensual: solo el día del mes indicado; dias_semana se ignora.
+      if (diaMes !== m.dia_mes) continue;
+    } else {
+      // Semanal: día de la semana (ISO 1=lun..7=dom).
+      if (!m.dias_semana.includes(weekdayIso)) continue;
+    }
 
     // Dedup: ya se envió hoy
     if (m.ultima_enviada === fecha) continue;
@@ -312,7 +347,7 @@ export async function processScheduledMessages(): Promise<{
  */
 export async function enviarMensaje(m: MensajeProgramado): Promise<void> {
   const text = renderTemplate(m.mensaje_template, { usarFrase: m.usar_frase_motivante });
-  const chatId = chatIdFor(m.destino);
+  const chatId = resolveChatId(m);
   await sendTelegramMessage(text, { parse_mode: 'HTML', chatId });
 }
 
