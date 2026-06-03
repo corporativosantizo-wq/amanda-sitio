@@ -396,11 +396,14 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     console.log(`[crearCita] No se envía email — clienteEmail es null`);
   }
 
-  // ── Entrega de documentos: avisar a Mariano + generar Nota de entrega ──
-  if (modalidad === 'entrega_documentos') {
-    await notificarEntregaMariano(cita).catch((e) =>
-      console.error('[crearCita] Error notificando a Mariano (entrega):', e?.message ?? e),
+  // ── Entrega / firma de documentos: avisar a Mariano ──
+  if (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos') {
+    await notificarMarianoCita(cita, modalidad).catch((e) =>
+      console.error('[crearCita] Error notificando a Mariano:', e?.message ?? e),
     );
+  }
+  // Solo la entrega genera Nota de entrega automática.
+  if (modalidad === 'entrega_documentos') {
     await generarNotaEntregaParaCita(cita).catch((e) =>
       console.error('[crearCita] Error generando nota de entrega:', e?.message ?? e),
     );
@@ -410,8 +413,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
 }
 
 // Avisa al grupo de Telegram de Mariano (TELEGRAM_GROUP_CHAT_ID) que se agendó
-// una cita de entrega de documentos, para que prepare la documentación.
-async function notificarEntregaMariano(cita: any): Promise<void> {
+// una cita presencial (entrega o firma), para que prepare la documentación.
+async function notificarMarianoCita(cita: any, modalidad: ModalidadCita): Promise<void> {
   const chatId = process.env.TELEGRAM_GROUP_CHAT_ID;
   if (!chatId) {
     console.warn('[crearCita] TELEGRAM_GROUP_CHAT_ID no configurado — no se avisa a Mariano');
@@ -423,12 +426,20 @@ async function notificarEntregaMariano(cita: any): Promise<void> {
   });
   const horaFmt = formatearHora12(cita.hora_inicio);
 
+  const esFirma = modalidad === 'firma_documentos';
+  const titulo = esFirma
+    ? '✍️ <b>Nueva cita de firma de documentos agendada</b>'
+    : '📦 <b>Nueva cita de entrega de documentos agendada</b>';
+  const instruccion = esFirma
+    ? 'Por favor preparar los documentos para firma, timbres notariales y protocolo.'
+    : 'Por favor preparar los documentos correspondientes del cliente para la entrega.';
+
   const texto =
-    `📦 <b>Nueva cita de entrega de documentos agendada</b>\n\n` +
+    `${titulo}\n\n` +
     `👤 Cliente: ${escapeHtmlTg(nombreCliente)}\n` +
     `📅 Fecha: ${fechaFmt}\n` +
     `🕐 Hora: ${horaFmt}\n\n` +
-    `Por favor preparar los documentos correspondientes del cliente para la entrega.\n\n` +
+    `${instruccion}\n\n` +
     `cc: Licda. Amanda Santizo`;
 
   await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });

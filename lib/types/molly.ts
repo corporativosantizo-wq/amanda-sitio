@@ -142,8 +142,8 @@ export interface MollyClassification {
   suggested_date: string | null;   // YYYY-MM-DD or null
   suggested_time: string | null;   // HH:mm or null
   event_type: 'consulta_nueva' | 'seguimiento' | null;
-  // Modalidad sugerida para seguimientos (recoger docs vs explicación).
-  modalidad_sugerida?: 'virtual' | 'entrega_documentos' | 'virtual_y_entrega' | null;
+  // Modalidad sugerida para seguimientos (recoger docs vs explicación vs firma).
+  modalidad_sugerida?: 'virtual' | 'entrega_documentos' | 'firma_documentos' | 'virtual_y_entrega' | null;
 }
 
 export type SchedulingIntentStatus = 'pendiente' | 'agendada' | 'ignorada';

@@ -12,7 +12,7 @@ import Link from 'next/link';
 type TipoCita = 'consulta_nueva' | 'seguimiento';
 
 // Modalidad ofrecida al público para el seguimiento.
-type ModalidadPublica = 'virtual' | 'entrega_documentos';
+type ModalidadPublica = 'virtual' | 'entrega_documentos' | 'firma_documentos';
 
 const MODALIDAD_PUBLICA: Record<ModalidadPublica, { label: string; icono: string; desc: string; resumen: string }> = {
   virtual: {
@@ -26,6 +26,12 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, { label: string; icono: string
     icono: '📦',
     desc: 'Recepción o entrega de documentación en la oficina.',
     resumen: 'Entrega en oficina',
+  },
+  firma_documentos: {
+    label: 'Firma de documentos',
+    icono: '✍️',
+    desc: 'Firma de escrituras, poderes o actas en la oficina.',
+    resumen: 'Firma en oficina',
   },
 };
 
@@ -431,8 +437,8 @@ function StepTipo({
         </button>
         <h2 className="text-xl font-semibold text-gray-900 mb-2">¿Cómo desea su seguimiento?</h2>
         <p className="text-gray-500 mb-6 text-sm">Elija la modalidad de su cita de seguimiento.</p>
-        <div className="grid sm:grid-cols-2 gap-4">
-          {(['virtual', 'entrega_documentos'] as ModalidadPublica[]).map((m) => {
+        <div className="grid sm:grid-cols-3 gap-4">
+          {(['virtual', 'entrega_documentos', 'firma_documentos'] as ModalidadPublica[]).map((m) => {
             const info = MODALIDAD_PUBLICA[m];
             return (
               <button
@@ -1121,10 +1127,17 @@ function StepConfirmar({
             </div>
           )}
 
-          {tipo === 'seguimiento' && modalidad === 'entrega_documentos' && (
+          {tipo === 'seguimiento' && (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos') && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1">📍 Lugar de entrega</p>
+              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1">
+                📍 {modalidad === 'firma_documentos' ? 'Lugar de la firma' : 'Lugar de entrega'}
+              </p>
               <p className="text-sm text-blue-900">{DIRECCION_OFICINA}</p>
+              {modalidad === 'firma_documentos' && (
+                <p className="text-xs text-blue-800 mt-2">
+                  Presentarse con DPI original vigente. Representantes: nombramiento vigente. Mandatarios: mandato con facultades suficientes.
+                </p>
+              )}
             </div>
           )}
 
@@ -1178,7 +1191,8 @@ function StepExito({
   nombres: string;
 }) {
   const info = TIPO_INFO[tipo];
-  const esEntrega = tipo === 'seguimiento' && modalidad === 'entrega_documentos';
+  const esFirma = tipo === 'seguimiento' && modalidad === 'firma_documentos';
+  const esOficina = tipo === 'seguimiento' && (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos');
 
   return (
     <div className="text-center max-w-lg mx-auto">
@@ -1241,13 +1255,22 @@ function StepExito({
           </div>
         )}
 
-        {esEntrega && (
+        {esOficina && (
           <div className="mt-5 pt-4 border-t border-gray-100 text-left">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Lugar de entrega</p>
-            <p className="text-sm text-gray-700">📍 {DIRECCION_OFICINA}</p>
-            <p className="text-xs text-gray-400 mt-2">
-              Le esperamos en nuestras oficinas para la entrega/recepción de su documentación.
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              {esFirma ? 'Lugar de la firma' : 'Lugar de entrega'}
             </p>
+            <p className="text-sm text-gray-700">📍 {DIRECCION_OFICINA}</p>
+            {esFirma ? (
+              <p className="text-xs text-gray-400 mt-2">
+                Preséntese con DPI original vigente. Si firma como representante legal, traiga su nombramiento vigente;
+                si envía a un mandatario, debe presentar mandato con facultades suficientes y su DPI.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400 mt-2">
+                Le esperamos en nuestras oficinas para la entrega/recepción de su documentación.
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -89,6 +89,7 @@ const TIPO_LABELS: Record<string, string> = {
 const MODALIDAD_INFO: Record<string, { label: string; icono: string; usaOficina: boolean }> = {
   virtual:            { label: 'Virtual por Teams',     icono: '💻',   usaOficina: false },
   entrega_documentos: { label: 'Entrega de documentos', icono: '📦',   usaOficina: true  },
+  firma_documentos:   { label: 'Firma de documentos',   icono: '✍️',   usaOficina: true  },
   virtual_y_entrega:  { label: 'Virtual + Entrega',      icono: '💻📦', usaOficina: true  },
   presencial:         { label: 'Presencial',             icono: '🏢',   usaOficina: true  },
 };
@@ -546,6 +547,7 @@ function CalendarioPage() {
             <option value="todas">Todas las modalidades</option>
             <option value="virtual">💻 Virtual</option>
             <option value="entrega_documentos">📦 Entrega</option>
+            <option value="firma_documentos">✍️ Firma</option>
             <option value="virtual_y_entrega">💻📦 Virtual + Entrega</option>
           </select>
 
@@ -1425,12 +1427,20 @@ function DetailModal({
 
           {cita.modalidad && MODALIDAD_INFO[cita.modalidad]?.usaOficina && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
-              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium">📦 Entrega de documentos</p>
+              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium">
+                {MODALIDAD_INFO[cita.modalidad].icono} {MODALIDAD_INFO[cita.modalidad].label}
+              </p>
               <p className="text-sm text-blue-900">📍 {DIRECCION_OFICINA}</p>
               {cita.documentos_entrega && (
                 <p className="text-sm text-blue-900"><strong>Documentos:</strong> {cita.documentos_entrega}</p>
               )}
-              {cita._source !== 'outlook' && cita._source !== 'expediente' && cita.cliente && (
+              {cita.modalidad === 'firma_documentos' && (
+                <p className="text-xs text-blue-800">
+                  Requisitos: DPI vigente · representante legal: nombramiento · mandatario: mandato con facultades + DPI ·
+                  preparar timbres y protocolo.
+                </p>
+              )}
+              {cita.modalidad === 'entrega_documentos' && cita._source !== 'outlook' && cita._source !== 'expediente' && cita.cliente && (
                 <a
                   href={`/admin/notas-entrega?cita=${cita.id}`}
                   className="inline-flex items-center gap-1.5 mt-1 text-xs font-medium text-blue-700 hover:text-blue-900 underline"
@@ -2190,7 +2200,7 @@ function CreateModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Modalidad</label>
               <div className="flex flex-wrap gap-2">
-                {['virtual', 'entrega_documentos', 'virtual_y_entrega'].map((m) => (
+                {['virtual', 'entrega_documentos', 'firma_documentos', 'virtual_y_entrega'].map((m) => (
                   <button
                     key={m}
                     type="button"

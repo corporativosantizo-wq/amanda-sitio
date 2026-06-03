@@ -26,11 +26,12 @@ export type EstadoCita = 'pendiente' | 'confirmada' | 'cancelada' | 'completada'
 
 // Modalidad de la cita. El flujo público solo usa 'virtual' y 'entrega_documentos';
 // 'presencial' y 'virtual_y_entrega' quedan disponibles para uso interno (admin).
-export type ModalidadCita = 'virtual' | 'presencial' | 'entrega_documentos' | 'virtual_y_entrega';
+export type ModalidadCita = 'virtual' | 'presencial' | 'entrega_documentos' | 'virtual_y_entrega' | 'firma_documentos';
 
 export const MODALIDAD_INFO: Record<ModalidadCita, { label: string; icono: string; usaTeams: boolean; usaOficina: boolean }> = {
   virtual:            { label: 'Virtual por Teams',        icono: '💻',   usaTeams: true,  usaOficina: false },
   entrega_documentos: { label: 'Entrega de documentos',    icono: '📦',   usaTeams: false, usaOficina: true  },
+  firma_documentos:   { label: 'Firma de documentos',      icono: '✍️',   usaTeams: false, usaOficina: true  },
   virtual_y_entrega:  { label: 'Virtual + Entrega',         icono: '💻📦', usaTeams: true,  usaOficina: true  },
   presencial:         { label: 'Presencial en oficina',     icono: '🏢',   usaTeams: false, usaOficina: true  },
 };

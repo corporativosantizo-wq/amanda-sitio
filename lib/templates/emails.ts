@@ -133,14 +133,28 @@ function teamsSeccionHTML(cita: any): string {
     </td></tr></table>`;
 }
 
-// Bloque con dirección de la oficina + documentos (entregas presenciales).
+// Bloque con dirección de la oficina + documentos / requisitos de firma
+// (modalidades presenciales: entrega y firma de documentos).
 function oficinaSeccionHTML(cita: any): string {
+  const modalidad = modalidadDeCita(cita);
+  const esFirma = modalidad === 'firma_documentos';
   const docs = (cita.documentos_entrega ?? '').toString().trim();
+  const lugarLabel = esFirma ? 'Lugar' : 'Dirección';
+
+  const requisitosFirma = esFirma ? `
+        <p style="margin:12px 0 4px;font-size:14px;"><strong>📋 Importante para la firma:</strong></p>
+        <ul style="margin:0;padding-left:20px;color:#475569;font-size:13px;line-height:1.7;">
+          <li>Presentarse con DPI original vigente</li>
+          <li>Si firma como representante legal, traer nombramiento vigente y DPI</li>
+          <li>Si envía a un mandatario, debe presentar mandato con facultades suficientes y DPI del mandatario</li>
+        </ul>` : '';
+
   return `
     <table width="100%" style="margin:16px 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;">
       <tr><td>
-        <p style="margin:0 0 8px;font-size:14px;"><strong>📍 Dirección:</strong> ${DIRECCION_OFICINA}</p>
-        ${docs ? `<p style="margin:8px 0 0;font-size:14px;"><strong>📋 Documentos:</strong> ${docs}</p>` : ''}
+        <p style="margin:0 0 8px;font-size:14px;"><strong>📍 ${lugarLabel}:</strong> ${DIRECCION_OFICINA}</p>
+        ${docs && !esFirma ? `<p style="margin:8px 0 0;font-size:14px;"><strong>📋 Documentos:</strong> ${docs}</p>` : ''}
+        ${requisitosFirma}
       </td></tr>
     </table>`;
 }
@@ -163,6 +177,8 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
   let cierreModalidad: string;
   if (modalidad === 'entrega_documentos') {
     cierreModalidad = 'Le esperamos en nuestras oficinas para la entrega/recepci\u00f3n de su documentaci\u00f3n.';
+  } else if (modalidad === 'firma_documentos') {
+    cierreModalidad = 'Le esperamos en nuestras oficinas para la firma de su documentaci\u00f3n.';
   } else if (modalidad === 'virtual_y_entrega') {
     cierreModalidad = 'Recibir\u00e1 la invitaci\u00f3n de Teams en su calendario. La documentaci\u00f3n podr\u00e1 entregarla/recogerla en nuestra oficina.';
   } else {

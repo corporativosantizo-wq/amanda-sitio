@@ -180,10 +180,11 @@ export async function POST(req: NextRequest) {
 
     // Create cita (handles Outlook event + confirmation email automatically)
     console.log('[Agendar] Creando cita:', titulo, '—', fecha, matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin);
-    // Modalidad: solo el seguimiento ofrece "entrega_documentos"; el resto es virtual.
-    const modalidadFinal: 'virtual' | 'entrega_documentos' =
-      tipoCita === 'seguimiento' && modalidad === 'entrega_documentos'
-        ? 'entrega_documentos'
+    // Modalidad: el seguimiento ofrece entrega o firma de documentos; el resto es virtual.
+    const modalidadesPresenciales = ['entrega_documentos', 'firma_documentos'];
+    const modalidadFinal: 'virtual' | 'entrega_documentos' | 'firma_documentos' =
+      tipoCita === 'seguimiento' && modalidadesPresenciales.includes(modalidad)
+        ? modalidad
         : 'virtual';
 
     const cita = await crearCita({

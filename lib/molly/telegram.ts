@@ -233,6 +233,7 @@ export function buildSchedulingNotification(
     const MOD: Record<string, string> = {
       virtual: '💻 Virtual por Teams',
       entrega_documentos: '📦 Entrega de documentos',
+      firma_documentos: '✍️ Firma de documentos',
       virtual_y_entrega: '💻📦 Virtual + Entrega',
     };
     text += `<b>Modalidad sugerida:</b> ${MOD[classification.modalidad_sugerida] ?? classification.modalidad_sugerida}\n`;
