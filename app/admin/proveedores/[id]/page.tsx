@@ -231,7 +231,7 @@ export default function ProveedorDetallePage() {
               <Field label="NIT" value={p.nit} editValue={form.nit} editing={editing} onChange={set('nit')} mono />
               <Field label="DPI" value={p.dpi} editValue={form.dpi} editing={editing} onChange={set('dpi')} mono />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Email" value={p.email} editValue={form.email} editing={editing} onChange={set('email')} type="email" />
               <Field label="Teléfono" value={p.telefono} editValue={form.telefono} editing={editing} onChange={set('telefono')} type="tel" />
             </div>
@@ -328,13 +328,13 @@ function Field({ label, value, editValue, editing, onChange, type = 'text', mono
   mono?: boolean;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
       {editing ? (
         <input type={type} value={editValue ?? ''} onChange={onChange}
           className={`${INPUT} ${mono ? 'font-mono' : ''}`} />
       ) : (
-        <p className={`text-sm text-slate-900 py-2.5 ${mono ? 'font-mono' : ''}`}>
+        <p className={`text-sm text-slate-900 py-2.5 break-words ${mono ? 'font-mono' : ''}`}>
           {value || <span className="text-slate-400">—</span>}
         </p>
       )}

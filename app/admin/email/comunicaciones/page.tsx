@@ -322,11 +322,13 @@ function NuevoCorreoTab() {
         gestiones.map((g) => g.cliente?.nombre).filter((n): n is string => !!n)
       )];
       const nombreCliente = clientesUnicos.join(' / ');
-      const asuntoGestion = gestiones.length === 1
+      // Asunto: usa la PRIMERA gestión seleccionada como referencia (la lista
+      // completa va en el detalle del cuerpo). Para una sola gestión el asunto
+      // queda exacto; para varias se ancla en la primera en vez de un genérico
+      // tipo "N gestiones", que dejaba el asunto poco informativo.
+      const asuntoGestion = gestiones.length >= 1
         ? gestiones[0].nombre_gestion
-        : gestiones.length > 1
-          ? `${gestiones.length} gestiones en proceso`
-          : 'Gestión encargada';
+        : 'Gestión encargada';
 
       // Detalle formateado: "1. Expediente XXX (Cliente):\n   • detalle"
       const detalle = gestiones
