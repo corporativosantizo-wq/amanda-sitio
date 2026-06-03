@@ -130,6 +130,33 @@ function primerasPalabras(texto: string, n: number): string {
   return palabras.length > n ? `${corte}…` : corte;
 }
 
+// Marcadores que indican el inicio de la firma o de un disclaimer legal. El
+// resumen se corta en el PRIMERO que aparezca: como la firma suele ir antes del
+// aviso de confidencialidad, cortar en "Atentamente," elimina firma + disclaimer
+// de una sola vez. Case-insensitive.
+const CORTES_RESUMEN: RegExp[] = [
+  /aviso de confidencialidad/i,
+  /\bconfidencialidad\s*:/i,
+  /\batentamente\b/i,
+  /\bsaludos cordiales\b/i,
+  /\bsaludos\s*,/i,
+  /\bcordialmente\b/i,
+  /\bquedo a sus[ ]?[oó]rdenes\b/i,
+  /\beste (correo|mensaje|e-?mail)[^.]*confidencial/i,
+];
+
+// Devuelve solo el contenido ÚTIL del correo: lo que va ANTES de la firma o de
+// cualquier disclaimer legal. Si no encuentra marcadores, devuelve el texto tal
+// cual.
+function contenidoUtil(texto: string): string {
+  let corte = texto.length;
+  for (const re of CORTES_RESUMEN) {
+    const m = texto.match(re);
+    if (m && m.index !== undefined && m.index < corte) corte = m.index;
+  }
+  return texto.slice(0, corte).trim();
+}
+
 const SALUDO_DEFAULT =
   '👋 ¡Hola {nombre}, buen día!\n\n' +
   '📧 Se te ha enviado un correo desde {cuenta_remitente}\n\n' +
@@ -179,7 +206,10 @@ export async function notificarDestinatariosTelegram(params: {
       [...params.to, ...(params.cc ?? [])].map((e) => e.trim().toLowerCase()).filter(Boolean),
     );
 
-    const resumen = primerasPalabras(stripHtml(params.htmlBody), 200) || '(sin contenido)';
+    // Resumen = solo el contenido útil (sin firma ni disclaimers), máx 150 palabras.
+    const resumen =
+      primerasPalabras(contenidoUtil(stripHtml(params.htmlBody)), 150)
+      || 'Ver correo para más detalles';
 
     for (const regla of reglas as NotificacionEmailTelegram[]) {
       const dest = regla.email_destinatario.toLowerCase();
