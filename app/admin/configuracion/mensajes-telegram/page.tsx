@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
-import { adminFetch } from '@/lib/utils/admin-fetch';
+import { adminFetch, parseJsonResponse } from '@/lib/utils/admin-fetch';
 import { PageHeader, Badge, EmptyState, TableSkeleton, Section } from '@/components/admin/ui';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -112,8 +112,7 @@ export default function MensajesTelegramPage() {
       const res = await adminFetch(`/api/admin/config/mensajes-telegram/${m.id}/enviar`, {
         method: 'POST',
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Error al enviar');
+      await parseJsonResponse(res);
       addToast(`"${m.nombre}" enviado a Telegram`, 'success');
       refetch();
     } catch (err: any) {
@@ -351,8 +350,7 @@ function MensajeFormModal({
           activo: form.activo,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `Error (${res.status})`);
+      await parseJsonResponse(res);
       onSuccess();
     } catch (err: any) {
       const msg = err.message ?? 'Error al guardar';
