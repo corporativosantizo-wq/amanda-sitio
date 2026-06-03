@@ -703,6 +703,21 @@ export async function sendMail(params: {
 
     console.log('[sendMail] ── ÉXITO — email enviado (' + res.status + ') ──');
   }
+
+  // Notificación configurable por Telegram a destinatarios (regla en
+  // legal.notificaciones_email_telegram). Best-effort: nunca bloquea el envío.
+  try {
+    const { notificarDestinatariosTelegram } = await import('@/lib/services/notificaciones-email-telegram.service');
+    await notificarDestinatariosTelegram({
+      from: params.from,
+      to: toList,
+      cc: ccList,
+      subject: params.subject,
+      htmlBody: params.htmlBody,
+    });
+  } catch (notifErr: any) {
+    console.error('[sendMail] Notificación Telegram falló (no bloquea):', notifErr?.message ?? notifErr);
+  }
 }
 
 // ── Large attachment flow via draft + upload session ─────────────────────────

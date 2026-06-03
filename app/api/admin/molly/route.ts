@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     const result = await listThreads({
       status: url.searchParams.get('status') || undefined,
       clasificacion: url.searchParams.get('clasificacion') || undefined,
+      account: url.searchParams.get('account') || undefined,
       page: Number(url.searchParams.get('page')) || 1,
       limit: Number(url.searchParams.get('limit')) || 20,
       busqueda: url.searchParams.get('q') || undefined,

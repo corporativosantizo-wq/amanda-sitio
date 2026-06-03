@@ -793,13 +793,14 @@ export async function reenviarPospuestos(): Promise<number> {
 interface ListThreadsParams {
   status?: string;
   clasificacion?: string;
+  account?: string;
   page?: number;
   limit?: number;
   busqueda?: string;
 }
 
 export async function listThreads(params: ListThreadsParams = {}) {
-  const { status, clasificacion, page = 1, limit = 20, busqueda } = params;
+  const { status, clasificacion, account, page = 1, limit = 20, busqueda } = params;
   const offset = (page - 1) * limit;
 
   let query = db()
@@ -810,6 +811,7 @@ export async function listThreads(params: ListThreadsParams = {}) {
 
   if (status) query = query.eq('status', status);
   if (clasificacion) query = query.eq('clasificacion', clasificacion);
+  if (account) query = query.eq('account', account);
   if (busqueda) {
     query = query.ilike('subject', `%${busqueda}%`);
   }

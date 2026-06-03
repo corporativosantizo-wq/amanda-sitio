@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const TABS = [
   { href: '/admin/configuracion/usuarios', label: 'Usuarios' },
   { href: '/admin/configuracion/mensajes-telegram', label: 'Mensajes Telegram' },
+  { href: '/admin/configuracion/notificaciones-email', label: 'Notificaciones Email' },
 ];
 
 export default function ConfiguracionLayout({ children }: { children: React.ReactNode }) {

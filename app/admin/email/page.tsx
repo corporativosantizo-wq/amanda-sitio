@@ -69,6 +69,33 @@ const CLASIFICACION_COLORS: Record<string, string> = {
   pendiente: 'bg-yellow-100 text-yellow-700',
 }
 
+// Cuenta de buzón → badge (color + etiqueta corta)
+const ACCOUNT_BADGE: Record<string, { label: string; className: string; emoji: string }> = {
+  'contador@papeleo.legal':  { label: 'Contador',  className: 'bg-amber-100 text-amber-700',  emoji: '💰' },
+  'asistente@papeleo.legal': { label: 'Asistente', className: 'bg-blue-100 text-blue-700',    emoji: '📧' },
+  'amanda@papeleo.legal':    { label: 'Amanda',    className: 'bg-purple-100 text-purple-700', emoji: '⭐' },
+}
+
+function AccountBadge({ account }: { account: string }) {
+  const cfg = ACCOUNT_BADGE[account] ?? {
+    label: account.split('@')[0],
+    className: 'bg-slate-100 text-slate-600',
+    emoji: '📬',
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full ${cfg.className}`}>
+      <span aria-hidden>{cfg.emoji}</span>{cfg.label}
+    </span>
+  )
+}
+
+// Cuentas seleccionables en el filtro (debe coincidir con ACCOUNTS del backend)
+const ACCOUNT_FILTERS = [
+  { value: '', label: 'Todas' },
+  { value: 'contador@papeleo.legal', label: '💰 Contador' },
+  { value: 'asistente@papeleo.legal', label: '📧 Asistente' },
+]
+
 const URGENCIA_LABELS = ['Info', 'Normal', 'Importante', 'Urgente']
 const URGENCIA_COLORS = [
   'bg-gray-100 text-gray-600',
@@ -144,13 +171,15 @@ function MollyMailContent() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [filtered, setFiltered] = useState<FilteredThread[]>([])
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [accountFilter, setAccountFilter] = useState('')
 
   const fetchData = useCallback(async () => {
     try {
+      const threadsUrl = `/api/admin/molly?limit=10${accountFilter ? `&account=${encodeURIComponent(accountFilter)}` : ''}`
       const [statsRes, draftsRes, threadsRes, filteredRes] = await Promise.all([
         adminFetch('/api/admin/molly/stats'),
         adminFetch('/api/admin/molly/drafts'),
-        adminFetch('/api/admin/molly?limit=10'),
+        adminFetch(threadsUrl),
         adminFetch('/api/admin/molly/filtered'),
       ])
 
@@ -173,7 +202,7 @@ function MollyMailContent() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [accountFilter])
 
   useEffect(() => {
     fetchData()
@@ -414,8 +443,10 @@ function MollyMailContent() {
                       </span>
                     </div>
                     <h3 className="font-semibold text-navy mb-1">{draft.subject}</h3>
-                    <p className="text-sm text-slate mb-1">
-                      De: {draft.message?.from_name || draft.to_email} &rarr; {draft.thread.account}
+                    <p className="text-sm text-slate mb-1 flex items-center gap-1.5">
+                      <span>De: {draft.message?.from_name || draft.to_email}</span>
+                      <span aria-hidden>&rarr;</span>
+                      <AccountBadge account={draft.thread.account} />
                     </p>
                     {draft.message?.resumen && (
                       <p className="text-sm text-slate italic mb-2">{draft.message.resumen}</p>
@@ -558,8 +589,10 @@ function MollyMailContent() {
                       </span>
                     </div>
                     <h3 className="font-semibold text-navy mb-1">{draft.subject}</h3>
-                    <p className="text-sm text-slate mb-1">
-                      Para: {draft.to_email} &bull; {draft.thread.account}
+                    <p className="text-sm text-slate mb-1 flex items-center gap-1.5">
+                      <span>Para: {draft.to_email}</span>
+                      <span aria-hidden>&bull;</span>
+                      <AccountBadge account={draft.thread.account} />
                     </p>
                     <div className="bg-slate-50 rounded-lg p-3 mt-2">
                       <p className="text-sm text-navy whitespace-pre-wrap">
@@ -645,7 +678,24 @@ function MollyMailContent() {
 
       {/* Recent threads */}
       <div>
-        <h2 className="text-lg font-semibold text-navy mb-4">Hilos recientes</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-navy">Hilos recientes</h2>
+          <div className="flex gap-1.5">
+            {ACCOUNT_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setAccountFilter(f.value)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                  accountFilter === f.value
+                    ? 'bg-navy text-white border-navy'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {threads.length === 0 ? (
             <div className="p-8 text-center text-slate">
@@ -686,9 +736,7 @@ function MollyMailContent() {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <span className="text-sm text-slate">
-                        {thread.account.split('@')[0]}
-                      </span>
+                      <AccountBadge account={thread.account} />
                     </td>
                     <td className="px-5 py-3">
                       <span
