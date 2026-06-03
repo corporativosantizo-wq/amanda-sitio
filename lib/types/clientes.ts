@@ -18,6 +18,7 @@ export interface Cliente {
   dpi: string | null;
   telefono: string | null;
   email: string | null;
+  emails_cc: string[] | null;
   direccion: string | null;
   fuente: string | null;
   estado: EstadoCliente;
@@ -45,6 +46,7 @@ export interface ClienteInsert {
   dpi?: string | null;
   telefono?: string | null;
   email?: string | null;
+  emails_cc?: string[] | null;
   direccion?: string | null;
   fuente?: string | null;
   estado?: EstadoCliente;

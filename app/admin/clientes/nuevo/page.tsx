@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { PageHeader } from '@/components/admin/ui';
+import { EmailChips } from '@/components/admin/email-chips';
 import type { CargoRepresentante } from '@/lib/types';
 import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 
@@ -30,6 +31,7 @@ export default function NuevoClientePage() {
   const [nit, setNit] = useState('');
   const [dpi, setDpi] = useState('');
   const [email, setEmail] = useState('');
+  const [emailsCc, setEmailsCc] = useState<string[]>([]);
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
   const [razonSocial, setRazonSocial] = useState('');
@@ -146,6 +148,7 @@ export default function NuevoClientePage() {
       nit: nit.trim() || 'CF',
       dpi: tipo === 'persona' && dpi.trim() ? dpi.trim() : null,
       email: email.trim() || null,
+      emails_cc: emailsCc.length ? emailsCc : null,
       telefono: telefono.trim() || null,
       direccion: direccion.trim() || null,
       razon_social_facturacion: mismosDatos ? nombre.trim() : (razonSocial.trim() || nombre.trim()),
@@ -160,7 +163,7 @@ export default function NuevoClientePage() {
       onSuccess: (data: any) => router.push(`/admin/clientes/${data.id}`),
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [tipo, nombre, nit, dpi, email, telefono, direccion, razonSocial, nitFacturacion, dirFacturacion, notas, mismosDatos, cargoDireccion, repDireccionNombre, repDireccionEmail, repDireccionId, cargoGestion, repGestionNombre, repGestionEmail, repGestionId, mutate, router]);
+  }, [tipo, nombre, nit, dpi, email, emailsCc, telefono, direccion, razonSocial, nitFacturacion, dirFacturacion, notas, mismosDatos, cargoDireccion, repDireccionNombre, repDireccionEmail, repDireccionId, cargoGestion, repGestionNombre, repGestionEmail, repGestionId, mutate, router]);
 
   const INPUT = 'w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
 
@@ -224,6 +227,14 @@ export default function NuevoClientePage() {
               placeholder="+502 5555-1234"
               className={INPUT} />
           </div>
+        </div>
+
+        {/* Emails CC */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Emails CC <span className="text-xs text-slate-400 font-normal">(se agregan automáticamente en copia al enviar correos)</span>
+          </label>
+          <EmailChips value={emailsCc} onChange={setEmailsCc} placeholder="copia@email.com" />
         </div>
 
         {/* Dirección */}

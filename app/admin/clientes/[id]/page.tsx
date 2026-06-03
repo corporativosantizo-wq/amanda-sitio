@@ -23,6 +23,7 @@ import { CARGO_LABELS, CARGOS_DIRECCION, CARGOS_GESTION } from '@/lib/types';
 import DocumentViewer from '@/components/admin/document-viewer';
 import { EditarDocumentoModal, type DocumentoParaEditar } from '@/components/admin/editar-documento-modal';
 import { EnviarReciboEmailModal } from '@/components/admin/enviar-recibo-email-modal';
+import { EmailChips } from '@/components/admin/email-chips';
 import {
   type OrigenExpediente,
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL, FASE_LABEL,
@@ -61,6 +62,7 @@ interface ClienteDetalle {
   nit: string;
   dpi: string | null;
   email: string | null;
+  emails_cc: string[] | null;
   telefono: string | null;
   direccion: string | null;
   razon_social_facturacion: string;
@@ -176,6 +178,7 @@ export default function ClienteDetallePage() {
   const [savingHeader, setSavingHeader] = useState(false);
   const [headerError, setHeaderError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [emailsCc, setEmailsCc] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -203,6 +206,7 @@ export default function ClienteDetallePage() {
       nit_facturacion: c.nit_facturacion ?? '',
       direccion_facturacion: c.direccion_facturacion ?? '',
     });
+    setEmailsCc(c.emails_cc ?? []);
 
     // Initialize representante edit state from current data
     const repDireccion = (c.representantes ?? []).find(r => CARGOS_DIRECCION.includes(r.cargo));
@@ -267,6 +271,7 @@ export default function ClienteDetallePage() {
         nit: form.nit.trim() || 'CF',
         dpi: form.dpi.trim() || null,
         email: form.email.trim() || null,
+        emails_cc: emailsCc.length ? emailsCc : null,
         telefono: form.telefono.trim() || null,
         direccion: form.direccion.trim() || null,
         razon_social_facturacion: form.razon_social_facturacion.trim() || form.nombre.trim(),
@@ -277,7 +282,7 @@ export default function ClienteDetallePage() {
       onSuccess: () => { setEditing(false); refetch(); },
       onError: (err) => setSaveError(err),
     });
-  }, [form, id, mutate, refetch, c?.tipo, editCargoDireccion, editRepDireccionNombre, editRepDireccionEmail, editRepDireccionId, editCargoGestion, editRepGestionNombre, editRepGestionEmail, editRepGestionId]);
+  }, [form, emailsCc, id, mutate, refetch, c?.tipo, editCargoDireccion, editRepDireccionNombre, editRepDireccionEmail, editRepDireccionId, editCargoGestion, editRepGestionNombre, editRepGestionEmail, editRepGestionId]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }));
@@ -505,6 +510,7 @@ export default function ClienteDetallePage() {
       )}
       {tab === 'datos' && (
         <TabDatos c={c} editing={editing} form={form} set={set}
+          emailsCc={emailsCc} setEmailsCc={setEmailsCc}
           onStartEdit={startEdit} onCancel={cancelEdit} onSave={saveEdit}
           saving={saving} saveError={saveError} clienteId={id}
           editCargoDireccion={editCargoDireccion} setEditCargoDireccion={setEditCargoDireccion}
@@ -815,7 +821,7 @@ interface RepSugerencia {
   empresas: { id: string; codigo: string; nombre: string; cargo: CargoRepresentante }[];
 }
 
-function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving, saveError, clienteId,
+function TabDatos({ c, editing, form, set, emailsCc, setEmailsCc, onStartEdit, onCancel, onSave, saving, saveError, clienteId,
   editCargoDireccion, setEditCargoDireccion,
   editRepDireccionNombre, setEditRepDireccionNombre,
   editRepDireccionEmail, setEditRepDireccionEmail,
@@ -829,6 +835,8 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
   editing: boolean;
   form: Record<string, string>;
   set: (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  emailsCc: string[];
+  setEmailsCc: (v: string[]) => void;
   onStartEdit: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -944,6 +952,22 @@ function TabDatos({ c, editing, form, set, onStartEdit, onCancel, onSave, saving
             <div className="grid grid-cols-2 gap-3">
               <Field label="Email" value={c.email} editValue={form.email} editing={editing} onChange={set('email')} type="email" />
               <Field label="Teléfono" value={c.telefono} editValue={form.telefono} editing={editing} onChange={set('telefono')} type="tel" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Emails CC <span className="text-slate-400 font-normal">(copia automática en correos)</span>
+              </label>
+              {editing ? (
+                <EmailChips value={emailsCc} onChange={setEmailsCc} placeholder="copia@email.com" />
+              ) : (c.emails_cc && c.emails_cc.length > 0) ? (
+                <div className="flex flex-wrap gap-1.5 py-1">
+                  {c.emails_cc.map((e) => (
+                    <span key={e} className="inline-flex items-center bg-cyan-50 text-[#0891B2] text-xs font-medium px-2 py-1 rounded-md">{e}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 py-2">—</p>
+              )}
             </div>
             <Field label="Dirección" value={c.direccion} editValue={form.direccion} editing={editing} onChange={set('direccion')} />
           </div>
@@ -1890,7 +1914,7 @@ interface ReciboItem {
   pdf_url: string | null;
   origen: 'manual' | 'automatico';
   pago_id: string | null;
-  cliente: { id: string; nombre: string; nit: string | null; email: string | null } | null;
+  cliente: { id: string; nombre: string; nit: string | null; email: string | null; emails_cc: string[] | null } | null;
   cotizacion: { id: string; numero: string } | null;
 }
 

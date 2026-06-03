@@ -73,7 +73,7 @@ export async function listarRecibos(params: ListParams = {}) {
       id, numero, monto, fecha_emision, concepto,
       pdf_url, email_enviado_at, email_error, notas,
       cotizacion_id, cliente_id, pago_id, origen, created_at, updated_at,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc),
       cotizacion:cotizaciones!cotizacion_id (id, numero)
     `, { count: 'exact' })
     .order('fecha_emision', { ascending: false })

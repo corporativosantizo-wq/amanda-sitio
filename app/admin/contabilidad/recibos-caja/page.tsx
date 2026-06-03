@@ -24,7 +24,7 @@ interface ReciboItem {
   pdf_url: string | null;
   origen: 'manual' | 'automatico';
   pago_id: string | null;
-  cliente: { id: string; nombre: string; nit: string | null; email: string | null } | null;
+  cliente: { id: string; nombre: string; nit: string | null; email: string | null; emails_cc: string[] | null } | null;
   cotizacion: { id: string; numero: string } | null;
 }
 

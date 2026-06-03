@@ -16,7 +16,7 @@ export interface ReciboParaEmail {
   numero: string;
   monto: number;
   concepto: string;
-  cliente: { nombre: string; email: string | null } | null;
+  cliente: { nombre: string; email: string | null; emails_cc?: string[] | null } | null;
 }
 
 export function EnviarReciboEmailModal({
@@ -33,7 +33,8 @@ export function EnviarReciboEmailModal({
   const montoStr = `Q ${Number(recibo.monto).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const [to, setTo] = useState(recibo.cliente?.email ?? '');
-  const [cc, setCc] = useState('');
+  // Pre-llenar CC con los emails_cc del cliente (editable antes de enviar).
+  const [cc, setCc] = useState((recibo.cliente?.emails_cc ?? []).join(', '));
   const [asunto, setAsunto] = useState(`Recibo de Caja ${recibo.numero} — Gastos de trámite`);
   const [mensaje, setMensaje] = useState(
     `Estimado/a ${clienteNombre},\n\n` +

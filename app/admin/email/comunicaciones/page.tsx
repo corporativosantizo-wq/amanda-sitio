@@ -68,6 +68,7 @@ interface ClienteBusqueda {
   id: string;
   nombre: string;
   email: string | null;
+  emails_cc: string[] | null;
   nit: string | null;
   codigo: string;
 }
@@ -276,6 +277,9 @@ function NuevoCorreoTab() {
     setClienteId(c.id);
     setClienteNombre(c.nombre);
     setDestinatarioEmail(c.email ?? '');
+    // Auto-llenar CC con los emails_cc del cliente (el usuario puede editarlos
+    // antes de enviar). Aplica a TODAS las plantillas.
+    setCcEmails((c.emails_cc ?? []).join(', '));
     setClienteBusqueda('');
     setShowDropdown(false);
 

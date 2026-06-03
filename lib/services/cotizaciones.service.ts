@@ -144,7 +144,7 @@ export async function obtenerCotizacion(id: string): Promise<CotizacionConClient
     .from('cotizaciones')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, telefono, direccion),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc, telefono, direccion),
       items:cotizacion_items (*)
     `)
     .eq('id', id)
@@ -433,10 +433,14 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     tokenRespuesta: actual.token_respuesta ?? undefined,
   });
 
-  // Parsear CC emails si existen
-  const ccEmails = (actual as any).cc_emails
+  // CC = cc_emails de la cotización + emails_cc del cliente (deduplicados,
+  // excluyendo el destinatario principal).
+  const ccCotizacion = (actual as any).cc_emails
     ? (actual as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
-    : undefined;
+    : [];
+  const ccCliente = Array.isArray(cliente.emails_cc) ? cliente.emails_cc : [];
+  const ccEmails = Array.from(new Set<string>([...ccCotizacion, ...ccCliente]))
+    .filter((e) => e && e.toLowerCase() !== String(cliente.email).toLowerCase());
 
   // Enviar email — si falla, NO cambiamos el estado
   try {
@@ -445,7 +449,7 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
       to: cliente.email,
       subject: template.subject,
       htmlBody: template.html,
-      ...(ccEmails && ccEmails.length > 0 ? { cc: ccEmails } : {}),
+      ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
     });
   } catch (err: any) {
     throw new CotizacionError(
@@ -558,11 +562,17 @@ export async function reenviarCotizacion(id: string, params: {
     .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
     .replace(/$/, '</div>');
 
+  // CC automático con los emails_cc del cliente (excluyendo el destinatario).
+  const ccCliente = Array.isArray(cliente?.emails_cc) ? cliente.emails_cc : [];
+  const ccEmails = Array.from(new Set<string>(ccCliente))
+    .filter((e) => e && e.toLowerCase() !== String(params.to).toLowerCase());
+
   await sendMail({
     from: (params.from || 'amanda@papeleo.legal') as any,
     to: params.to,
     subject: params.subject,
     htmlBody,
+    ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
   });
 
   // Update cotización to track reenvío
@@ -647,17 +657,20 @@ export async function enviarCotizacionMasivo(params: {
         .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
         .replace(/$/, '</div>');
 
-      // Parsear CC emails si existen
-      const ccEmails = (cot as any).cc_emails
+      // CC = cc_emails de la cotización + emails_cc del cliente (deduplicados).
+      const ccCotizacion = (cot as any).cc_emails
         ? (cot as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
-        : undefined;
+        : [];
+      const ccCliente = Array.isArray(cliente.emails_cc) ? cliente.emails_cc : [];
+      const ccEmails = Array.from(new Set<string>([...ccCotizacion, ...ccCliente]))
+        .filter((e) => e && e.toLowerCase() !== String(cliente.email).toLowerCase());
 
       await sendMail({
         from: from as any,
         to: cliente.email,
         subject,
         htmlBody,
-        ...(ccEmails && ccEmails.length > 0 ? { cc: ccEmails } : {}),
+        ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
       });
 
       // Actualizar estado a enviada si es borrador

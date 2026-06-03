@@ -32,7 +32,7 @@ export async function listarClientes(params: ListParams = {}) {
 
   let query = db()
     .from('clientes')
-    .select('id, codigo, tipo, nombre, nit, email, telefono, activo, grupo_empresarial_id, created_at', { count: 'exact' })
+    .select('id, codigo, tipo, nombre, nit, email, emails_cc, telefono, activo, grupo_empresarial_id, created_at', { count: 'exact' })
     .order('nombre', { ascending: true })
     .range(offset, offset + limit - 1);
 
@@ -118,6 +118,7 @@ export async function crearCliente(input: ClienteInsert): Promise<Cliente> {
       nit: input.nit ?? 'CF',
       dpi: input.dpi ?? null,
       email: input.email ?? null,
+      emails_cc: input.emails_cc ?? null,
       telefono: input.telefono ?? null,
       direccion: input.direccion ?? null,
       razon_social_facturacion: input.razon_social_facturacion ?? input.nombre,
@@ -163,6 +164,7 @@ export async function actualizarCliente(
   if (input.nit !== undefined) updates.nit = input.nit;
   if (input.dpi !== undefined) updates.dpi = input.dpi;
   if (input.email !== undefined) updates.email = input.email;
+  if (input.emails_cc !== undefined) updates.emails_cc = input.emails_cc;
   if (input.telefono !== undefined) updates.telefono = input.telefono;
   if (input.direccion !== undefined) updates.direccion = input.direccion;
   if (input.razon_social_facturacion !== undefined) updates.razon_social_facturacion = input.razon_social_facturacion;
