@@ -11,6 +11,27 @@ import Link from 'next/link';
 
 type TipoCita = 'consulta_nueva' | 'seguimiento';
 
+// Modalidad ofrecida al público para el seguimiento.
+type ModalidadPublica = 'virtual' | 'entrega_documentos';
+
+const MODALIDAD_PUBLICA: Record<ModalidadPublica, { label: string; icono: string; desc: string; resumen: string }> = {
+  virtual: {
+    label: 'Seguimiento virtual',
+    icono: '💻',
+    desc: 'Explicaciones y consultas por Microsoft Teams.',
+    resumen: 'Virtual por Teams',
+  },
+  entrega_documentos: {
+    label: 'Entrega de documentos',
+    icono: '📦',
+    desc: 'Recepción o entrega de documentación en la oficina.',
+    resumen: 'Entrega en oficina',
+  },
+};
+
+const DIRECCION_OFICINA =
+  '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
+
 interface SlotItem {
   hora_inicio: string;
   hora_fin: string;
@@ -104,6 +125,8 @@ export default function AgendarPage() {
 
   // Step 1
   const [tipo, setTipo] = useState<TipoCita | null>(null);
+  // Modalidad — solo aplica a seguimiento; consulta_nueva siempre es 'virtual'.
+  const [modalidad, setModalidad] = useState<ModalidadPublica>('virtual');
 
   // Step 2
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -171,6 +194,7 @@ export default function AgendarPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tipo,
+          modalidad: tipo === 'seguimiento' ? modalidad : 'virtual',
           fecha: selectedDate,
           hora: selectedSlot.hora_inicio,
           nombres: nombres.trim(),
@@ -283,8 +307,9 @@ export default function AgendarPage() {
         {step === 1 && (
           <StepTipo
             selected={tipo}
-            onSelect={(t) => {
+            onSelect={(t, m) => {
               setTipo(t);
+              setModalidad(m ?? 'virtual');
               setSelectedDate(null);
               setSelectedSlot(null);
               goNext();
@@ -349,6 +374,7 @@ export default function AgendarPage() {
         {step === 5 && tipo && selectedDate && selectedSlot && (
           <StepConfirmar
             tipo={tipo}
+            modalidad={modalidad}
             fecha={selectedDate}
             slot={selectedSlot}
             nombres={nombres}
@@ -367,7 +393,7 @@ export default function AgendarPage() {
         )}
 
         {step === 6 && result && tipo && (
-          <StepExito result={result} tipo={tipo} nombres={nombres} />
+          <StepExito result={result} tipo={tipo} modalidad={modalidad} nombres={nombres} />
         )}
       </main>
 
@@ -388,9 +414,42 @@ function StepTipo({
   onSelect,
 }: {
   selected: TipoCita | null;
-  onSelect: (tipo: TipoCita) => void;
+  onSelect: (tipo: TipoCita, modalidad?: ModalidadPublica) => void;
 }) {
   const tipos: TipoCita[] = ['consulta_nueva', 'seguimiento'];
+  const [showModalidad, setShowModalidad] = useState(false);
+
+  // Sub-paso de modalidad (solo seguimiento): virtual o entrega de documentos.
+  if (showModalidad) {
+    return (
+      <div>
+        <button
+          onClick={() => setShowModalidad(false)}
+          className="text-sm text-gray-500 hover:text-gray-700 transition mb-4 inline-flex items-center gap-1"
+        >
+          ← Cambiar tipo de cita
+        </button>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">¿Cómo desea su seguimiento?</h2>
+        <p className="text-gray-500 mb-6 text-sm">Elija la modalidad de su cita de seguimiento.</p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          {(['virtual', 'entrega_documentos'] as ModalidadPublica[]).map((m) => {
+            const info = MODALIDAD_PUBLICA[m];
+            return (
+              <button
+                key={m}
+                onClick={() => onSelect('seguimiento', m)}
+                className="text-left p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:shadow-lg transition-all"
+              >
+                <div className="text-3xl mb-3">{info.icono}</div>
+                <h3 className="font-semibold text-gray-900 text-lg">{info.label}</h3>
+                <p className="text-sm text-gray-500 mt-1">{info.desc}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -409,7 +468,10 @@ function StepTipo({
           return (
             <button
               key={t}
-              onClick={() => onSelect(t)}
+              onClick={() => {
+                if (t === 'seguimiento') setShowModalidad(true);
+                else onSelect(t, 'virtual');
+              }}
               className={`text-left p-6 rounded-xl border-2 transition-all hover:shadow-lg ${
                 isSelected
                   ? 'border-teal-500 bg-teal-50 shadow-md'
@@ -929,6 +991,7 @@ function StepDatos({
 
 function StepConfirmar({
   tipo,
+  modalidad,
   fecha,
   slot,
   nombres,
@@ -945,6 +1008,7 @@ function StepConfirmar({
   onBack,
 }: {
   tipo: TipoCita;
+  modalidad: ModalidadPublica;
   fecha: string;
   slot: SlotItem;
   nombres: string;
@@ -975,7 +1039,11 @@ function StepConfirmar({
         {/* Summary header */}
         <div className="bg-gradient-to-r from-teal-600 to-cyan-500 p-4 text-white">
           <h3 className="font-semibold text-lg">{info.label}</h3>
-          <p className="text-white/80 text-sm">{info.modalidad}</p>
+          <p className="text-white/80 text-sm">
+            {tipo === 'seguimiento'
+              ? `${MODALIDAD_PUBLICA[modalidad].icono} ${MODALIDAD_PUBLICA[modalidad].label}`
+              : info.modalidad}
+          </p>
         </div>
 
         <div className="p-4 sm:p-6 space-y-4">
@@ -1053,6 +1121,13 @@ function StepConfirmar({
             </div>
           )}
 
+          {tipo === 'seguimiento' && modalidad === 'entrega_documentos' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1">📍 Lugar de entrega</p>
+              <p className="text-sm text-blue-900">{DIRECCION_OFICINA}</p>
+            </div>
+          )}
+
           {error && (
             <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
           )}
@@ -1094,13 +1169,16 @@ function StepConfirmar({
 function StepExito({
   result,
   tipo,
+  modalidad,
   nombres,
 }: {
   result: BookingResult;
   tipo: TipoCita;
+  modalidad: ModalidadPublica;
   nombres: string;
 }) {
   const info = TIPO_INFO[tipo];
+  const esEntrega = tipo === 'seguimiento' && modalidad === 'entrega_documentos';
 
   return (
     <div className="text-center max-w-lg mx-auto">
@@ -1159,6 +1237,16 @@ function StepExito({
             </a>
             <p className="text-xs text-gray-400 mt-2">
               Tambien recibira el enlace por email.
+            </p>
+          </div>
+        )}
+
+        {esEntrega && (
+          <div className="mt-5 pt-4 border-t border-gray-100 text-left">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Lugar de entrega</p>
+            <p className="text-sm text-gray-700">📍 {DIRECCION_OFICINA}</p>
+            <p className="text-xs text-gray-400 mt-2">
+              Le esperamos en nuestras oficinas para la entrega/recepción de su documentación.
             </p>
           </div>
         )}

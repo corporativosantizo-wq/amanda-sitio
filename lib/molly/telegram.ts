@@ -229,6 +229,14 @@ export function buildSchedulingNotification(
   text += `<b>De:</b> ${escapeHtml(message.from_name || message.from_email)}\n`;
   text += `<b>Asunto:</b> ${escapeHtml(message.subject)}\n`;
   text += `<b>Tipo sugerido:</b> ${escapeHtml(typeLabel)}\n`;
+  if (classification.modalidad_sugerida) {
+    const MOD: Record<string, string> = {
+      virtual: '💻 Virtual por Teams',
+      entrega_documentos: '📦 Entrega de documentos',
+      virtual_y_entrega: '💻📦 Virtual + Entrega',
+    };
+    text += `<b>Modalidad sugerida:</b> ${MOD[classification.modalidad_sugerida] ?? classification.modalidad_sugerida}\n`;
+  }
   text += `<b>Fecha:</b> ${escapeHtml(dateLabel)}\n`;
 
   if (classification.resumen) {

@@ -72,7 +72,8 @@ Clasifica el siguiente email y responde ÚNICAMENTE con un JSON válido (sin mar
   "scheduling_intent": false,
   "suggested_date": null,
   "suggested_time": null,
-  "event_type": null
+  "event_type": null,
+  "modalidad_sugerida": null
 }
 
 Reglas de urgencia (0-3):
@@ -106,7 +107,11 @@ Reglas de intención de cita (scheduling_intent):
 - scheduling_intent = false para: confirmaciones de citas ya agendadas, recordatorios, cancelaciones, y emails que NO solicitan agendar algo nuevo
 - suggested_date: si mencionan una fecha específica, convertirla a formato YYYY-MM-DD. Si dicen "mañana", "el lunes", "la próxima semana", calcular la fecha real a partir de hoy. Si no mencionan fecha, null.
 - suggested_time: si mencionan hora específica ("a las 3", "por la tarde", "10 AM"), convertir a formato HH:mm en 24h. Si dicen "por la tarde" usar "14:00". Si no mencionan hora, null.
-- event_type: "consulta_nueva" si es un asunto nuevo, remitente desconocido, o primera consulta. "seguimiento" si es un cliente existente con caso activo que pide reunión de seguimiento. null si scheduling_intent es false.`;
+- event_type: "consulta_nueva" si es un asunto nuevo, remitente desconocido, o primera consulta. "seguimiento" si es un cliente existente con caso activo que pide reunión de seguimiento. null si scheduling_intent es false.
+- modalidad_sugerida (solo si event_type = "seguimiento"; en otros casos null):
+  - "entrega_documentos" si el cliente quiere RECOGER o ENTREGAR documentos/papeles/expedientes/escrituras (palabras: recoger, retirar, entregar, dejar, traer documentos).
+  - "virtual" si el cliente quiere que le EXPLIQUEN, aclaren o consultar algo (palabras: explicar, dudas, consultar, avance, cómo va, reunión).
+  - "virtual_y_entrega" si pide AMBAS cosas (explicación + entrega/recepción de documentos).`;
 
 export async function classifyEmail(
   fromEmail: string,

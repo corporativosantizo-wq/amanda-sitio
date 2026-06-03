@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { MODALIDAD_INFO, DIRECCION_OFICINA, type ModalidadCita } from '@/lib/types/citas';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,35 @@ function cuentasBancariasHTML(): string {
 
 // ── Cita Templates ──────────────────────────────────────────────────────────
 
+// Resuelve la modalidad de una cita (default 'virtual' por compatibilidad).
+function modalidadDeCita(cita: any): ModalidadCita {
+  const m = cita.modalidad as ModalidadCita | undefined;
+  return m && MODALIDAD_INFO[m] ? m : 'virtual';
+}
+
+// Botón "Unirse a Teams" (solo si hay link).
+function teamsSeccionHTML(cita: any): string {
+  if (!cita.teams_link) return '';
+  return `
+    <table width="100%" style="margin:16px 0;"><tr><td align="center" style="padding:8px 0;">
+      <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">
+        Unirse a la reunión por Teams
+      </a>
+    </td></tr></table>`;
+}
+
+// Bloque con dirección de la oficina + documentos (entregas presenciales).
+function oficinaSeccionHTML(cita: any): string {
+  const docs = (cita.documentos_entrega ?? '').toString().trim();
+  return `
+    <table width="100%" style="margin:16px 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:14px;"><strong>📍 Dirección:</strong> ${DIRECCION_OFICINA}</p>
+        ${docs ? `<p style="margin:8px 0 0;font-size:14px;"><strong>📋 Documentos:</strong> ${docs}</p>` : ''}
+      </td></tr>
+    </table>`;
+}
+
 export function emailConfirmacionCita(cita: any): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
@@ -122,17 +152,23 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
   const duracion = cita.duracion_minutos ? `${cita.duracion_minutos} minutos` : (cita.tipo === 'consulta_nueva' ? '60 minutos' : '15 minutos');
   const clienteNombre = cita.cliente?.nombre ?? '';
 
-  // Teams button
-  let teamsSectionHTML = '';
-  if (cita.teams_link) {
-    teamsSectionHTML = `
-    <table width="100%" style="margin:16px 0;"><tr><td align="center" style="padding:8px 0;">
-      <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">
-        Unirse a la reuni\u00f3n por Teams
-      </a>
-      <p style="margin:8px 0 0;color:#94a3b8;font-size:12px;">Tambi\u00e9n recibir\u00e1 la invitaci\u00f3n en su calendario.</p>
-    </td></tr></table>`;
+  // Modalidad \u2014 adapta la l\u00ednea, las secciones (Teams / oficina) y el cierre.
+  const modalidad = modalidadDeCita(cita);
+  const info = MODALIDAD_INFO[modalidad];
+  const modalidadLabel = `${info.icono} ${info.label}`;
+
+  const teamsSectionHTML = info.usaTeams ? teamsSeccionHTML(cita) : '';
+  const oficinaSectionHTML = info.usaOficina ? oficinaSeccionHTML(cita) : '';
+
+  let cierreModalidad: string;
+  if (modalidad === 'entrega_documentos') {
+    cierreModalidad = 'Le esperamos en nuestras oficinas para la entrega/recepci\u00f3n de su documentaci\u00f3n.';
+  } else if (modalidad === 'virtual_y_entrega') {
+    cierreModalidad = 'Recibir\u00e1 la invitaci\u00f3n de Teams en su calendario. La documentaci\u00f3n podr\u00e1 entregarla/recogerla en nuestra oficina.';
+  } else {
+    cierreModalidad = 'Tambi\u00e9n recibir\u00e1 la invitaci\u00f3n en su calendario.';
   }
+  const cierreModalidadHTML = `<p style="margin:12px 0 0;color:#64748b;font-size:13px;">${cierreModalidad}</p>`;
 
   // Payment section for consulta_nueva
   let pagoSection = '';
@@ -165,10 +201,12 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Duraci\u00f3n:</strong> ${duracion}</p>
-        <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> Virtual por Microsoft Teams</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${modalidadLabel}</p>
       </td></tr>
     </table>
     ${teamsSectionHTML}
+    ${oficinaSectionHTML}
+    ${cierreModalidadHTML}
     ${pagoSection}
     <p style="color:#64748b;font-size:13px;margin-top:16px;">Si necesita cancelar o reprogramar, cont\u00e1ctenos con anticipaci\u00f3n.</p>
   `);
@@ -185,10 +223,9 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
   const fechaFmt = formatearFechaGT(cita.fecha);
   const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
 
-  let teamsBtn = '';
-  if (cita.teams_link) {
-    teamsBtn = teamsButton(cita.teams_link);
-  }
+  const info = MODALIDAD_INFO[modalidadDeCita(cita)];
+  const teamsBtn = info.usaTeams && cita.teams_link ? `<table>${teamsButton(cita.teams_link)}</table>` : '';
+  const oficinaSec = info.usaOficina ? oficinaSeccionHTML(cita) : '';
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Recordatorio: su cita es ma\u00f1ana</h2>
@@ -198,9 +235,11 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${info.icono} ${info.label}</p>
       </td></tr>
     </table>
-    <table>${teamsBtn}</table>
+    ${oficinaSec}
+    ${teamsBtn}
   `);
 
   return {
@@ -215,22 +254,26 @@ export function emailRecordatorio1h(cita: any): EmailTemplate {
   const fechaFmt = formatearFechaGT(cita.fecha);
   const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
 
-  let teamsBtn = '';
-  if (cita.teams_link) {
-    teamsBtn = teamsButton(cita.teams_link);
-  }
+  const info = MODALIDAD_INFO[modalidadDeCita(cita)];
+  const teamsBtn = info.usaTeams && cita.teams_link ? `<table>${teamsButton(cita.teams_link)}</table>` : '';
+  const oficinaSec = info.usaOficina ? oficinaSeccionHTML(cita) : '';
+  const intro = info.usaOficina && !info.usaTeams
+    ? 'Su cita est\u00e1 pr\u00f3xima. Le esperamos en nuestras oficinas.'
+    : 'Su cita est\u00e1 por comenzar. Por favor prep\u00e1rese para conectarse.';
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">\u00a1Su cita es en 1 hora!</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita est\u00e1 por comenzar. Por favor prep\u00e1rese para conectarse.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">${intro}</p>
     <table width="100%" style="margin:16px 0;background:#fef3c7;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${info.icono} ${info.label}</p>
       </td></tr>
     </table>
-    <table>${teamsBtn}</table>
+    ${oficinaSec}
+    ${teamsBtn}
   `);
 
   return {

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { tipo, fecha, hora, nombres, apellidos, nit, nombre: nombreLegacy, email, telefono, empresa, asunto, numero_caso, _hp } = body;
+    const { tipo, modalidad, fecha, hora, nombres, apellidos, nit, nombre: nombreLegacy, email, telefono, empresa, asunto, numero_caso, _hp } = body;
     // Build full name from split fields (fallback to legacy nombre for backwards compat)
     const nombreCompleto = nombres
       ? `${nombres.trim()}${apellidos?.trim() ? ` ${apellidos.trim()}` : ''}`
@@ -180,6 +180,12 @@ export async function POST(req: NextRequest) {
 
     // Create cita (handles Outlook event + confirmation email automatically)
     console.log('[Agendar] Creando cita:', titulo, '—', fecha, matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin);
+    // Modalidad: solo el seguimiento ofrece "entrega_documentos"; el resto es virtual.
+    const modalidadFinal: 'virtual' | 'entrega_documentos' =
+      tipoCita === 'seguimiento' && modalidad === 'entrega_documentos'
+        ? 'entrega_documentos'
+        : 'virtual';
+
     const cita = await crearCita({
       tipo: tipoCita,
       titulo,
@@ -190,6 +196,9 @@ export async function POST(req: NextRequest) {
       duracion_minutos: matchedSlot.duracion_minutos,
       cliente_id: clienteId,
       costo: config.costo,
+      modalidad: modalidadFinal,
+      // El cliente no captura documentos; el admin los llena en la nota de entrega.
+      isOnlineMeeting: modalidadFinal === 'virtual',
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
     });
 

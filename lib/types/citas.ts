@@ -24,6 +24,21 @@ export const DEEP_WORK_END_HOUR = 14;
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'cancelada' | 'completada' | 'no_asistio';
 
+// Modalidad de la cita. El flujo público solo usa 'virtual' y 'entrega_documentos';
+// 'presencial' y 'virtual_y_entrega' quedan disponibles para uso interno (admin).
+export type ModalidadCita = 'virtual' | 'presencial' | 'entrega_documentos' | 'virtual_y_entrega';
+
+export const MODALIDAD_INFO: Record<ModalidadCita, { label: string; icono: string; usaTeams: boolean; usaOficina: boolean }> = {
+  virtual:            { label: 'Virtual por Teams',        icono: '💻',   usaTeams: true,  usaOficina: false },
+  entrega_documentos: { label: 'Entrega de documentos',    icono: '📦',   usaTeams: false, usaOficina: true  },
+  virtual_y_entrega:  { label: 'Virtual + Entrega',         icono: '💻📦', usaTeams: true,  usaOficina: true  },
+  presencial:         { label: 'Presencial en oficina',     icono: '🏢',   usaTeams: false, usaOficina: true  },
+};
+
+// Dirección de la oficina (entregas presenciales). Centralizada para emails/PDF.
+export const DIRECCION_OFICINA =
+  '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
+
 export interface Cita {
   id: string;
   cliente_id: string | null;
@@ -36,6 +51,8 @@ export interface Cita {
   hora_fin: string;
   duracion_minutos: number;
   estado: EstadoCita;
+  modalidad: ModalidadCita;
+  documentos_entrega: string | null;
   costo: number;
   outlook_event_id: string | null;
   teams_link: string | null;
@@ -62,6 +79,8 @@ export interface CitaInsert {
   duracion_minutos: number;
   costo?: number;
   notas?: string;
+  modalidad?: ModalidadCita;
+  documentos_entrega?: string | null;
   isOnlineMeeting?: boolean;
 }
 

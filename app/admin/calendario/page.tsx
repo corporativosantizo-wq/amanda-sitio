@@ -37,6 +37,8 @@ interface CitaItem {
   duracion_minutos: number;
   estado: string;
   costo: number;
+  modalidad?: string | null;
+  documentos_entrega?: string | null;
   teams_link: string | null;
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
@@ -82,6 +84,17 @@ const TIPO_LABELS: Record<string, string> = {
   outlook: 'Outlook',
   audiencia_expediente: 'Audiencia/Diligencia',
 };
+
+// Modalidad de la cita (icono + etiqueta). Local para mantener el bundle cliente limpio.
+const MODALIDAD_INFO: Record<string, { label: string; icono: string; usaOficina: boolean }> = {
+  virtual:            { label: 'Virtual por Teams',     icono: '💻',   usaOficina: false },
+  entrega_documentos: { label: 'Entrega de documentos', icono: '📦',   usaOficina: true  },
+  virtual_y_entrega:  { label: 'Virtual + Entrega',      icono: '💻📦', usaOficina: true  },
+  presencial:         { label: 'Presencial',             icono: '🏢',   usaOficina: true  },
+};
+
+const DIRECCION_OFICINA =
+  '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   pendiente: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
@@ -318,6 +331,7 @@ function CalendarioPage() {
   const { getToken } = useAuth();
   const searchParams = useSearchParams();
   const [vista, setVista] = useState<'agenda' | 'grilla'>('agenda');
+  const [modalidadFilter, setModalidadFilter] = useState<string>('todas');
   const [fechaBase, setFechaBase] = useState(() => new Date());
   const [citas, setCitas] = useState<CitaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -432,8 +446,12 @@ function CalendarioPage() {
   const lunes = getMonday(fechaBase);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(lunes, i));
 
-  // Filter citas for a specific date
-  const citasForDate = (dateStr: string) => citas.filter((c: CitaItem) => c.fecha === dateStr && c.estado !== 'cancelada');
+  // Filter citas for a specific date (+ optional modalidad filter)
+  const citasForDate = (dateStr: string) => citas.filter((c: CitaItem) =>
+    c.fecha === dateStr &&
+    c.estado !== 'cancelada' &&
+    (modalidadFilter === 'todas' || c.modalidad === modalidadFilter)
+  );
 
   // Header date range text
   const headerText =
@@ -517,6 +535,19 @@ function CalendarioPage() {
               </button>
             </div>
           )}
+
+          {/* Filtro por modalidad */}
+          <select
+            value={modalidadFilter}
+            onChange={(e) => setModalidadFilter(e.target.value)}
+            title="Filtrar por modalidad"
+            className="px-2 py-1.5 text-xs font-medium bg-slate text-white rounded-lg border border-white/10 focus:outline-none hidden sm:block"
+          >
+            <option value="todas">Todas las modalidades</option>
+            <option value="virtual">💻 Virtual</option>
+            <option value="entrega_documentos">📦 Entrega</option>
+            <option value="virtual_y_entrega">💻📦 Virtual + Entrega</option>
+          </select>
 
           {/* Vista toggle */}
           <div className="flex items-center bg-slate rounded-lg p-0.5">
@@ -864,6 +895,9 @@ function AgendaView({
                           })()}
                           <div className="flex items-center gap-2 text-[11px] text-gray-500">
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
+                            {cita.modalidad && cita.modalidad !== 'virtual' && MODALIDAD_INFO[cita.modalidad] && (
+                              <span title={MODALIDAD_INFO[cita.modalidad].label}>{MODALIDAD_INFO[cita.modalidad].icono}</span>
+                            )}
                             {cita.teams_link && <span className="text-purple-500">Teams</span>}
                           </div>
                         </div>
@@ -1366,6 +1400,14 @@ function DetailModal({
               <span className="text-xs text-gray-500 uppercase">Cliente</span>
               <p className="font-medium">{cita.cliente?.nombre ?? 'Sin cliente'}</p>
             </div>
+            {cita.modalidad && (
+              <div>
+                <span className="text-xs text-gray-500 uppercase">Modalidad</span>
+                <p className="font-medium">
+                  {MODALIDAD_INFO[cita.modalidad]?.icono ?? ''} {MODALIDAD_INFO[cita.modalidad]?.label ?? cita.modalidad}
+                </p>
+              </div>
+            )}
             {cita.costo > 0 && (
               <div>
                 <span className="text-xs text-gray-500 uppercase">Costo</span>
@@ -1378,6 +1420,24 @@ function DetailModal({
             <div>
               <span className="text-xs text-gray-500 uppercase">Descripción</span>
               <p className="text-sm text-gray-700 mt-1">{cita.descripcion}</p>
+            </div>
+          )}
+
+          {cita.modalidad && MODALIDAD_INFO[cita.modalidad]?.usaOficina && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
+              <p className="text-xs text-blue-700 uppercase tracking-wide font-medium">📦 Entrega de documentos</p>
+              <p className="text-sm text-blue-900">📍 {DIRECCION_OFICINA}</p>
+              {cita.documentos_entrega && (
+                <p className="text-sm text-blue-900"><strong>Documentos:</strong> {cita.documentos_entrega}</p>
+              )}
+              {cita._source !== 'outlook' && cita._source !== 'expediente' && cita.cliente && (
+                <a
+                  href={`/admin/notas-entrega?cita=${cita.id}`}
+                  className="inline-flex items-center gap-1.5 mt-1 text-xs font-medium text-blue-700 hover:text-blue-900 underline"
+                >
+                  Ver / editar nota de entrega →
+                </a>
+              )}
             </div>
           )}
 
@@ -1682,6 +1742,8 @@ function CreateModal({
     audiencia: false, bloqueo_personal: false, evento_libre: false,
   };
   const [withTeams, setWithTeams] = useState(TEAMS_DEFAULT[tipo] ?? false);
+  const [modalidad, setModalidad] = useState<string>('virtual');
+  const [documentosEntrega, setDocumentosEntrega] = useState('');
   const [subcategoria, setSubcategoria] = useState('');
   const tipoSubs = SUBCATEGORIAS[tipo] ?? [];
   const showSubcatSelector = tipoSubs.length > 1;
@@ -1700,6 +1762,8 @@ function CreateModal({
     setSelectedSlot(null);
     setUseCustomTime(false);
     setWithTeams(TEAMS_DEFAULT[tipo] ?? false);
+    setModalidad('virtual');
+    setDocumentosEntrega('');
     setSubcategoria('');
     if (isFree) {
       setUseCustomTime(true);
@@ -1806,6 +1870,9 @@ function CreateModal({
           hora_fin: horaFin,
           duracion_minutos: duracionFinal,
           cliente_id: clienteId || null,
+          modalidad,
+          documentos_entrega: MODALIDAD_INFO[modalidad]?.usaOficina ? (documentosEntrega.trim() || null) : null,
+          // crearCita combina esto con la modalidad (las entregas nunca llevan Teams).
           isOnlineMeeting: withTeams,
         }),
       });
@@ -2117,6 +2184,49 @@ function CreateModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
             />
           </div>
+
+          {/* Modalidad (solo consulta/seguimiento) */}
+          {(tipo === 'consulta_nueva' || tipo === 'seguimiento') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Modalidad</label>
+              <div className="flex flex-wrap gap-2">
+                {['virtual', 'entrega_documentos', 'virtual_y_entrega'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setModalidad(m);
+                      // Entrega pura = sin Teams; virtual y virtual+entrega = con Teams.
+                      setWithTeams(m !== 'entrega_documentos');
+                    }}
+                    className={`px-3 py-1.5 text-sm rounded-lg border transition ${
+                      modalidad === m
+                        ? 'border-azure bg-azure/10 text-azure font-medium'
+                        : 'border-gray-200 hover:border-azure/30 text-gray-700'
+                    }`}
+                  >
+                    {MODALIDAD_INFO[m].icono} {MODALIDAD_INFO[m].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Documentos a entregar/recoger (modalidades de oficina) */}
+          {MODALIDAD_INFO[modalidad]?.usaOficina && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Documentos a entregar / recoger <span className="text-gray-400 text-xs font-normal">(opcional)</span>
+              </label>
+              <textarea
+                value={documentosEntrega}
+                onChange={(e) => setDocumentosEntrega(e.target.value)}
+                rows={2}
+                placeholder="Ej: Escritura inscrita, certificación del RGP..."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
+              />
+            </div>
+          )}
 
           {/* Teams meeting toggle */}
           <label className="flex items-center gap-2 cursor-pointer select-none">

@@ -10,6 +10,7 @@ export * from './clientes';
 export * from './contabilidad';
 export * from './notariado';
 export * from './citas';
+export * from './notas-entrega';
 export * from './tareas';
 export * from './proveedor';
 export * from './representantes';

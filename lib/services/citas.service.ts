@@ -12,8 +12,10 @@ import {
   SlotDisponible,
   TipoCita,
   EstadoCita,
+  ModalidadCita,
   HORARIOS,
   ADMIN_ONLY_TIPOS,
+  MODALIDAD_INFO,
 } from '@/lib/types';
 import {
   isOutlookConnected,
@@ -199,7 +201,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
     .select(`
       id, cliente_id, expediente_id, tipo, titulo, descripcion,
       fecha, hora_inicio, hora_fin, duracion_minutos,
-      estado, costo, categoria_outlook,
+      estado, costo, categoria_outlook, modalidad, documentos_entrega,
       teams_link, outlook_event_id,
       notas, created_at, updated_at,
       cliente:clientes(id, codigo, nombre, email)
@@ -288,6 +290,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
 
   // Insertar cita
   const costo = input.costo ?? config.costo;
+  const modalidad: ModalidadCita = input.modalidad ?? 'virtual';
   const { data: cita, error } = await db()
     .from('citas')
     .insert({
@@ -302,6 +305,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       duracion_minutos: input.duracion_minutos,
       costo,
       categoria_outlook: config.categoria_outlook,
+      modalidad,
+      documentos_entrega: input.documentos_entrega ?? null,
       notas: input.notas ?? null,
     })
     .select('*, cliente:clientes(id, codigo, nombre, email)')
@@ -329,7 +334,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
         endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
         attendees: clienteEmail ? [clienteEmail] : [],
-        isOnlineMeeting: input.isOnlineMeeting ?? true,
+        // Las entregas de documentos no llevan reunión de Teams.
+        isOnlineMeeting: (input.isOnlineMeeting ?? true) && MODALIDAD_INFO[modalidad].usaTeams,
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       };
@@ -390,7 +396,66 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     console.log(`[crearCita] No se envía email — clienteEmail es null`);
   }
 
+  // ── Entrega de documentos: avisar a Mariano + generar Nota de entrega ──
+  if (modalidad === 'entrega_documentos') {
+    await notificarEntregaMariano(cita).catch((e) =>
+      console.error('[crearCita] Error notificando a Mariano (entrega):', e?.message ?? e),
+    );
+    await generarNotaEntregaParaCita(cita).catch((e) =>
+      console.error('[crearCita] Error generando nota de entrega:', e?.message ?? e),
+    );
+  }
+
   return cita;
+}
+
+// Avisa al grupo de Telegram de Mariano (TELEGRAM_GROUP_CHAT_ID) que se agendó
+// una cita de entrega de documentos, para que prepare la documentación.
+async function notificarEntregaMariano(cita: any): Promise<void> {
+  const chatId = process.env.TELEGRAM_GROUP_CHAT_ID;
+  if (!chatId) {
+    console.warn('[crearCita] TELEGRAM_GROUP_CHAT_ID no configurado — no se avisa a Mariano');
+    return;
+  }
+  const nombreCliente = cita.cliente?.nombre ?? 'Cliente';
+  const fechaFmt = new Date(cita.fecha + 'T12:00:00').toLocaleDateString('es-GT', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Guatemala',
+  });
+  const horaFmt = formatearHora12(cita.hora_inicio);
+
+  const texto =
+    `📦 <b>Nueva cita de entrega de documentos agendada</b>\n\n` +
+    `👤 Cliente: ${escapeHtmlTg(nombreCliente)}\n` +
+    `📅 Fecha: ${fechaFmt}\n` +
+    `🕐 Hora: ${horaFmt}\n\n` +
+    `Por favor preparar los documentos correspondientes del cliente para la entrega.\n\n` +
+    `cc: Licda. Amanda Santizo`;
+
+  await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
+}
+
+// Crea automáticamente una Nota de entrega (estado 'pendiente') vinculada a la
+// cita, lista para que el admin la complete antes de la entrega. Best-effort.
+async function generarNotaEntregaParaCita(cita: any): Promise<void> {
+  if (!cita.cliente_id) return;
+  const { crearNotaEntrega } = await import('./notas-entrega.service');
+  await crearNotaEntrega({
+    cliente_id: cita.cliente_id,
+    cita_id: cita.id,
+    fecha: cita.fecha,
+    documentos_entregados: cita.documentos_entrega ?? null,
+  });
+}
+
+function formatearHora12(hora: string): string {
+  const [h, m] = hora.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function escapeHtmlTg(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export async function actualizarCita(
