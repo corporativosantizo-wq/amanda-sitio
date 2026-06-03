@@ -6,65 +6,15 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
-import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 import { SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
-import type { TareaConCliente } from '@/lib/types';
-import {
-  CATEGORIA_TAREA_LABEL,
-  CATEGORIA_TAREA_COLOR,
-  CategoriaTarea,
-  TipoTarea,
-  EstadoTarea,
-} from '@/lib/types';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-}
-
-interface Cita {
-  id: string;
-  titulo: string;
-  fecha: string;
-  hora_inicio: string;
-  hora_fin: string;
-  tipo: string;
-  estado: string;
-  cliente_nombre?: string;
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function hoy() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function finDeSemana() {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = day === 0 ? 0 : 7 - day;
-  const end = new Date(d);
-  end.setDate(d.getDate() + diff);
-  return end.toISOString().split('T')[0];
-}
-
-function formatFechaHoy() {
-  const d = new Date();
-  const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  return `${dias[d.getDay()]} ${d.getDate()} · ${meses[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-function formatHora12(hora: string) {
-  const [h, m] = hora.split(':');
-  const hNum = parseInt(h);
-  const suffix = hNum >= 12 ? 'PM' : 'AM';
-  const h12 = hNum === 0 ? 12 : hNum > 12 ? hNum - 12 : hNum;
-  return `${h12}:${m} ${suffix}`;
 }
 
 // ── Suggestion categories ───────────────────────────────────────────────────
@@ -115,17 +65,6 @@ const SUGGESTION_CATEGORIES = [
   },
 ];
 
-// ── Bullet symbols ──────────────────────────────────────────────────────────
-
-const BULLET: Record<string, { symbol: string; className: string }> = {
-  pendiente:   { symbol: '•', className: 'text-slate-800' },
-  en_progreso: { symbol: '•', className: 'text-blue-600' },
-  completada:  { symbol: '✕', className: 'text-slate-400' },
-  migrada:     { symbol: '→', className: 'text-purple-500' },
-  evento:      { symbol: '○', className: 'text-teal-600' },
-  nota:        { symbol: '—', className: 'text-slate-400' },
-};
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════════════════════
@@ -136,9 +75,6 @@ export default function AIAssistantPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showPanel, setShowPanel] = useState(true);
-  const [quickInput, setQuickInput] = useState('');
-  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
   const [attachedFile, setAttachedFile] = useState<{
     name: string; size: number; storagePath: string; textoExtraido?: string | null;
   } | null>(null);
@@ -149,91 +85,7 @@ export default function AIAssistantPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fechaHoy = hoy();
-  const fechaFinSemana = finDeSemana();
-
-  // ── Data fetching ───────────────────────────────────────────────────────
-
-  // All tareas for today (any assignee)
-  const { data: tareasHoyData, refetch: refetchTareasHoy } = useFetch<{
-    data: TareaConCliente[];
-    total: number;
-  }>(`/api/admin/tareas?fecha_desde=${fechaHoy}&fecha_hasta=${fechaHoy}&limit=50`);
-
-  // All pending/in-progress tareas (for "hoy" section — no date filter, just pending)
-  const { data: tareasPendientesData, refetch: refetchPendientes } = useFetch<{
-    data: TareaConCliente[];
-    total: number;
-  }>('/api/admin/tareas?estado=pendiente&limit=30');
-
-  const { data: tareasEnProgresoData, refetch: refetchEnProgreso } = useFetch<{
-    data: TareaConCliente[];
-    total: number;
-  }>('/api/admin/tareas?estado=en_progreso&limit=30');
-
-  // Tareas completed today
-  const { data: tareasCompletadasHoyData, refetch: refetchCompletadasHoy } = useFetch<{
-    data: TareaConCliente[];
-    total: number;
-  }>(`/api/admin/tareas?estado=completada&fecha_desde=${fechaHoy}&limit=30`);
-
-  // Tareas assigned to asistente
-  const { data: tareasAsistenteData, refetch: refetchAsistente } = useFetch<{
-    data: TareaConCliente[];
-    total: number;
-  }>('/api/admin/tareas?asignado_a=asistente&limit=20');
-
-  // Próximas citas (this week)
-  const { data: citasData } = useFetch<{
-    data: Cita[];
-    total: number;
-  }>(`/api/admin/calendario/eventos?fecha_inicio=${fechaHoy}&fecha_fin=${fechaFinSemana}`);
-
-  const { mutate } = useMutate();
-
-  // ── Derived data ────────────────────────────────────────────────────────
-
-  // Tareas for "Hoy" section: tasks due today OR pending with no date
-  const allPending = tareasPendientesData?.data ?? [];
-  const allEnProgreso = tareasEnProgresoData?.data ?? [];
-  const completadasHoy = tareasCompletadasHoyData?.data ?? [];
-
-  const tareasHoy = [...allPending, ...allEnProgreso].filter(
-    (t: TareaConCliente) => !t.fecha_limite || t.fecha_limite <= fechaHoy
-  );
-
-  // Tasks this week (with future dates, not today)
-  const tareasProximamente = [...allPending, ...allEnProgreso].filter(
-    (t: TareaConCliente) => t.fecha_limite && t.fecha_limite > fechaHoy && t.fecha_limite <= fechaFinSemana
-  );
-
-  // Asistente tareas
-  const tareasAsistentePendientes = (tareasAsistenteData?.data ?? []).filter(
-    (t: TareaConCliente) => t.estado === 'pendiente' || t.estado === 'en_progreso'
-  );
-  const tareasAsistenteCompletadas = (tareasAsistenteData?.data ?? []).filter(
-    (t: TareaConCliente) => t.estado === 'completada'
-  );
-
-  // Próximas citas
-  const proximasCitas = (citasData?.data ?? [])
-    .filter((c: Cita) => c.estado !== 'cancelada')
-    .slice(0, 3);
-
-  // Counters
-  const countPendientes = allPending.length;
-  const countEnProgreso = allEnProgreso.length;
-  const countCompletadasHoy = completadasHoy.length;
-
   // ── Actions ─────────────────────────────────────────────────────────────
-
-  const refetchAll = useCallback(() => {
-    refetchTareasHoy();
-    refetchPendientes();
-    refetchEnProgreso();
-    refetchCompletadasHoy();
-    refetchAsistente();
-  }, [refetchTareasHoy, refetchPendientes, refetchEnProgreso, refetchCompletadasHoy, refetchAsistente]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -247,45 +99,6 @@ export default function AIAssistantPage() {
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
     }
   }, [input]);
-
-  const handleCompleteTarea = async (id: string) => {
-    setCompletingIds((prev) => new Set(prev).add(id));
-    setTimeout(() => {
-      mutate(`/api/admin/tareas/${id}`, {
-        method: 'PATCH',
-        body: { estado: 'completada' },
-        onSuccess: () => {
-          setTimeout(() => {
-            setCompletingIds((prev) => {
-              const next = new Set(prev);
-              next.delete(id);
-              return next;
-            });
-            refetchAll();
-          }, 300);
-        },
-      });
-    }, 200);
-  };
-
-  const handleQuickAdd = async () => {
-    const text = quickInput.trim();
-    if (!text) return;
-    setQuickInput('');
-    await mutate('/api/admin/tareas', {
-      method: 'POST',
-      body: {
-        titulo: text,
-        tipo: text.startsWith('—') ? TipoTarea.NOTA : TipoTarea.TAREA,
-        estado: EstadoTarea.PENDIENTE,
-        prioridad: 'media',
-        asignado_a: 'amanda',
-        categoria: 'tramites',
-        fecha_limite: fechaHoy,
-      },
-      onSuccess: () => refetchAll(),
-    });
-  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -400,7 +213,6 @@ export default function AIAssistantPage() {
       };
 
       setMessages((prev: Message[]) => [...prev, assistantMessage]);
-      refetchAll();
     } catch (err: any) {
       setError(err.message ?? 'Error al comunicarse con el asistente');
     } finally {
@@ -467,194 +279,11 @@ export default function AIAssistantPage() {
 
   return (
     <div className="flex h-[calc(100vh-0px)]">
-      {/* ─── Panel lateral Bullet Journal ─────────────────────────────── */}
-      {showPanel && (
-        <div className="w-[300px] border-r border-slate-200 bg-white flex flex-col shrink-0">
-          {/* Counters */}
-          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-3 text-[11px] font-medium">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
-                <span className="text-slate-600">{countPendientes}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                <span className="text-slate-600">{countEnProgreso}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
-                <span className="text-slate-600">{countCompletadasHoy}</span>
-              </span>
-            </div>
-            <button
-              onClick={() => setShowPanel(false)}
-              className="text-slate-300 hover:text-slate-500 transition-colors"
-              title="Cerrar panel"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto">
-
-            {/* ── Sección HOY ────────────────────────────────────────── */}
-            <div className="px-4 pt-3 pb-2">
-              <p className="text-[11px] font-medium text-teal-600 tracking-wide uppercase">{formatFechaHoy()}</p>
-            </div>
-
-            <div className="px-3 space-y-0.5">
-              {tareasHoy.length === 0 && proximasCitas.length === 0 && completadasHoy.length === 0 ? (
-                <div className="px-2 py-4 text-center">
-                  <p className="text-xs text-slate-400">Sin tareas para hoy</p>
-                  <p className="text-[10px] text-slate-300 mt-1">Usa el campo de abajo para agregar</p>
-                </div>
-              ) : (
-                <>
-                  {/* Active tasks for today */}
-                  {tareasHoy.map((t: TareaConCliente) => (
-                    <BulletItem
-                      key={t.id}
-                      tarea={t}
-                      isCompleting={completingIds.has(t.id)}
-                      onComplete={handleCompleteTarea}
-                    />
-                  ))}
-
-                  {/* Today's events (citas) */}
-                  {proximasCitas
-                    .filter((c: Cita) => c.fecha === fechaHoy)
-                    .map((c: Cita) => (
-                      <div key={c.id} className="flex items-start gap-2 px-2 py-1.5 rounded-md group">
-                        <span className="font-mono text-sm leading-5 text-teal-600 w-4 text-center shrink-0">○</span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-slate-700 leading-snug">{c.titulo || c.tipo}</p>
-                          <p className="text-[10px] text-teal-600">{formatHora12(c.hora_inicio)}</p>
-                        </div>
-                      </div>
-                    ))}
-
-                  {/* Completed today */}
-                  {completadasHoy.map((t: TareaConCliente) => (
-                    <div key={t.id} className="flex items-start gap-2 px-2 py-1.5 rounded-md opacity-50">
-                      <span className="font-mono text-sm leading-5 text-slate-400 w-4 text-center shrink-0">✕</span>
-                      <p className="text-xs text-slate-400 line-through leading-snug">{t.titulo}</p>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-
-            {/* Quick add input */}
-            <div className="px-3 py-2">
-              <div className="flex items-center gap-1.5">
-                <span className="font-mono text-sm text-slate-300 w-4 text-center shrink-0">•</span>
-                <input
-                  type="text"
-                  value={quickInput}
-                  onChange={(e) => setQuickInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleQuickAdd()}
-                  placeholder="Agregar tarea rápida..."
-                  className="flex-1 text-xs bg-transparent border-none outline-none text-slate-600 placeholder:text-slate-300"
-                />
-              </div>
-            </div>
-
-            {/* ── Sección PRÓXIMAMENTE ────────────────────────────────── */}
-            {(tareasProximamente.length > 0 || proximasCitas.filter((c: Cita) => c.fecha > fechaHoy).length > 0) && (
-              <div className="border-t border-slate-100 mt-1">
-                <div className="px-4 pt-3 pb-1.5">
-                  <p className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">Próximamente</p>
-                </div>
-                <div className="px-3 space-y-0.5 pb-2">
-                  {tareasProximamente.map((t: TareaConCliente) => (
-                    <BulletItem
-                      key={t.id}
-                      tarea={t}
-                      isCompleting={completingIds.has(t.id)}
-                      onComplete={handleCompleteTarea}
-                      showDate
-                    />
-                  ))}
-                  {proximasCitas
-                    .filter((c: Cita) => c.fecha > fechaHoy)
-                    .map((c: Cita) => (
-                      <div key={c.id} className="flex items-start gap-2 px-2 py-1.5 rounded-md">
-                        <span className="font-mono text-sm leading-5 text-teal-600 w-4 text-center shrink-0">○</span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-slate-700 leading-snug">{c.titulo || c.tipo}</p>
-                          <p className="text-[10px] text-teal-600">
-                            {new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric' })} · {formatHora12(c.hora_inicio)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Sección ASIGNADAS AL ASISTENTE ────────────────────── */}
-            <div className="border-t border-slate-100 mt-1">
-              <div className="px-4 pt-3 pb-1.5">
-                <p className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
-                  Asistente IA · {tareasAsistentePendientes.length} pendiente{tareasAsistentePendientes.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="px-3 space-y-0.5 pb-2">
-                {tareasAsistentePendientes.length === 0 ? (
-                  <div className="px-2 py-3 text-center">
-                    <p className="text-[10px] text-slate-300">Sin tareas asignadas</p>
-                  </div>
-                ) : (
-                  tareasAsistentePendientes.map((t: TareaConCliente) => (
-                    <BulletItem
-                      key={t.id}
-                      tarea={t}
-                      isCompleting={completingIds.has(t.id)}
-                      onComplete={handleCompleteTarea}
-                      showCategory
-                    />
-                  ))
-                )}
-                {tareasAsistenteCompletadas.length > 0 && (
-                  <details className="mt-1">
-                    <summary className="text-[10px] text-slate-300 cursor-pointer hover:text-slate-500 px-2 py-1">
-                      {tareasAsistenteCompletadas.length} completada{tareasAsistenteCompletadas.length !== 1 ? 's' : ''}
-                    </summary>
-                    <div className="space-y-0.5 mt-0.5">
-                      {tareasAsistenteCompletadas.slice(0, 5).map((t: TareaConCliente) => (
-                        <div key={t.id} className="flex items-start gap-2 px-2 py-1 rounded-md opacity-40">
-                          <span className="font-mono text-sm leading-5 text-slate-400 w-4 text-center shrink-0">✕</span>
-                          <p className="text-xs text-slate-400 line-through leading-snug">{t.titulo}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ─── Chat area ───────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            {!showPanel && (
-              <button
-                onClick={() => setShowPanel(true)}
-                className="text-slate-400 hover:text-teal-600 mr-1"
-                title="Mostrar Bullet Journal"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            )}
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center text-lg">
               ✍️
             </div>
@@ -892,92 +521,6 @@ export default function AIAssistantPage() {
           <p className="text-[10px] text-slate-400 mt-2 text-center">
             IA puede cometer errores. Verifica la información importante.
           </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BulletItem — A single task in Bullet Journal style
-// ═══════════════════════════════════════════════════════════════════════════
-
-function BulletItem({
-  tarea,
-  isCompleting,
-  onComplete,
-  showDate = false,
-  showCategory = false,
-}: {
-  tarea: TareaConCliente;
-  isCompleting: boolean;
-  onComplete: (id: string) => void;
-  showDate?: boolean;
-  showCategory?: boolean;
-}) {
-  const isOverdue = tarea.fecha_limite && tarea.fecha_limite < hoy();
-  const isInProgress = tarea.estado === 'en_progreso';
-  const isScheduled = !!(tarea as any).accion_automatica && !(tarea as any).ejecutada;
-  const bullet = isScheduled
-    ? { symbol: '⏰', className: 'text-amber-500' }
-    : isInProgress
-      ? BULLET.en_progreso
-      : BULLET[tarea.estado] ?? BULLET.pendiente;
-
-  const prioColor = tarea.prioridad === 'alta'
-    ? 'bg-red-50'
-    : tarea.prioridad === 'baja'
-      ? 'bg-green-50/50'
-      : '';
-
-  return (
-    <div
-      className={`flex items-start gap-2 px-2 py-1.5 rounded-md group transition-all duration-300 ${
-        isCompleting ? 'opacity-30 line-through' : ''
-      } ${isOverdue && !isScheduled ? 'bg-red-50/60' : isScheduled ? 'bg-amber-50/40' : prioColor} hover:bg-slate-50`}
-    >
-      <button
-        onClick={() => onComplete(tarea.id)}
-        className={`font-mono text-sm leading-5 w-4 text-center shrink-0 transition-colors cursor-pointer ${
-          bullet.className
-        } hover:text-teal-600`}
-        title={isScheduled ? 'Programada — click para completar' : 'Completar'}
-      >
-        {bullet.symbol}
-      </button>
-      <div className="min-w-0 flex-1">
-        <p className={`text-xs leading-snug ${
-          isScheduled ? 'text-amber-800' : isInProgress ? 'text-blue-700 font-medium' : 'text-slate-700'
-        } ${isOverdue && !isScheduled ? 'text-red-700' : ''}`}>
-          {tarea.titulo}
-        </p>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {isScheduled && tarea.fecha_limite && (
-            <span className="text-[9px] text-amber-600 font-medium">
-              {new Date(tarea.fecha_limite + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric' })}
-            </span>
-          )}
-          {showCategory && (
-            <span className={`px-1.5 py-0.5 text-[9px] font-medium rounded-full ${
-              CATEGORIA_TAREA_COLOR[tarea.categoria as CategoriaTarea] ?? 'bg-gray-100 text-gray-600'
-            }`}>
-              {CATEGORIA_TAREA_LABEL[tarea.categoria as CategoriaTarea] ?? tarea.categoria}
-            </span>
-          )}
-          {isInProgress && !isScheduled && (
-            <span className="text-[9px] text-blue-500 font-medium">en progreso</span>
-          )}
-          {tarea.cliente && (
-            <span className="text-[9px] text-slate-400">{tarea.cliente.nombre}</span>
-          )}
-          {showDate && !isScheduled && tarea.fecha_limite && (
-            <span className={`text-[9px] ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
-              {new Date(tarea.fecha_limite + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </span>
-          )}
-          {!showDate && !isScheduled && isOverdue && (
-            <span className="text-[9px] text-red-500 font-medium">vencida</span>
-          )}
         </div>
       </div>
     </div>
