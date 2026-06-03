@@ -95,6 +95,19 @@ async function callAnthropicWithRetry(
 
 const SYSTEM_PROMPT = `Eres Molly, la asistente ejecutiva de inteligencia artificial del Despacho Jurídico Boutique de Amanda Santizo. No eres un chatbot genérico — eres una profesional integral que gestiona el despacho con la misma seriedad y confidencialidad que una asistente de confianza.
 
+## 🖋️ ROL PRINCIPAL: REDACTOR LEGAL
+Tu función PRINCIPAL en esta interfaz es la de REDACTOR LEGAL del despacho. Actúas como una abogada y notaria guatemalteca con especialidad en derecho MERCANTIL, NOTARIAL, CONSTITUCIONAL e INTERNACIONAL, que redacta documentos conforme a la legislación guatemalteca vigente (Constitución Política de la República, Código Civil, Código de Comercio, Código de Notariado, Código Procesal Civil y Mercantil, Ley de Amparo Exhibición Personal y de Constitucionalidad, Código de Trabajo, Código Procesal Penal, y tratados internacionales aplicables).
+
+Cuando Amanda pida REDACTAR un documento (acta de asamblea o nombramiento, poder general/especial, declaración jurada, memorial, recurso de apelación, amparo, contestación de demanda, contrato, NDA, etc.):
+1. PRIMERO obtén el contexto real de la BD: usa briefing_caso / consultar_legal / consultar_base_datos para traer datos del cliente, expediente, actuaciones, documentos y cotizaciones relacionadas.
+2. Redacta el documento COMPLETO en el chat, con formato rico (usa ## para títulos y **negritas**; numera cláusulas, considerandos, puntos resolutivos), citando la base legal guatemalteca aplicable (artículos y cuerpos normativos).
+3. NUNCA inventes datos esenciales (nombres, DPI, NIT, fincas, números de expediente, montos). Si falta un dato, déjalo como **[PENDIENTE: descripción del dato]** o pregúntalo.
+4. Entrega SIEMPRE el documento como texto bien estructurado en tu respuesta (no solo un enlace): Amanda lo exportará a Word con el botón "Exportar a DOCX" o lo copiará.
+
+Para "Briefing de caso" / "Prepárame el caso de [cliente]": usa la herramienta briefing_caso, que reúne expedientes, actuaciones, documentos, cotizaciones, trámites, cobros, pagos y citas del cliente. Presenta un RESUMEN EJECUTIVO organizado por secciones (Cliente, Expedientes y estado procesal, Últimas actuaciones, Plazos/pendientes, Documentos, Situación financiera, Próximas citas).
+
+Las demás funciones (emails, cobros, cotizaciones, tareas) siguen disponibles si Amanda las pide, pero tu prioridad es la REDACCIÓN LEGAL y el briefing de casos.
+
 ## DATOS DEL DESPACHO
 - Nombre: Despacho Jurídico Boutique Amanda Santizo
 - Titular: Lcda. Amanda Santizo — Abogada y Notaria
@@ -2841,6 +2854,71 @@ async function handleConsultarCatalogo(
 
 // ── API route ─────────────────────────────────────────────────────────────
 
+// ── Briefing de caso: reúne todo el contexto de un cliente ─────────────────
+async function handleBriefingCaso(clienteRef: string): Promise<string> {
+  const db = createAdminClient();
+  if (!clienteRef?.trim()) return JSON.stringify({ error: 'Se requiere el nombre o UUID del cliente.' });
+
+  // Resolver cliente
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteRef.trim());
+  let cliente: any = null;
+  if (isUUID) {
+    const { data } = await db.from('clientes').select('*').eq('id', clienteRef.trim()).single();
+    cliente = data;
+  } else {
+    const contactos = await buscarContacto(db, clienteRef, 1);
+    if (contactos.length) {
+      const { data } = await db.from('clientes').select('*').eq('id', contactos[0].id).single();
+      cliente = data ?? contactos[0];
+    }
+  }
+  if (!cliente) return JSON.stringify({ error: `No encontré al cliente "${clienteRef}".` });
+  const cid = cliente.id;
+
+  // Helper: ejecuta una query y devuelve null si la tabla/columna no aplica.
+  const safe = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
+    try { return await fn(); } catch { return null; }
+  };
+  const porCliente = (tabla: string, orderCol: string, limit = 15) =>
+    safe(async () => {
+      const { data } = await db.from(tabla).select('*').eq('cliente_id', cid).order(orderCol, { ascending: false }).limit(limit);
+      return data ?? [];
+    });
+
+  const expedientes = (await porCliente('expedientes', 'fecha_inicio', 20)) ?? [];
+  const expIds = (expedientes as any[]).map((e) => e.id).filter(Boolean);
+  const actuaciones = expIds.length
+    ? (await safe(async () => {
+        const { data } = await db.from('actuaciones_procesales').select('*').in('expediente_id', expIds).order('fecha', { ascending: false }).limit(25);
+        return data ?? [];
+      })) ?? []
+    : [];
+
+  const [documentos, cotizaciones, mercantil, laboral, cobros, pagos, citas] = await Promise.all([
+    porCliente('documentos', 'created_at', 20),
+    porCliente('cotizaciones', 'fecha_emision', 15),
+    porCliente('tramites_mercantiles', 'created_at', 15),
+    porCliente('tramites_laborales', 'created_at', 15),
+    porCliente('cobros', 'created_at', 15),
+    porCliente('pagos', 'fecha_pago', 15),
+    porCliente('citas', 'fecha', 15),
+  ]);
+
+  return JSON.stringify({
+    cliente,
+    expedientes,
+    actuaciones,
+    documentos,
+    cotizaciones,
+    tramites_mercantiles: mercantil,
+    tramites_laborales: laboral,
+    cobros,
+    pagos,
+    citas,
+    nota: 'Resume esto como un briefing ejecutivo organizado por secciones. No inventes datos que no estén aquí.',
+  });
+}
+
 export async function POST(req: Request) {
   // Defense-in-depth: verify admin even if middleware is bypassed
   const { requireAdmin } = await import('@/lib/auth/api-auth');
@@ -3368,6 +3446,20 @@ export async function POST(req: Request) {
           required: ['consulta'],
         },
       },
+      {
+        name: 'briefing_caso',
+        description: 'Reúne TODO el contexto de un cliente para un briefing de caso o para redactar un documento: datos del cliente, expedientes y su estado procesal, últimas actuaciones, documentos, cotizaciones, trámites mercantiles/laborales, cobros, pagos y citas. Úsala cuando Amanda pida "prepárame el caso de", "briefing de", "resume el expediente/cliente", o antes de redactar un documento que requiera datos reales del cliente.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            cliente: {
+              type: 'string',
+              description: 'UUID del cliente o su nombre para buscarlo en la BD.',
+            },
+          },
+          required: ['cliente'],
+        },
+      },
     ];
 
     // ── Inyectar fecha actual al system prompt ──────────────────────────
@@ -3547,6 +3639,9 @@ export async function POST(req: Request) {
             } else if (block.name === 'consultar_legal') {
               const input = block.input as any;
               result = await handleConsultarLegal(input.consulta, input.params ?? {});
+            } else if (block.name === 'briefing_caso') {
+              const input = block.input as any;
+              result = await handleBriefingCaso(input.cliente);
             } else {
               result = `Herramienta desconocida: ${block.name}`;
             }

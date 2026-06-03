@@ -100,6 +100,20 @@ export async function POST(req: NextRequest) {
           duracion_minutos: 60,
         };
       }
+    } else if (tipoCita === 'seguimiento' && modalidad === 'firma_documentos') {
+      // Firma de documentos: bloque de 30 min = el slot elegido + el siguiente de 15 min.
+      const sumar = (h: string, min: number) => {
+        const [hh, mm] = h.split(':').map(Number);
+        const tot = hh * 60 + mm + min;
+        return `${String(Math.floor(tot / 60)).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`;
+      };
+      const next = sumar(hora, 15);
+      const hasStart = slots.some((s: any) => s.hora_inicio === hora);
+      const hasNext = slots.some((s: any) => s.hora_inicio === next);
+      console.log('[Agendar] firma check: hora=', hora, ', next=', next, ', hasStart=', hasStart, ', hasNext=', hasNext);
+      if (hasStart && hasNext) {
+        matchedSlot = { hora_inicio: hora, hora_fin: sumar(hora, 30), duracion_minutos: 30 };
+      }
     } else {
       // Seguimiento — exact 15-min slot
       const found = slots.find((s: any) => s.hora_inicio === hora);

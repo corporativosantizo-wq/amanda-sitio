@@ -11,32 +11,48 @@ import Link from 'next/link';
 
 type TipoCita = 'consulta_nueva' | 'seguimiento';
 
+const DIRECCION_OFICINA =
+  '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
+
 // Modalidad ofrecida al público para el seguimiento.
 type ModalidadPublica = 'virtual' | 'entrega_documentos' | 'firma_documentos';
 
-const MODALIDAD_PUBLICA: Record<ModalidadPublica, { label: string; icono: string; desc: string; resumen: string }> = {
+const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
+  label: string; icono: string; desc: string; resumen: string;
+  duracion: string; costo: string; detalle: string; detalleEsDireccion: boolean; nota?: string;
+}> = {
   virtual: {
-    label: 'Seguimiento virtual',
+    label: 'Seguimiento Virtual',
     icono: '💻',
-    desc: 'Explicaciones y consultas por Microsoft Teams.',
+    desc: 'Consultas y explicaciones por Microsoft Teams.',
     resumen: 'Virtual por Teams',
+    duracion: '15 minutos',
+    costo: 'Sin costo',
+    detalle: 'Martes y miércoles',
+    detalleEsDireccion: false,
   },
   entrega_documentos: {
-    label: 'Entrega de documentos',
+    label: 'Entrega de Documentos',
     icono: '📦',
-    desc: 'Recepción o entrega de documentación en la oficina.',
+    desc: 'Recepción o entrega de papelería en oficina.',
     resumen: 'Entrega en oficina',
+    duracion: '15 minutos',
+    costo: 'Sin costo',
+    detalle: DIRECCION_OFICINA,
+    detalleEsDireccion: true,
   },
   firma_documentos: {
-    label: 'Firma de documentos',
+    label: 'Firma de Documentos',
     icono: '✍️',
-    desc: 'Firma de escrituras, poderes o actas en la oficina.',
+    desc: 'Firma de escrituras, poderes y documentos notariales.',
     resumen: 'Firma en oficina',
+    duracion: '30 minutos',
+    costo: 'Sin costo',
+    detalle: DIRECCION_OFICINA,
+    detalleEsDireccion: true,
+    nota: 'Presentarse con DPI original vigente',
   },
 };
-
-const DIRECCION_OFICINA =
-  '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
 
 interface SlotItem {
   hora_inicio: string;
@@ -83,7 +99,7 @@ const TIPO_INFO: Record<TipoCita, {
     duracion: '15 minutos',
     costo: 'Sin costo',
     costoNum: 0,
-    modalidad: 'Virtual por Teams',
+    modalidad: 'Virtual, entrega o firma de documentos',
     dias: [2, 3],
     diasLabel: 'Martes y miercoles',
   },
@@ -444,11 +460,37 @@ function StepTipo({
               <button
                 key={m}
                 onClick={() => onSelect('seguimiento', m)}
-                className="text-left p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:shadow-lg transition-all"
+                className="text-left p-5 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:shadow-lg transition-all flex flex-col"
               >
-                <div className="text-3xl mb-3">{info.icono}</div>
-                <h3 className="font-semibold text-gray-900 text-lg">{info.label}</h3>
-                <p className="text-sm text-gray-500 mt-1">{info.desc}</p>
+                <div className="text-3xl mb-2">{info.icono}</div>
+                <h3 className="font-semibold text-gray-900 text-base">{info.label}</h3>
+                <p className="text-sm text-gray-500 mt-1 flex-1">{info.desc}</p>
+
+                <div className="mt-3 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 text-gray-600">
+                    <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {info.duracion}
+                    <span className="text-gray-300">·</span>
+                    <span className="text-emerald-600 font-medium">{info.costo}</span>
+                  </div>
+                  <div className="flex items-start gap-1.5 text-gray-500">
+                    <svg className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {info.detalleEsDireccion ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      )}
+                    </svg>
+                    <span className="leading-snug">{info.detalle}</span>
+                  </div>
+                  {info.nota && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 mt-1">
+                      ⚠️ {info.nota}
+                    </p>
+                  )}
+                </div>
               </button>
             );
           })}

@@ -177,6 +177,15 @@ function slotsOverlap(
   return startA < endB && startB < endA;
 }
 
+// Suma minutos a una hora 'HH:MM' y devuelve 'HH:MM' (zero-padded).
+function sumarMinutosHora(hora: string, min: number): string {
+  const [h, m] = hora.split(':').map(Number);
+  const total = h * 60 + m + min;
+  const fh = Math.floor(total / 60);
+  const fm = total % 60;
+  return `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
+}
+
 // ── CRUD Citas ──────────────────────────────────────────────────────────────
 
 interface ListCitasParams {
@@ -252,6 +261,13 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
       slotValido = hasStart && hasHalf;
       console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
+    } else if (input.tipo === 'seguimiento' && input.modalidad === 'firma_documentos') {
+      // La firma de documentos dura 30 min = dos sub-slots de 15 min consecutivos.
+      const next = sumarMinutosHora(input.hora_inicio, 15);
+      const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
+      const hasNext = disponibles.some((s: SlotDisponible) => s.hora_inicio === next);
+      slotValido = hasStart && hasNext;
+      console.log('[crearCita] firma validation: hora=', input.hora_inicio, ', next=', next, ', hasStart=', hasStart, ', hasNext=', hasNext, ', slotValido=', slotValido);
     } else {
       slotValido = disponibles.some(
         (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin

@@ -71,67 +71,46 @@ function formatHora12(hora: string) {
 
 const SUGGESTION_CATEGORIES = [
   {
-    label: 'Gestión de Casos',
-    icon: '📋',
+    label: 'Documentos Notariales',
+    icon: '📜',
     color: '#0d9488',
     items: [
-      '¿Qué expedientes tengo activos?',
-      'Resume el estado del caso de [cliente]',
-      '¿Qué audiencias tengo esta semana?',
+      'Redacta acta de asamblea para [cliente]',
+      'Redacta acta de nombramiento para [cliente]',
+      'Redacta poder general/especial para [cliente]',
+      'Redacta declaración jurada',
     ],
   },
   {
-    label: 'Comunicación',
-    icon: '✉️',
+    label: 'Memoriales y Escritos',
+    icon: '⚖️',
     color: '#6366f1',
     items: [
-      'Envía email de seguimiento a [cliente]',
-      'Cobra Q[monto] a [cliente]',
-      'Envía documentos disponibles a [cliente]',
-      'Redacta email personalizado',
+      'Redacta memorial para expediente [número]',
+      'Redacta recurso de apelación para [expediente]',
+      'Redacta amparo para [expediente]',
+      'Redacta contestación de demanda para [expediente]',
     ],
   },
   {
-    label: 'Documentos',
-    icon: '📄',
+    label: 'Contratos',
+    icon: '📋',
     color: '#8b5cf6',
     items: [
-      'Genera contrato de arrendamiento',
-      'Genera contrato laboral',
-      'Genera acta de asamblea',
-      'Genera recurso de amparo',
+      'Redacta contrato de arrendamiento',
+      'Redacta contrato de prestación de servicios',
+      'Redacta contrato de trabajo',
+      'Redacta NDA / confidencialidad',
     ],
   },
   {
-    label: 'Cobros y Pagos',
-    icon: '💰',
+    label: 'Briefing de Caso',
+    icon: '📊',
     color: '#f59e0b',
     items: [
-      '¿Quién me debe?',
-      'Genera cotización para [cliente]',
-      'Confirma pago de [cliente]',
-      'Envía estado de cuenta a [cliente]',
-    ],
-  },
-  {
-    label: 'Tareas',
-    icon: '✓',
-    color: '#10b981',
-    items: [
-      '¿Qué tengo pendiente hoy?',
-      'Anota: [tarea]',
-      'Migra las tareas de ayer',
-      '¿Qué tareas tiene el contador?',
-    ],
-  },
-  {
-    label: 'Reportes',
-    icon: '📊',
-    color: '#ef4444',
-    items: [
-      'Resumen de clientes recientes',
-      '¿Cuántas consultas tuve este mes?',
-      '¿Cuánto he facturado?',
+      'Prepárame el caso de [cliente]',
+      'Resume el expediente [número]',
+      '¿Cuáles son los plazos pendientes de [cliente]?',
     ],
   },
 ];
@@ -164,6 +143,8 @@ export default function AIAssistantPage() {
     name: string; size: number; storagePath: string; textoExtraido?: string | null;
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -440,6 +421,46 @@ export default function AIAssistantPage() {
     setError(null);
   };
 
+  // Exporta el texto redactado a un documento Word (.docx) y lo descarga.
+  const exportarDocx = async (content: string, id: string) => {
+    setExportingId(id);
+    try {
+      await getToken().catch(() => {});
+      const res = await adminFetch('/api/admin/ai/export-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, filename: 'documento-legal' }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? 'No se pudo exportar el documento');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `documento-legal-${new Date().toISOString().slice(0, 10)}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message ?? 'Error al exportar a DOCX');
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const copiar = async (content: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+    } catch {
+      setError('No se pudo copiar al portapapeles');
+    }
+  };
+
   // ═════════════════════════════════════════════════════════════════════════
   // RENDER
   // ═════════════════════════════════════════════════════════════════════════
@@ -635,11 +656,11 @@ export default function AIAssistantPage() {
               </button>
             )}
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center text-lg">
-              ⚖️
+              ✍️
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-800">Asistente IA</h1>
-              <p className="text-[11px] text-slate-400">IURISLEX — Documentos, consultas, emails y tareas</p>
+              <h1 className="text-base font-bold text-slate-800">Redactor Legal</h1>
+              <p className="text-[11px] text-slate-400">Asistente de redacción de documentos legales</p>
             </div>
           </div>
           {messages.length > 0 && (
@@ -657,10 +678,11 @@ export default function AIAssistantPage() {
           {messages.length === 0 ? (
             <div className="mt-4">
               <div className="text-center mb-8">
-                <div className="text-5xl mb-4">⚖️</div>
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Hola Amanda</h2>
+                <div className="text-5xl mb-4">✍️</div>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Redactor Legal</h2>
                 <p className="text-sm text-slate-500 max-w-md mx-auto">
-                  Puedo generar documentos Word, redactar emails, calcular honorarios, gestionar tareas y consultar el sistema.
+                  Redacto documentos legales conforme a la legislación guatemalteca: actas, poderes, memoriales,
+                  recursos, amparos y contratos. También preparo briefings de caso con todo el contexto del cliente.
                 </p>
               </div>
 
@@ -736,6 +758,26 @@ export default function AIAssistantPage() {
                       ) : (
                         <span>{msg.content}</span>
                       )}
+
+                      {/* Acciones de documento (solo respuestas del redactor, no borradores de email) */}
+                      {msg.role === 'assistant' && !showDraftCard && msg.content.trim().length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-slate-100">
+                          <button
+                            onClick={() => exportarDocx(msg.content, msg.id)}
+                            disabled={exportingId === msg.id}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-50 transition-colors"
+                          >
+                            {exportingId === msg.id ? 'Exportando…' : '📄 Exportar a DOCX'}
+                          </button>
+                          <button
+                            onClick={() => copiar(msg.content, msg.id)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            {copiedId === msg.id ? '✓ Copiado' : '📋 Copiar'}
+                          </button>
+                        </div>
+                      )}
+
                       <div className={`text-[10px] mt-1.5 text-right ${msg.role === 'user' ? 'opacity-60' : 'text-slate-400'}`}>
                         {msg.timestamp.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
                       </div>
