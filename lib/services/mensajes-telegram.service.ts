@@ -42,8 +42,11 @@ export const FRASES_MOTIVANTES: string[] = [
   'Hoy es buen día para dejar todo un paso adelante.',
 ];
 
-function fraseAleatoria(): string {
-  return FRASES_MOTIVANTES[Math.floor(Math.random() * FRASES_MOTIVANTES.length)];
+// Elige una frase al azar. Si se pasa un pool propio con valores, usa ese;
+// si no, cae al array genérico.
+function fraseAleatoria(pool?: string[] | null): string {
+  const frases = pool && pool.length > 0 ? pool : FRASES_MOTIVANTES;
+  return frases[Math.floor(Math.random() * frases.length)];
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -60,6 +63,7 @@ export interface MensajeProgramado {
   dia_mes: number | null;      // 1-31; si tiene valor, mensual (ignora dias_semana)
   mensaje_template: string;
   usar_frase_motivante: boolean;
+  frases_personalizadas: string[] | null; // pool propio de frases; NULL/vacío = genérico
   activo: boolean;
   ultima_enviada: string | null; // 'YYYY-MM-DD'
   created_at: string;
@@ -129,10 +133,13 @@ function fechaHoyEspanol(): string {
 
 // ── Template rendering ─────────────────────────────────────────────────────
 
-export function renderTemplate(template: string, opts: { usarFrase: boolean }): string {
+export function renderTemplate(
+  template: string,
+  opts: { usarFrase: boolean; frasesPersonalizadas?: string[] | null },
+): string {
   let out = template;
   if (opts.usarFrase) {
-    out = out.replace(/\{frase_motivante\}/g, fraseAleatoria());
+    out = out.replace(/\{frase_motivante\}/g, fraseAleatoria(opts.frasesPersonalizadas));
   }
   out = out.replace(/\{nombre_asistente\}/g, NOMBRE_ASISTENTE);
   out = out.replace(/\{fecha_hoy\}/g, fechaHoyEspanol());
@@ -346,7 +353,10 @@ export async function processScheduledMessages(): Promise<{
  * lo hace processScheduledMessages para el flujo automático).
  */
 export async function enviarMensaje(m: MensajeProgramado): Promise<void> {
-  const text = renderTemplate(m.mensaje_template, { usarFrase: m.usar_frase_motivante });
+  const text = renderTemplate(m.mensaje_template, {
+    usarFrase: m.usar_frase_motivante,
+    frasesPersonalizadas: m.frases_personalizadas,
+  });
   const chatId = resolveChatId(m);
   await sendTelegramMessage(text, { parse_mode: 'HTML', chatId });
 }
@@ -364,6 +374,9 @@ export async function enviarAhora(id: string): Promise<{ ok: true; preview: stri
     .update({ ultima_enviada: gtToday(), updated_at: new Date().toISOString() })
     .eq('id', id);
 
-  const preview = renderTemplate(m.mensaje_template, { usarFrase: m.usar_frase_motivante });
+  const preview = renderTemplate(m.mensaje_template, {
+    usarFrase: m.usar_frase_motivante,
+    frasesPersonalizadas: m.frases_personalizadas,
+  });
   return { ok: true, preview };
 }
