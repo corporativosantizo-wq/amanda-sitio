@@ -75,6 +75,18 @@ export function formatearHora(hora: string): string {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// Escapa texto controlado por el usuario antes de inlinearlo en HTML de email
+// (defensa contra inyección de HTML; algunos valores provienen de la página
+// pública /agendar sin autenticación).
+export function escEmail(s: unknown): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function tealButton(label: string, href: string): string {
   return `
     <table><tr><td style="padding:16px 0;">
@@ -138,7 +150,7 @@ function teamsSeccionHTML(cita: any): string {
 function oficinaSeccionHTML(cita: any): string {
   const modalidad = modalidadDeCita(cita);
   const esFirma = modalidad === 'firma_documentos';
-  const docs = (cita.documentos_entrega ?? '').toString().trim();
+  const docs = escEmail((cita.documentos_entrega ?? '').toString().trim());
   const lugarLabel = esFirma ? 'Lugar' : 'Dirección';
 
   const requisitosFirma = esFirma ? `
@@ -205,7 +217,7 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
     </table>`;
   }
 
-  const saludo = clienteNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${clienteNombre}</strong>,</p>` : '';
+  const saludo = clienteNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(clienteNombre)}</strong>,</p>` : '';
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Confirmada</h2>

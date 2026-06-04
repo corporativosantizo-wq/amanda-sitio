@@ -1,8 +1,10 @@
 // ============================================================================
 // GET /api/admin/jurisprudencia/procesar-token
-// Returns Edge Function URL + service role key for direct invocation.
-// This lightweight route returns instantly — the actual processing happens
-// client → Edge Function directly, bypassing Vercel's timeout.
+// Returns the Edge Function URL + the ANON key for direct invocation from the
+// browser (bypassing Vercel's timeout). The Edge Function `procesar-tomo` runs
+// on Supabase with its OWN service_role env to do privileged work, so the
+// caller only needs a valid JWT (the public anon key) — we NEVER ship the
+// service_role key to the browser.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,7 +15,8 @@ export async function GET(req: NextRequest) {
   if (session instanceof NextResponse) return session;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Anon key (público por diseño) para invocar la Edge Function; jamás el service_role.
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
     return NextResponse.json(

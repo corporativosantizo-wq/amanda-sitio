@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { isValidSlug } from '@/lib/utils/slug';
 import { htmlToSpeechText, textHash, synthesizeSpeech } from '@/lib/blog/tts';
+import { checkPublicTtsRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // la síntesis de artículos largos puede tardar
@@ -122,6 +123,18 @@ export async function GET(
   }
 
   // 4. No está en cache → generar con OpenAI.
+  // Rate limit por IP SOLO en el camino de síntesis (la generación cuesta dinero).
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown';
+  if (!checkPublicTtsRateLimit(ip).success) {
+    return NextResponse.json(
+      { error: 'Demasiadas generaciones de audio. Intenta de nuevo en unos minutos.' },
+      { status: 429 },
+    );
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

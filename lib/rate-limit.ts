@@ -71,3 +71,12 @@ export function checkEmailRateLimit(userId: string): { success: boolean; remaini
 export function checkMasivoRateLimit(userId: string): { success: boolean; remaining: number } {
   return checkLimit('masivo', userId, { max: 5, windowMs: 60_000 });
 }
+
+/**
+ * TTS público del blog (OpenAI): 6 SÍNTESIS por 10 min por IP. Solo se aplica
+ * cuando el audio NO está en cache (la síntesis cuesta dinero); el servido del
+ * MP3 cacheado y las peticiones Range NO se limitan.
+ */
+export function checkPublicTtsRateLimit(ip: string): { success: boolean; remaining: number } {
+  return checkLimit('public-tts', ip, { max: 6, windowMs: 10 * 60_000 });
+}

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 
 const db = () => createAdminClient();
 
@@ -35,8 +36,10 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (busqueda) {
+      // Escapar el input de usuario para evitar inyección de filtros PostgREST.
+      const v = pgrstQuote(`%${busqueda}%`);
       query = query.or(
-        `titulo.ilike.%${busqueda}%,numero_documento.ilike.%${busqueda}%,nombre_archivo.ilike.%${busqueda}%,descripcion.ilike.%${busqueda}%`
+        `titulo.ilike.${v},numero_documento.ilike.${v},nombre_archivo.ilike.${v},descripcion.ilike.${v}`
       );
     }
 
