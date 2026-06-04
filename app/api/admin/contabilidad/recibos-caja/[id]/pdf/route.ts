@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/recibos-caja/[id]/pdf/route.ts
 // GET → Redirige a una URL firmada (1h) del PDF en storage.
@@ -10,6 +11,9 @@ import { handleApiError } from '@/lib/api-error';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const url = await urlFirmadaPDF(id);

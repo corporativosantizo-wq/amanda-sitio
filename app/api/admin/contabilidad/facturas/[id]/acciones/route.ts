@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/facturas/[id]/acciones/route.ts
 // POST → anular | emitir_fel | enviar
@@ -18,6 +19,9 @@ type Accion = 'anular' | 'emitir_fel' | 'enviar';
 const ACCIONES_VALIDAS: Accion[] = ['anular', 'emitir_fel', 'enviar'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const body = await request.json();

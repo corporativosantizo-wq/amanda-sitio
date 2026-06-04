@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/proveedores/route.ts
 // GET: Listar/buscar proveedores · POST: Crear proveedor
@@ -8,6 +9,9 @@ import { listarProveedores, crearProveedor, ProveedorError } from '@/lib/service
 import type { TipoProveedor } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const s = req.nextUrl.searchParams;
     const result = await listarProveedores({
@@ -25,6 +29,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const body = await req.json();
     if (!body.nombre?.trim()) {

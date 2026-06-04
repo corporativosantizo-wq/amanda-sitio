@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/clientes/representantes/route.ts
 // GET: Buscar representantes legales por nombre (autocomplete)
@@ -8,6 +9,9 @@ import { buscarRepresentantes, RepresentanteError } from '@/lib/services/represe
 import { handleApiError } from '@/lib/api-error';
 
 export async function GET(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const s = req.nextUrl.searchParams;
     const q = s.get('q') ?? '';

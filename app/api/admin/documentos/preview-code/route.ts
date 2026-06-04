@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // GET /api/admin/documentos/preview-code?cliente_id=...&tipo=...
 // Preview del código y nombre de archivo que se generará
@@ -7,6 +8,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { previewCodigoDocumento, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function GET(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const s = req.nextUrl.searchParams;
     const clienteId = s.get('cliente_id');

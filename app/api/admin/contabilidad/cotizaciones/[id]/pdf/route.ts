@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // GET /api/admin/contabilidad/cotizaciones/[id]/pdf
 // Genera PDF de cotización al vuelo y lo retorna como descarga
@@ -15,6 +16,9 @@ import { handleApiError } from '@/lib/api-error';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const cotizacion = await obtenerCotizacion(id);

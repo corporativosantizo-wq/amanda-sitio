@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/cotizaciones/[id]/acciones/route.ts
 // POST → Ejecutar acciones sobre una cotización
@@ -24,6 +25,9 @@ type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio'
 const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const body = await request.json();

@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // GET /api/admin/documentos
 // Listar documentos con filtros, o carpetas de clientes
@@ -7,6 +8,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listarDocumentos, clientesConDocumentos, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function GET(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const s = req.nextUrl.searchParams;
 

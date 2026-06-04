@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // POST /api/admin/documentos/transcribir
 // Transcribe un PDF a DOCX usando Claude IA (página por página)
@@ -10,6 +11,9 @@ import { DocumentoError } from '@/lib/services/documentos.service';
 export const maxDuration = 300; // 5 minutes for long documents
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { documento_id, opciones } = await req.json();
 

@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/clientes/grupos/[id]/route.ts
 // GET: Detalle grupo · PATCH: Agregar/remover empresa
@@ -12,6 +13,9 @@ import { handleApiError } from '@/lib/api-error';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await ctx.params;
     const grupo = await obtenerGrupo(id);
@@ -26,6 +30,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await ctx.params;
     const body = await req.json();

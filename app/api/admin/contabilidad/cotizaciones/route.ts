@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/cotizaciones/route.ts
 // GET  → Lista cotizaciones (con filtros y paginación)
@@ -18,6 +19,9 @@ import type { EstadoCotizacion, CotizacionInsert } from '@/lib/types';
 // import { auth } from '@clerk/nextjs/server';
 
 export async function GET(request: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     // TODO: Verificar autenticación
     // const { userId } = await auth();
@@ -50,6 +54,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     // TODO: Verificar autenticación
 

@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // POST /api/admin/documentos/upload
 // Registra documentos ya subidos a Storage (recibe solo metadata, no archivos)
@@ -8,6 +9,9 @@ import { currentUser } from '@clerk/nextjs/server';
 import { crearDocumento, extraerYGuardarTexto, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const user = await currentUser();
     const userEmail = user?.emailAddresses?.[0]?.emailAddress ?? null;

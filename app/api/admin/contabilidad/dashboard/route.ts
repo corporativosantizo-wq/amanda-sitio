@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/dashboard/route.ts
 // GET → Dashboard contable: resumen de cotizaciones, facturas, pagos, gastos
@@ -11,6 +12,9 @@ import { resumenGastos } from '@/lib/services/gastos.service';
 import { handleApiError } from '@/lib/api-error';
 
 export async function GET(request: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { searchParams } = new URL(request.url);
     const desde = searchParams.get('desde') ?? undefined;

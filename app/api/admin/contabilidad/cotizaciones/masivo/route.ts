@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/cotizaciones/masivo/route.ts
 // POST → Acciones masivas sobre cotizaciones (enviar, aceptar)
@@ -14,6 +15,9 @@ import { handleApiError } from '@/lib/api-error';
 type Accion = 'enviar_masivo' | 'aceptar_masivo';
 
 export async function POST(request: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const body = await request.json();
     const accion = body.accion as Accion;

@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // POST /api/admin/documentos/generar
 // Genera un documento Word (.docx) basado en una plantilla legal
@@ -53,6 +54,9 @@ async function uploadAndSign(storage: any, buffer: Buffer, storagePath: string) 
 }
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const body = await req.json();
     const { tipo, plantilla_id, datos } = body;

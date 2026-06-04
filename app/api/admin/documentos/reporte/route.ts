@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // GET /api/admin/documentos/reporte — Estadísticas de escaneo de documentos
 // Query params: desde, hasta, tipo
@@ -10,6 +11,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const db = () => createAdminClient();
 
 export async function GET(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const s = req.nextUrl.searchParams;
     const tipo = s.get('tipo') || null;

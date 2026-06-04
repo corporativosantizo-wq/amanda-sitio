@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // POST /api/admin/clientes/import
 // Importación masiva de clientes desde Excel
@@ -66,6 +67,9 @@ function mapTipo(raw: string, nombre: string): 'persona' | 'empresa' {
 }
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const body = await req.json();
     const rows: ImportRow[] = body.rows;

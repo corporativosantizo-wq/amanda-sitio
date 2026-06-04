@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/clientes/grupos/route.ts
 // GET: Listar grupos · POST: Crear grupo
@@ -8,6 +9,9 @@ import { listarGrupos, crearGrupo, GrupoError } from '@/lib/services/grupos.serv
 import { handleApiError } from '@/lib/api-error';
 
 export async function GET() {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const grupos = await listarGrupos();
     return NextResponse.json({ grupos });
@@ -20,6 +24,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const body = await req.json();
     if (!body.nombre?.trim()) {

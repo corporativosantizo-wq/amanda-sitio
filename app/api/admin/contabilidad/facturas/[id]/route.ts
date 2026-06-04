@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/facturas/[id]/route.ts
 // GET → Obtener factura con items, cliente y pagos
@@ -10,6 +11,9 @@ import { handleApiError } from '@/lib/api-error';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const factura = await obtenerFactura(id);

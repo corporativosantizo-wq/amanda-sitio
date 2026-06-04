@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // app/api/admin/contabilidad/pagos/[id]/route.ts
 // GET  → Obtener pago con relaciones
@@ -17,6 +18,9 @@ import { handleApiError } from '@/lib/api-error';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const pago = await obtenerPago(id);
@@ -30,6 +34,9 @@ type Accion = 'confirmar' | 'rechazar' | 'subir_comprobante';
 const ACCIONES_VALIDAS: Accion[] = ['confirmar', 'rechazar', 'subir_comprobante'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const body = await request.json();

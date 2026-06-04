@@ -1,3 +1,4 @@
+import { requireAdmin } from '@/lib/auth/api-auth';
 // ============================================================================
 // GET /api/admin/documentos/[id]/preview
 // Proxy endpoint: streams the file from Supabase Storage through our domain
@@ -29,6 +30,9 @@ function getExtension(filename: string): string {
 }
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
+  const __adminGuard = await requireAdmin();
+  if (__adminGuard instanceof NextResponse) return __adminGuard;
+
   try {
     const { id } = await params;
     const doc = await obtenerDocumento(id);
