@@ -231,8 +231,15 @@ async function generarReporteAstrologico(): Promise<string> {
     const client = getAnthropicClient();
 
     const base: Anthropic.MessageCreateParamsNonStreaming = {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      model: 'claude-sonnet-4-6',
+      // Holgura para que el thinking adaptativo no trunque el reporte (~3500 chars):
+      // los tokens de razonamiento cuentan dentro de max_tokens.
+      max_tokens: 4000,
+      // Superficie de request 4.6: thinking adaptativo + effort (ambos GA, sin
+      // beta header). El modelo decide cuánto razonar al sintetizar las
+      // efemérides reales en el reporte estructurado.
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
       system: systemPromptReporte(inicio, fin),
       // web_search es una herramienta server-side de Anthropic.
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 } as Anthropic.ToolUnion],

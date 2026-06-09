@@ -13,6 +13,10 @@ import { handleApiError } from '@/lib/api-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
+// {reporte_astrologico} genera el reporte con la API de Anthropic (web_search +
+// thinking adaptativo), que puede tardar. Holgura sobre el timeout por defecto.
+export const maxDuration = 60;
+
 export async function POST(_req: NextRequest, ctx: Ctx) {
   const session = await requireAdmin();
   if (session instanceof NextResponse) return session;

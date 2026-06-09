@@ -9,6 +9,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 import { processScheduledMessages } from '@/lib/services/mensajes-telegram.service';
 
+// El reporte astrológico ({reporte_astrologico}) usa la API de Anthropic con
+// web_search + thinking adaptativo, lo cual puede tardar bastante. Damos holgura
+// para no exceder el timeout por defecto de la función serverless.
+export const maxDuration = 60;
+
 export async function GET(req: NextRequest) {
   const authError = requireCronAuth(req);
   if (authError) return authError;
@@ -20,10 +25,10 @@ export async function GET(req: NextRequest) {
       `enviados=${result.enviados} errores=${result.errores.length}`,
     );
     return NextResponse.json({ ok: true, ...result });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[mensajes-telegram] Error:', err);
     return NextResponse.json(
-      { error: err.message ?? 'Error interno' },
+      { error: err instanceof Error ? err.message : 'Error interno' },
       { status: 500 },
     );
   }
