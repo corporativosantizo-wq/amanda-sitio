@@ -4,8 +4,10 @@
 // Tabla: legal.mensajes_programados_telegram
 // ============================================================================
 
+import type Anthropic from '@anthropic-ai/sdk';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
+import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 
 const db = () => createAdminClient();
 const TZ = 'America/Guatemala';
@@ -144,6 +146,141 @@ export function renderTemplate(
   out = out.replace(/\{nombre_asistente\}/g, NOMBRE_ASISTENTE);
   out = out.replace(/\{fecha_hoy\}/g, fechaHoyEspanol());
   return out;
+}
+
+// ── Reporte astrológico ({reporte_astrologico}) ─────────────────────────────
+// Genera un reporte semanal de astrología con la API de Anthropic + web_search
+// para las efemérides reales de la semana. Cache en memoria por día.
+
+const REPORTE_VAR = '{reporte_astrologico}';
+const TELEGRAM_MAX_CHARS = 4096;
+
+const FALLBACK_REPORTE =
+  '🔮 Los astros están en silencio esta semana, pero tu energía Cáncer con ascendente Acuario sigue brillando. ¡Hermosa semana! ❤️';
+
+// Símbolos de los 12 signos (orden zodiacal). Se usan para truncar sin partir
+// un signo a la mitad si el mensaje excede el límite de Telegram.
+const SIGNOS_ZODIACO = ['♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓'];
+
+// Cache en memoria: si ya se generó el reporte hoy (en este proceso), se reusa
+// para no llamar a la API dos veces el mismo día.
+let reporteCache: { fecha: string; texto: string } | null = null;
+
+// El reporte del sábado cubre del sábado actual al viernes siguiente.
+function semanaReporte(): { inicio: string; fin: string } {
+  const hoyStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+  // Mediodía local para evitar saltos por DST / medianoche al sumar días.
+  const inicio = new Date(`${hoyStr}T12:00:00`);
+  const fin = new Date(inicio);
+  fin.setDate(fin.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString('es-GT', { day: 'numeric', month: 'long' });
+  return { inicio: fmt(inicio), fin: fmt(fin) };
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Si el texto excede el límite de Telegram, trunca en el último signo completo
+// que quepa (corta justo antes del símbolo del signo que se desbordaría).
+function truncarParaTelegram(text: string, limite = TELEGRAM_MAX_CHARS): string {
+  if (text.length <= limite) return text;
+  const recortado = text.slice(0, limite);
+  let corte = -1;
+  for (const s of SIGNOS_ZODIACO) {
+    const idx = recortado.lastIndexOf(s);
+    if (idx > corte) corte = idx;
+  }
+  return corte > 0 ? text.slice(0, corte).trimEnd() : recortado;
+}
+
+function systemPromptReporte(inicio: string, fin: string): string {
+  return `Eres una astróloga profesional experta en tránsitos planetarios, aspectos y casas astrológicas. Escribes reportes semanales detallados con conocimiento real de efemérides.
+
+Genera un reporte astrológico para la semana del ${inicio} al ${fin} de 2026.
+
+IMPORTANTE: El reporte es para Anita, Sol en Cáncer (♋) con Ascendente en Acuario (♒). Personaliza la primera sección para ella.
+
+Estructura del reporte:
+
+1. ♋ TU SEMANA, ANITA (Cáncer ☀️ · Acuario ↑):
+Predicción personalizada de 4-5 líneas basada en los tránsitos que afectan a Cáncer y cómo su ascendente Acuario modifica la energía. Menciona qué planetas transitan sus casas solares y del ascendente.
+
+2. 🪐 TRÁNSITOS PRINCIPALES:
+Los 3-4 aspectos planetarios más importantes de la semana. Usa símbolos: cuadraturas □, trígonos △, oposiciones ☍, conjunciones ☌, sextiles ⚹. Símbolos planetarios: ☿☀♂♃♄♅♆♇♀☽. Explica brevemente el efecto de cada aspecto.
+
+3. 🌙 LUNA:
+Fase lunar, en qué signo transita y qué energía trae.
+
+4. ⭐ LOS 12 SIGNOS:
+Para cada signo (♈♉♊♋♌♍♎♏♐♑♒♓) una predicción de 1-2 líneas.
+
+5. 💫 CONSEJO DE LA SEMANA:
+Un consejo basado en la energía planetaria predominante.
+
+Formato: texto plano para Telegram con emojis. NO uses markdown, NO uses asteriscos para negritas. Máximo 3500 caracteres.
+Empieza directamente con: ♋ TU SEMANA, ANITA
+No repitas el título del reporte (ya está en el template).`;
+}
+
+// Llama a la API de Anthropic con web_search habilitado. Devuelve el reporte
+// como texto plano, o FALLBACK_REPORTE si algo falla.
+async function generarReporteAstrologico(): Promise<string> {
+  try {
+    const { inicio, fin } = semanaReporte();
+    const client = getAnthropicClient();
+
+    const base: Anthropic.MessageCreateParamsNonStreaming = {
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      system: systemPromptReporte(inicio, fin),
+      // web_search es una herramienta server-side de Anthropic.
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 } as Anthropic.ToolUnion],
+      messages: [
+        {
+          role: 'user',
+          content: `Busca las efemérides y posiciones planetarias reales de la semana del ${inicio} al ${fin} de 2026 y genera el reporte astrológico.`,
+        },
+      ],
+    };
+
+    let response = await client.messages.create(base);
+
+    // web_search es server-side: si el loop de búsqueda llega al límite devuelve
+    // pause_turn. Reenviamos para que el servidor continúe donde quedó.
+    let guard = 0;
+    while (response.stop_reason === 'pause_turn' && guard < 5) {
+      response = await client.messages.create({
+        ...base,
+        messages: [...base.messages, { role: 'assistant', content: response.content }],
+      });
+      guard++;
+    }
+
+    const texto = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+      .trim();
+
+    if (!texto) throw new Error('Respuesta vacía del modelo');
+    return texto;
+  } catch (err) {
+    console.error('[mensajes-telegram] Error generando reporte astrológico:', err);
+    return FALLBACK_REPORTE;
+  }
+}
+
+// Wrapper con cache diario: no regenera si ya se produjo hoy.
+async function obtenerReporteAstrologico(): Promise<string> {
+  const hoy = gtToday();
+  if (reporteCache && reporteCache.fecha === hoy) return reporteCache.texto;
+
+  const texto = await generarReporteAstrologico();
+  if (texto !== FALLBACK_REPORTE) {
+    reporteCache = { fecha: hoy, texto };
+  }
+  return texto;
 }
 
 function chatIdFor(destino: DestinoMensaje): string | undefined {
@@ -352,13 +489,23 @@ export async function processScheduledMessages(): Promise<{
  * Renderiza y envía un mensaje a su destino. No actualiza ultima_enviada (eso
  * lo hace processScheduledMessages para el flujo automático).
  */
-export async function enviarMensaje(m: MensajeProgramado): Promise<void> {
-  const text = renderTemplate(m.mensaje_template, {
+export async function enviarMensaje(m: MensajeProgramado): Promise<string> {
+  let text = renderTemplate(m.mensaje_template, {
     usarFrase: m.usar_frase_motivante,
     frasesPersonalizadas: m.frases_personalizadas,
   });
+
+  // {reporte_astrologico}: genera el reporte vía Anthropic. Se escapa el HTML
+  // del reporte (texto plano) y se trunca al límite de Telegram si hace falta.
+  if (text.includes(REPORTE_VAR)) {
+    const reporte = escapeHtml(await obtenerReporteAstrologico());
+    text = text.split(REPORTE_VAR).join(reporte);
+    text = truncarParaTelegram(text);
+  }
+
   const chatId = resolveChatId(m);
   await sendTelegramMessage(text, { parse_mode: 'HTML', chatId });
+  return text;
 }
 
 /**
@@ -367,16 +514,12 @@ export async function enviarMensaje(m: MensajeProgramado): Promise<void> {
  */
 export async function enviarAhora(id: string): Promise<{ ok: true; preview: string }> {
   const m = await obtenerMensaje(id);
-  await enviarMensaje(m);
+  const preview = await enviarMensaje(m);
 
   await db()
     .from('mensajes_programados_telegram')
     .update({ ultima_enviada: gtToday(), updated_at: new Date().toISOString() })
     .eq('id', id);
 
-  const preview = renderTemplate(m.mensaje_template, {
-    usarFrase: m.usar_frase_motivante,
-    frasesPersonalizadas: m.frases_personalizadas,
-  });
   return { ok: true, preview };
 }
