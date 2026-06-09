@@ -651,26 +651,39 @@ export async function enviarRecordatorios(): Promise<{
   let enviados_1h = 0;
   let completadas = 0;
 
-  // Recordatorios 24h: citas de mañana que no se han enviado
-  const { data: citas24h } = await db()
-    .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
-    .eq('fecha', mananaStr)
-    .eq('recordatorio_24h_enviado', false)
-    .in('estado', ['pendiente', 'confirmada']);
+  // Horario de oficina Guatemala (UTC-6, sin horario de verano): 8 AM – 6 PM.
+  // `horaActual` ya viene en hora GT (Intl con timeZone America/Guatemala).
+  const horaActualH = Number(horaActual.split(':')[0]);
+  const enHorarioOficina = horaActualH >= 8 && horaActualH < 18;
 
-  for (const cita of citas24h ?? []) {
-    if (cita.cliente?.email) {
-      try {
-        const email = emailRecordatorio24h(cita);
-        await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
-        await db()
-          .from('citas')
-          .update({ recordatorio_24h_enviado: true })
-          .eq('id', cita.id);
-        enviados_24h++;
-      } catch {
-        console.warn('[Citas] Error enviando recordatorio 24h para cita', cita.id);
+  // Recordatorios 24h: SOLO dentro de horario de oficina. Como el cron detecta
+  // las citas de "mañana" desde la medianoche GT, enviarlas en ese momento
+  // dispararía correos a las 12 AM. Fuera de horario (6 PM – 7:59 AM) los
+  // diferimos sin marcarlos como enviados: el cron corre cada 15 min y los
+  // mandará en cuanto entre al horario de oficina (8:00 AM). La cita sigue
+  // siendo "mañana" durante todo el día previo, así que ninguno se pierde.
+  // Los recordatorios de 1h NO se gatean (son urgentes, la cita es pronto).
+  if (enHorarioOficina) {
+    const { data: citas24h } = await db()
+      .from('citas')
+      .select('*, cliente:clientes(id, codigo, nombre, email)')
+      .eq('fecha', mananaStr)
+      .eq('recordatorio_24h_enviado', false)
+      .in('estado', ['pendiente', 'confirmada']);
+
+    for (const cita of citas24h ?? []) {
+      if (cita.cliente?.email) {
+        try {
+          const email = emailRecordatorio24h(cita);
+          await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
+          await db()
+            .from('citas')
+            .update({ recordatorio_24h_enviado: true })
+            .eq('id', cita.id);
+          enviados_24h++;
+        } catch {
+          console.warn('[Citas] Error enviando recordatorio 24h para cita', cita.id);
+        }
       }
     }
   }
