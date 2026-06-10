@@ -223,11 +223,31 @@ Empieza directamente con: ♋ TU SEMANA, ANITA
 No repitas el título del reporte (ya está en el template).`;
 }
 
+// Deadline total para la generación (web_search + thinking). DEBE ser menor que
+// el maxDuration de las rutas (90s) para convertir un timeout duro de Vercel
+// (504) en un fallback elegante: si Anthropic tarda demasiado, abortamos, se
+// captura el error y se envía FALLBACK_REPORTE en vez de matar la función.
+const REPORTE_DEADLINE_MS = 70_000;
+
 // Llama a la API de Anthropic con web_search habilitado. Devuelve el reporte
 // como texto plano, o FALLBACK_REPORTE si algo falla.
 async function generarReporteAstrologico(): Promise<string> {
+  const t0 = Date.now();
+  const { inicio, fin } = semanaReporte();
+  const tieneKey = !!process.env.ANTHROPIC_API_KEY;
+  console.log(
+    `[reporte-astro] Iniciando generación | semana ${inicio} → ${fin} | ANTHROPIC_API_KEY presente=${tieneKey}`,
+  );
+
+  if (!tieneKey) {
+    console.error('[reporte-astro] ANTHROPIC_API_KEY NO está en el entorno → fallback');
+    return FALLBACK_REPORTE;
+  }
+
+  // Tiempo restante antes del deadline, para pasar como timeout a cada request.
+  const restante = () => REPORTE_DEADLINE_MS - (Date.now() - t0);
+
   try {
-    const { inicio, fin } = semanaReporte();
     const client = getAnthropicClient();
 
     const base: Anthropic.MessageCreateParamsNonStreaming = {
@@ -241,8 +261,8 @@ async function generarReporteAstrologico(): Promise<string> {
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium' },
       system: systemPromptReporte(inicio, fin),
-      // web_search es una herramienta server-side de Anthropic.
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 } as Anthropic.ToolUnion],
+      // web_search es server-side de Anthropic. max_uses bajo para acotar latencia.
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 } as Anthropic.ToolUnion],
       messages: [
         {
           role: 'user',
@@ -251,29 +271,46 @@ async function generarReporteAstrologico(): Promise<string> {
       ],
     };
 
-    let response = await client.messages.create(base);
+    console.log('[reporte-astro] Llamando a Anthropic | model=claude-sonnet-4-6 | web_search max_uses=3');
+    // timeout: deadline restante; maxRetries: 0 para que los reintentos del SDK
+    // (backoff por defecto = 2) no consuman el presupuesto de tiempo.
+    let response = await client.messages.create(base, { timeout: restante(), maxRetries: 0 });
 
     // web_search es server-side: si el loop de búsqueda llega al límite devuelve
     // pause_turn. Reenviamos para que el servidor continúe donde quedó.
     let guard = 0;
     while (response.stop_reason === 'pause_turn' && guard < 5) {
-      response = await client.messages.create({
-        ...base,
-        messages: [...base.messages, { role: 'assistant', content: response.content }],
-      });
+      if (restante() < 5_000) {
+        console.warn('[reporte-astro] Cerca del deadline durante pause_turn → corto el loop');
+        break;
+      }
+      console.log(`[reporte-astro] pause_turn → reenvío (intento ${guard + 1}) | restante=${restante()}ms`);
+      response = await client.messages.create(
+        { ...base, messages: [...base.messages, { role: 'assistant', content: response.content }] },
+        { timeout: restante(), maxRetries: 0 },
+      );
       guard++;
     }
 
+    const busquedas = response.content.filter(b => b.type === 'server_tool_use').length;
     const texto = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map(b => b.text)
       .join('')
       .trim();
 
-    if (!texto) throw new Error('Respuesta vacía del modelo');
+    console.log(
+      `[reporte-astro] Respuesta Anthropic | stop_reason=${response.stop_reason} | ` +
+      `bloques=${response.content.length} | búsquedas=${busquedas} | textoLen=${texto.length} | ${Date.now() - t0}ms`,
+    );
+
+    if (!texto) throw new Error('Respuesta vacía del modelo (sin bloques de texto)');
     return texto;
   } catch (err) {
-    console.error('[mensajes-telegram] Error generando reporte astrológico:', err);
+    console.error(
+      `[reporte-astro] Error generando reporte (${Date.now() - t0}ms) → fallback:`,
+      err instanceof Error ? `${err.name}: ${err.message}` : err,
+    );
     return FALLBACK_REPORTE;
   }
 }
@@ -504,10 +541,15 @@ export async function enviarMensaje(m: MensajeProgramado): Promise<string> {
 
   // {reporte_astrologico}: genera el reporte vía Anthropic. Se escapa el HTML
   // del reporte (texto plano) y se trunca al límite de Telegram si hace falta.
-  if (text.includes(REPORTE_VAR)) {
-    const reporte = escapeHtml(await obtenerReporteAstrologico());
+  const tieneReporte = text.includes(REPORTE_VAR);
+  if (tieneReporte) {
+    console.log(`[reporte-astro] "${m.nombre}" usa {reporte_astrologico} (templateLen=${m.mensaje_template.length})`);
+    const reporteRaw = await obtenerReporteAstrologico();
+    const esFallback = reporteRaw === FALLBACK_REPORTE;
+    const reporte = escapeHtml(reporteRaw);
     text = text.split(REPORTE_VAR).join(reporte);
     text = truncarParaTelegram(text);
+    console.log(`[reporte-astro] Texto final para Telegram | len=${text.length} | esFallback=${esFallback}`);
   }
 
   const chatId = resolveChatId(m);
