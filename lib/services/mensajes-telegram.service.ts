@@ -223,14 +223,17 @@ Empieza directamente con: ♋ TU SEMANA, ANITA
 No repitas el título del reporte (ya está en el template).`;
 }
 
-// Deadline total para la generación (web_search + thinking). DEBE ser menor que
-// el maxDuration de las rutas (90s) para convertir un timeout duro de Vercel
-// (504) en un fallback elegante: si Anthropic tarda demasiado, abortamos, se
-// captura el error y se envía FALLBACK_REPORTE en vez de matar la función.
-const REPORTE_DEADLINE_MS = 70_000;
+// Deadline total para la generación. DEBE ser menor que el maxDuration de las
+// rutas para convertir un timeout duro de Vercel (504) en un fallback elegante:
+// si Anthropic tarda demasiado, abortamos, se captura el error y se envía
+// FALLBACK_REPORTE en vez de matar la función. Sin web_search ni thinking la
+// respuesta debería llegar en 10-15s, así que 30s es holgado.
+const REPORTE_DEADLINE_MS = 30_000;
 
-// Llama a la API de Anthropic con web_search habilitado. Devuelve el reporte
-// como texto plano, o FALLBACK_REPORTE si algo falla.
+// Llama a la API de Anthropic (llamada directa, SIN tools ni thinking) para que
+// sea rápida: Claude genera el reporte con su conocimiento de astrología y
+// posiciones planetarias generales. Devuelve texto plano, o FALLBACK_REPORTE si
+// algo falla.
 async function generarReporteAstrologico(): Promise<string> {
   const t0 = Date.now();
   const { inicio, fin } = semanaReporte();
@@ -244,55 +247,32 @@ async function generarReporteAstrologico(): Promise<string> {
     return FALLBACK_REPORTE;
   }
 
-  // Tiempo restante antes del deadline, para pasar como timeout a cada request.
+  // Tiempo restante antes del deadline, que pasamos como timeout al request.
   const restante = () => REPORTE_DEADLINE_MS - (Date.now() - t0);
 
   try {
     const client = getAnthropicClient();
 
-    const base: Anthropic.MessageCreateParamsNonStreaming = {
-      model: 'claude-sonnet-4-6',
-      // Holgura para que el thinking adaptativo no trunque el reporte (~3500 chars):
-      // los tokens de razonamiento cuentan dentro de max_tokens.
-      max_tokens: 4000,
-      // Superficie de request 4.6: thinking adaptativo + effort (ambos GA, sin
-      // beta header). El modelo decide cuánto razonar al sintetizar las
-      // efemérides reales en el reporte estructurado.
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium' },
-      system: systemPromptReporte(inicio, fin),
-      // web_search es server-side de Anthropic. max_uses bajo para acotar latencia.
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 } as Anthropic.ToolUnion],
-      messages: [
-        {
-          role: 'user',
-          content: `Busca las efemérides y posiciones planetarias reales de la semana del ${inicio} al ${fin} de 2026 y genera el reporte astrológico.`,
-        },
-      ],
-    };
+    console.log('[reporte-astro] Llamando a Anthropic | model=claude-sonnet-4-6 | sin tools, sin thinking');
+    // Llamada directa: sin tools (web_search) ni thinking → rápida (~10-15s).
+    // timeout = deadline restante; maxRetries: 0 para que el backoff del SDK no
+    // consuma el presupuesto de tiempo.
+    const response = await client.messages.create(
+      {
+        model: 'claude-sonnet-4-6',
+        // El reporte cabe en ~3000 caracteres; 1500 tokens son suficientes.
+        max_tokens: 1500,
+        system: systemPromptReporte(inicio, fin),
+        messages: [
+          {
+            role: 'user',
+            content: `Genera el reporte astrológico para la semana del ${inicio} al ${fin} de 2026.`,
+          },
+        ],
+      },
+      { timeout: restante(), maxRetries: 0 },
+    );
 
-    console.log('[reporte-astro] Llamando a Anthropic | model=claude-sonnet-4-6 | web_search max_uses=3');
-    // timeout: deadline restante; maxRetries: 0 para que los reintentos del SDK
-    // (backoff por defecto = 2) no consuman el presupuesto de tiempo.
-    let response = await client.messages.create(base, { timeout: restante(), maxRetries: 0 });
-
-    // web_search es server-side: si el loop de búsqueda llega al límite devuelve
-    // pause_turn. Reenviamos para que el servidor continúe donde quedó.
-    let guard = 0;
-    while (response.stop_reason === 'pause_turn' && guard < 5) {
-      if (restante() < 5_000) {
-        console.warn('[reporte-astro] Cerca del deadline durante pause_turn → corto el loop');
-        break;
-      }
-      console.log(`[reporte-astro] pause_turn → reenvío (intento ${guard + 1}) | restante=${restante()}ms`);
-      response = await client.messages.create(
-        { ...base, messages: [...base.messages, { role: 'assistant', content: response.content }] },
-        { timeout: restante(), maxRetries: 0 },
-      );
-      guard++;
-    }
-
-    const busquedas = response.content.filter(b => b.type === 'server_tool_use').length;
     const texto = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map(b => b.text)
@@ -301,7 +281,7 @@ async function generarReporteAstrologico(): Promise<string> {
 
     console.log(
       `[reporte-astro] Respuesta Anthropic | stop_reason=${response.stop_reason} | ` +
-      `bloques=${response.content.length} | búsquedas=${busquedas} | textoLen=${texto.length} | ${Date.now() - t0}ms`,
+      `bloques=${response.content.length} | textoLen=${texto.length} | ${Date.now() - t0}ms`,
     );
 
     if (!texto) throw new Error('Respuesta vacía del modelo (sin bloques de texto)');
