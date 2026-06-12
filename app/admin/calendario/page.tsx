@@ -40,6 +40,7 @@ interface CitaItem {
   costo: number;
   modalidad?: string | null;
   documentos_entrega?: string | null;
+  es_personal_privada?: boolean;
   teams_link: string | null;
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
@@ -889,7 +890,7 @@ function AgendaView({
 
                         {/* Event info */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{cita.titulo}</p>
+                          <p className="text-sm font-semibold text-gray-900 truncate">{cita.es_personal_privada ? '🔒 ' : ''}{cita.titulo}</p>
                           {(() => {
                             const sub = inferSubcategoria(cita);
                             const colors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
@@ -1121,7 +1122,7 @@ function WeekView({
                       } : {}),
                     }}
                   >
-                    <div className="font-semibold truncate">{cita.titulo}</div>
+                    <div className="font-semibold truncate">{cita.es_personal_privada ? '🔒 ' : ''}{cita.titulo}</div>
                     {sub && (
                       <span className={`inline-block text-[8px] px-1 py-0 rounded-full font-medium leading-tight ${sub.color}`}>
                         {sub.label}
@@ -1370,7 +1371,7 @@ function DetailModal({
 
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900 font-display">{cita.titulo}</h2>
+            <h2 className="text-lg font-bold text-gray-900 font-display">{cita.es_personal_privada ? '🔒 ' : ''}{cita.titulo}</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1759,6 +1760,10 @@ function CreateModal({
   const [modalidad, setModalidad] = useState<string>('virtual');
   const [documentosEntrega, setDocumentosEntrega] = useState('');
   const [subcategoria, setSubcategoria] = useState('');
+  // Cita personal privada de Amanda: bloquea el horario; el detalle real solo va
+  // a su Telegram privado. Al activarla se fuerza tipo=bloqueo_personal.
+  const [esPersonalPrivada, setEsPersonalPrivada] = useState(false);
+  const [detallePrivado, setDetallePrivado] = useState('');
   const tipoSubs = SUBCATEGORIAS[tipo] ?? [];
   const showSubcatSelector = tipoSubs.length > 1;
 
@@ -1843,6 +1848,10 @@ function CreateModal({
   }, [clienteSearch, getToken]);
 
   const handleSubmit = async () => {
+    if (esPersonalPrivada && !detallePrivado.trim()) {
+      setError('Escribe el detalle privado de la cita');
+      return;
+    }
     if (!titulo.trim()) {
       setError('Escribe un título');
       return;
@@ -1873,22 +1882,39 @@ function CreateModal({
       await adminFetch('/api/admin/calendario/eventos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo,
-          titulo: titulo.trim(),
-          descripcion: subcategoria
-            ? `[${subcategoria}] ${descripcion.trim()}`.trim()
-            : descripcion.trim() || null,
-          fecha,
-          hora_inicio: horaInicio,
-          hora_fin: horaFin,
-          duracion_minutos: duracionFinal,
-          cliente_id: clienteId || null,
-          modalidad,
-          documentos_entrega: MODALIDAD_INFO[modalidad]?.usaOficina ? (documentosEntrega.trim() || null) : null,
-          // crearCita combina esto con la modalidad (las entregas nunca llevan Teams).
-          isOnlineMeeting: withTeams,
-        }),
+        body: JSON.stringify(
+          esPersonalPrivada
+            ? {
+                // Cita personal privada: pública genérica, sin cliente ni Teams.
+                tipo: 'bloqueo_personal',
+                titulo: 'Cita personal',
+                descripcion: null,
+                fecha,
+                hora_inicio: horaInicio,
+                hora_fin: horaFin,
+                duracion_minutos: duracionFinal,
+                cliente_id: null,
+                isOnlineMeeting: false,
+                es_personal_privada: true,
+                detalle_privado: detallePrivado.trim(),
+              }
+            : {
+                tipo,
+                titulo: titulo.trim(),
+                descripcion: subcategoria
+                  ? `[${subcategoria}] ${descripcion.trim()}`.trim()
+                  : descripcion.trim() || null,
+                fecha,
+                hora_inicio: horaInicio,
+                hora_fin: horaFin,
+                duracion_minutos: duracionFinal,
+                cliente_id: clienteId || null,
+                modalidad,
+                documentos_entrega: MODALIDAD_INFO[modalidad]?.usaOficina ? (documentosEntrega.trim() || null) : null,
+                // crearCita combina esto con la modalidad (las entregas nunca llevan Teams).
+                isOnlineMeeting: withTeams,
+              },
+        ),
       });
 
       onCreated();
@@ -1917,7 +1943,23 @@ function CreateModal({
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Tipo — card selector */}
+          {/* 🔒 Cita personal privada */}
+          <label className="flex items-center gap-2 cursor-pointer select-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <input
+              type="checkbox"
+              checked={esPersonalPrivada}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setEsPersonalPrivada(on);
+                if (on) { setTipo('bloqueo_personal'); setTitulo('Cita personal'); setClienteId(''); setClienteSearch(''); }
+              }}
+              className="w-4 h-4 rounded border-gray-300 text-slate-700 focus:ring-slate-500"
+            />
+            <span className="text-sm font-medium text-gray-700">🔒 Cita personal privada</span>
+          </label>
+
+          {!esPersonalPrivada && (
+          /* Tipo — card selector */
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de evento</label>
             <div className="grid grid-cols-2 gap-2">
@@ -1942,6 +1984,7 @@ function CreateModal({
               })}
             </div>
           </div>
+          )}
 
           {/* Subcategoría */}
           {showSubcatSelector && (
@@ -2149,6 +2192,7 @@ function CreateModal({
           })()}
 
           {/* Título */}
+          {!esPersonalPrivada && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
             <input
@@ -2159,6 +2203,26 @@ function CreateModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
           </div>
+          )}
+
+          {/* Detalle privado (solo cita personal) */}
+          {esPersonalPrivada && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Detalle privado <span className="text-gray-400 text-xs font-normal">(solo para ti)</span>
+            </label>
+            <textarea
+              value={detallePrivado}
+              onChange={(e) => setDetallePrivado(e.target.value)}
+              rows={2}
+              placeholder="Ej: Dentista — extracción de cordal"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              🔒 Solo se enviará a tu Telegram privado y se borra tras el recordatorio. La oficina solo verá &quot;Cita personal&quot;.
+            </p>
+          </div>
+          )}
 
           {/* Cliente search (not for bloqueo_personal) */}
           {!isBloqueo && (
@@ -2189,6 +2253,7 @@ function CreateModal({
           )}
 
           {/* Descripción */}
+          {!esPersonalPrivada && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Descripción (opcional)</label>
             <textarea
@@ -2198,6 +2263,7 @@ function CreateModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent resize-none"
             />
           </div>
+          )}
 
           {/* Modalidad (solo consulta/seguimiento) */}
           {(tipo === 'consulta_nueva' || tipo === 'seguimiento') && (
@@ -2243,6 +2309,7 @@ function CreateModal({
           )}
 
           {/* Teams meeting toggle */}
+          {!esPersonalPrivada && (
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -2252,6 +2319,7 @@ function CreateModal({
             />
             <span className="text-sm text-gray-700">Crear reunión de Teams</span>
           </label>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>

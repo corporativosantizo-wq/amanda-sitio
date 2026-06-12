@@ -75,6 +75,11 @@ export interface Cita {
   fecha_solicitada: string | null;
   hora_solicitada: string | null;
   comentarios_cliente: string | null;
+  // Citas personales privadas de Amanda: bloquean el horario pero el detalle real
+  // (detalle_privado) solo va a su Telegram privado y se borra tras el recordatorio.
+  es_personal_privada: boolean;
+  detalle_privado: string | null;
+  recordatorio_personal_enviado: boolean;
   costo: number;
   outlook_event_id: string | null;
   teams_link: string | null;
@@ -109,6 +114,9 @@ export interface CitaInsert {
   fecha_solicitada?: string | null;
   hora_solicitada?: string | null;
   comentarios_cliente?: string | null;
+  // Cita personal privada de Amanda.
+  es_personal_privada?: boolean;
+  detalle_privado?: string | null;
 }
 
 export interface BloqueoCalendario {

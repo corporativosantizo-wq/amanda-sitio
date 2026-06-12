@@ -237,7 +237,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
       id, cliente_id, expediente_id, tipo, titulo, descripcion,
       fecha, hora_inicio, hora_fin, duracion_minutos,
       estado, costo, categoria_outlook, modalidad, documentos_entrega,
-      teams_link, outlook_event_id,
+      teams_link, outlook_event_id, es_personal_privada,
       notas, created_at, updated_at,
       cliente:clientes(id, codigo, nombre, email)
     `, { count: 'exact' });
@@ -350,6 +350,8 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       modalidad,
       documentos_entrega: input.documentos_entrega ?? null,
       notas: input.notas ?? null,
+      es_personal_privada: input.es_personal_privada ?? false,
+      detalle_privado: input.detalle_privado ?? null,
     })
     .select('*, cliente:clientes(id, codigo, nombre, email)')
     .single();
@@ -924,6 +926,7 @@ export async function enviarRecordatorios(): Promise<{
   enviados_1h: number;
   completadas: number;
   followups: number;
+  personales: number;
 }> {
   const ahora = new Date();
   const zonaGT = new Intl.DateTimeFormat('en-CA', {
@@ -1093,8 +1096,56 @@ export async function enviarRecordatorios(): Promise<{
     }
   }
 
-  console.log('[Citas] Recordatorios: 24h=', enviados_24h, ', 1h=', enviados_1h, ', completadas=', completadas, ', followups=', followups);
-  return { enviados_24h, enviados_1h, completadas, followups };
+  // ── Citas personales privadas de Amanda: aviso del día (horario de oficina) ──
+  // A su Telegram privado va el detalle real; al grupo de la oficina solo un
+  // aviso genérico (sin detalle). Tras enviar AMBOS, se marca enviado y se BORRA
+  // detalle_privado. Si algo falla, no se marca → se reintenta el próximo tick.
+  let personales = 0;
+  if (enHorarioOficina) {
+    const { data: citasPersonales } = await db()
+      .from('citas')
+      .select('id, hora_inicio, hora_fin, detalle_privado')
+      .eq('fecha', hoyStr)
+      .eq('es_personal_privada', true)
+      .eq('recordatorio_personal_enviado', false)
+      .neq('estado', 'cancelada');
+
+    const chatPrivado = process.env.TELEGRAM_CHAT_ID;
+    const chatGrupo = process.env.TELEGRAM_GROUP_CHAT_ID;
+
+    for (const cita of citasPersonales ?? []) {
+      const ini = formatearHora12(cita.hora_inicio);
+      const fin = formatearHora12(cita.hora_fin);
+      const detalle = (cita.detalle_privado ?? '').trim() || '(sin detalle)';
+      try {
+        // 1) Telegram privado a Amanda CON el detalle (debe ir primero).
+        if (!chatPrivado) throw new Error('TELEGRAM_CHAT_ID no configurado');
+        await sendTelegramMessage(
+          `🔒 <b>Recordatorio personal de hoy:</b>\n${escapeHtmlTg(detalle)}\n🕐 ${ini} a ${fin}`,
+          { parse_mode: 'HTML', chatId: chatPrivado },
+        );
+        // 2) Aviso genérico al grupo de la oficina (NUNCA el detalle).
+        if (chatGrupo) {
+          await sendTelegramMessage(
+            `📅 <b>Aviso:</b> La Licda. Amanda estará en una cita personal hoy.\n` +
+            `🕐 ${ini} a ${fin}\n🔒 No disponible durante ese horario.`,
+            { parse_mode: 'HTML', chatId: chatGrupo },
+          );
+        }
+        // 3) Solo tras enviar ambos: marcar enviado y BORRAR el detalle privado.
+        await db()
+          .from('citas')
+          .update({ recordatorio_personal_enviado: true, detalle_privado: null, updated_at: new Date().toISOString() })
+          .eq('id', cita.id);
+        personales++;
+      } catch (e: any) {
+        console.warn('[Citas] Error enviando recordatorio personal para cita', cita.id, e?.message ?? e);
+      }
+    }
+  }
+
+  console.log('[Citas] Recordatorios: 24h=', enviados_24h, ', 1h=', enviados_1h, ', completadas=', completadas, ', followups=', followups, ', personales=', personales);
+  return { enviados_24h, enviados_1h, completadas, followups, personales };
 }
 
 // ── Calendar Event Body (NOT an email template — used for Outlook event) ────
