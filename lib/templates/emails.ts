@@ -491,6 +491,105 @@ export function emailNuevaSolicitudInterno(cita: any): EmailTemplate {
   };
 }
 
+// ── Llamadas programadas ────────────────────────────────────────────────────
+
+// Confirmación al cliente de una llamada agendada (from asistente@, CC amanda@ +
+// los CC indicados — el CC se agrega al enviar, no aquí).
+export function emailConfirmacionLlamada(params: {
+  nombre: string;
+  fecha: string;
+  hora: string;
+  duracion: number;
+  asunto: string;
+  telefono?: string | null;
+}): EmailTemplate {
+  const fechaFmt = formatearFechaGT(params.fecha);
+  const horaFmt = formatearHora(params.hora);
+  const tel = (params.telefono ?? '').trim();
+
+  const html = emailWrapper(`
+    <p style="color:#475569;font-size:15px;line-height:1.6;">Estimado/a <strong>${escEmail(params.nombre)}</strong>, 👋</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">¡Esperamos que se encuentre muy bien! 🌟</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos que se ha agendado una llamada telefónica con la <strong>Licda. Amanda Santizo</strong>:</p>
+    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#0f172a;">📞 Llamada programada</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>⏱️ Duración estimada:</strong> ${params.duracion} minutos</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📌 Asunto:</strong> ${escEmail(params.asunto)}</p>
+      </td></tr>
+    </table>
+    ${tel ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Por favor asegúrese de estar disponible en el número <strong>${escEmail(tel)}</strong> a la hora indicada.</p>` : `<p style="color:#475569;font-size:14px;line-height:1.6;">Por favor asegúrese de estar disponible a la hora indicada.</p>`}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Si necesita reprogramar, responda a este correo. 📩</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">¡Que tenga un excelente día! ☀️</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:20px;">
+      Atentamente,<br/>
+      <strong>Magaly Estrada</strong> ✨<br/>
+      Asistente de Procesos<br/>
+      Despacho Jurídico Amanda Santizo
+    </p>
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `📞 Llamada agendada — ${fechaFmt} a las ${horaFmt}`,
+    html,
+  };
+}
+
+// Recordatorio al cliente el día de la llamada.
+export function emailRecordatorioLlamadaCliente(params: {
+  nombre: string;
+  hora: string;
+  asunto: string;
+}): EmailTemplate {
+  const horaFmt = formatearHora(params.hora);
+  const html = emailWrapper(`
+    <p style="color:#475569;font-size:15px;line-height:1.6;">👋 Estimado/a <strong>${escEmail(params.nombre)}</strong>,</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Le recordamos su llamada <strong>hoy</strong> con la Licda. Amanda Santizo.</p>
+    <table width="100%" style="margin:16px 0;background:#fef3c7;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>📞 Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📌 Asunto:</strong> ${escEmail(params.asunto)}</p>
+      </td></tr>
+    </table>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">¡Que tenga un excelente día! ☀️</p>
+  `);
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `📞 Recordatorio: su llamada es hoy a las ${horaFmt}`,
+    html,
+  };
+}
+
+// Recordatorio interno a Amanda (email) el día de la llamada.
+export function emailRecordatorioLlamadaInterno(params: {
+  nombre: string;
+  hora: string;
+  asunto: string;
+  telefono?: string | null;
+}): EmailTemplate {
+  const horaFmt = formatearHora(params.hora);
+  const tel = (params.telefono ?? '').trim() || '—';
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">📞 Llamada hoy</h2>
+    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>Contacto:</strong> ${escEmail(params.nombre)}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📌 Asunto:</strong> ${escEmail(params.asunto)}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📱 Tel:</strong> ${escEmail(tel)}</p>
+      </td></tr>
+    </table>
+  `);
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `📞 Llamada hoy: ${params.nombre} — ${horaFmt}`,
+    html,
+  };
+}
+
 // ── Contador Templates ──────────────────────────────────────────────────────
 
 export function emailSolicitudPago(params: {

@@ -53,17 +53,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, cita_id: 'ok', teams_link: null });
     }
 
-    // Validate required fields
-    if (
-      !tipo || !fecha || !hora ||
-      !nombreCompleto || !email?.trim() ||
-      !telefono?.trim() || !asunto?.trim()
-    ) {
+    // Validate required fields — formulario simple: solo nombre, email, fecha y
+    // hora. El teléfono es opcional y el asunto ya no se pide.
+    if (!tipo || !fecha || !hora || !nombreCompleto || !email?.trim()) {
       return NextResponse.json(
-        { error: 'Todos los campos requeridos deben completarse.' },
+        { error: 'Por favor complete su nombre, correo, fecha y hora.' },
         { status: 400 }
       );
     }
+
+    // Asunto opcional (el formulario simplificado ya no lo pide).
+    const asuntoVal = (asunto ?? '').trim();
 
     const tipoCita = tipo as TipoCita;
     if (!HORARIOS[tipoCita]) {
@@ -196,14 +196,14 @@ export async function POST(req: NextRequest) {
       const solicitud = await crearSolicitudCita({
         tipo: tipoCita,
         titulo,
-        descripcion: asunto.trim(),
+        descripcion: asuntoVal || undefined,
         modalidad: modalidadFinal,
         fecha,
         hora_inicio: matchedSlot.hora_inicio,
         hora_fin: matchedSlot.hora_fin,
         duracion_minutos: matchedSlot.duracion_minutos,
         cliente_id: clienteId,
-        comentarios_cliente: asunto.trim(),
+        comentarios_cliente: asuntoVal || null,
         notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
         cliente_telefono: telefono?.trim(),
         cliente_empresa: empresa?.trim(),
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
     const cita = await crearCita({
       tipo: tipoCita,
       titulo,
-      descripcion: asunto.trim(),
+      descripcion: asuntoVal || undefined,
       fecha,
       hora_inicio: matchedSlot.hora_inicio,
       hora_fin: matchedSlot.hora_fin,

@@ -166,15 +166,10 @@ export default function AgendarPage() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<SlotItem | null>(null);
 
-  // Step 4
+  // Step 4 — formulario simple: nombre completo, email y teléfono (opcional).
   const [nombres, setNombres] = useState('');
-  const [apellidos, setApellidos] = useState('');
-  const [nit, setNit] = useState('');
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [empresa, setEmpresa] = useState('');
-  const [asunto, setAsunto] = useState('');
-  const [numeroCaso, setNumeroCaso] = useState('');
   const [honeypot, setHoneypot] = useState('');
 
   // Step 5
@@ -228,13 +223,8 @@ export default function AgendarPage() {
           fecha: selectedDate,
           hora: selectedSlot.hora_inicio,
           nombres: nombres.trim(),
-          apellidos: apellidos.trim() || undefined,
-          nit: nit.trim(),
           email: email.trim(),
-          telefono: telefono.trim(),
-          empresa: empresa.trim() || undefined,
-          asunto: asunto.trim(),
-          numero_caso: numeroCaso.trim() || undefined,
+          telefono: telefono.trim() || undefined,
           _hp: honeypot || undefined,
         }),
       });
@@ -378,24 +368,13 @@ export default function AgendarPage() {
 
         {step === 4 && tipo && (
           <StepDatos
-            tipo={tipo}
             nombres={nombres}
-            apellidos={apellidos}
-            nit={nit}
             email={email}
             telefono={telefono}
-            empresa={empresa}
-            asunto={asunto}
-            numeroCaso={numeroCaso}
             honeypot={honeypot}
             onNombres={setNombres}
-            onApellidos={setApellidos}
-            onNit={setNit}
             onEmail={setEmail}
             onTelefono={setTelefono}
-            onEmpresa={setEmpresa}
-            onAsunto={setAsunto}
-            onNumeroCaso={setNumeroCaso}
             onHoneypot={setHoneypot}
             onNext={goNext}
             onBack={goBack}
@@ -409,13 +388,8 @@ export default function AgendarPage() {
             fecha={selectedDate}
             slot={selectedSlot}
             nombres={nombres}
-            apellidos={apellidos}
-            nit={nit}
             email={email}
             telefono={telefono}
-            empresa={empresa}
-            asunto={asunto}
-            numeroCaso={numeroCaso}
             submitting={submitting}
             error={error}
             onSubmit={handleSubmit}
@@ -841,46 +815,24 @@ function StepHora({
 // ── Step 4: Datos ───────────────────────────────────────────────────────────
 
 function StepDatos({
-  tipo,
   nombres,
-  apellidos,
-  nit,
   email,
   telefono,
-  empresa,
-  asunto,
-  numeroCaso,
   honeypot,
   onNombres,
-  onApellidos,
-  onNit,
   onEmail,
   onTelefono,
-  onEmpresa,
-  onAsunto,
-  onNumeroCaso,
   onHoneypot,
   onNext,
   onBack,
 }: {
-  tipo: TipoCita;
   nombres: string;
-  apellidos: string;
-  nit: string;
   email: string;
   telefono: string;
-  empresa: string;
-  asunto: string;
-  numeroCaso: string;
   honeypot: string;
   onNombres: (v: string) => void;
-  onApellidos: (v: string) => void;
-  onNit: (v: string) => void;
   onEmail: (v: string) => void;
   onTelefono: (v: string) => void;
-  onEmpresa: (v: string) => void;
-  onAsunto: (v: string) => void;
-  onNumeroCaso: (v: string) => void;
   onHoneypot: (v: string) => void;
   onNext: () => void;
   onBack: () => void;
@@ -888,12 +840,13 @@ function StepDatos({
   const [formError, setFormError] = useState('');
 
   const validate = (): boolean => {
-    if (!nombres.trim() || !nit.trim() || !email.trim() || !telefono.trim() || !asunto.trim()) {
-      setFormError('Por favor complete todos los campos requeridos.');
+    // Solo nombre y email son obligatorios; el teléfono es opcional.
+    if (!nombres.trim() || !email.trim()) {
+      setFormError('Por favor ingrese su nombre y correo electrónico.');
       return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setFormError('Por favor ingrese un email valido.');
+      setFormError('Por favor ingrese un email válido.');
       return false;
     }
     setFormError('');
@@ -906,7 +859,7 @@ function StepDatos({
         Sus datos de contacto
       </h2>
       <p className="text-gray-500 mb-6 text-sm">
-        Complete sus datos para confirmar la cita. Recibira un email de confirmacion.
+        Solo necesitamos lo esencial. Recibirá un email de confirmación.
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 max-w-lg mx-auto space-y-4">
@@ -922,42 +875,15 @@ function StepDatos({
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nombre(s) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={nombres}
-              onChange={(e) => onNombres(e.target.value)}
-              placeholder="Ej: Maria"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Apellido(s) <span className="text-gray-400 text-xs font-normal">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              value={apellidos}
-              onChange={(e) => onApellidos(e.target.value)}
-              placeholder="Ej: Garcia Lopez"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-            />
-          </div>
-        </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            NIT <span className="text-red-500">*</span>
+            Nombre completo <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            value={nit}
-            onChange={(e) => onNit(e.target.value)}
-            placeholder="Ej: 12345678 o CF"
+            value={nombres}
+            onChange={(e) => onNombres(e.target.value)}
+            placeholder="Ej: María García López"
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
           />
         </div>
@@ -977,7 +903,7 @@ function StepDatos({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Telefono <span className="text-red-500">*</span>
+            Teléfono <span className="text-gray-400 text-xs font-normal">(opcional)</span>
           </label>
           <input
             type="tel"
@@ -987,47 +913,6 @@ function StepDatos({
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
           />
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Empresa <span className="text-gray-400 text-xs font-normal">(opcional)</span>
-          </label>
-          <input
-            type="text"
-            value={empresa}
-            onChange={(e) => onEmpresa(e.target.value)}
-            placeholder="Nombre de su empresa"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Descripcion breve del asunto <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            value={asunto}
-            onChange={(e) => onAsunto(e.target.value)}
-            rows={3}
-            placeholder="Describa brevemente su consulta o necesidad legal..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition resize-none"
-          />
-        </div>
-
-        {tipo === 'seguimiento' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Numero de caso o referencia <span className="text-gray-400 text-xs font-normal">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              value={numeroCaso}
-              onChange={(e) => onNumeroCaso(e.target.value)}
-              placeholder="Ej: EXP-2026-001"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-            />
-          </div>
-        )}
 
         {formError && (
           <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{formError}</p>
@@ -1060,13 +945,8 @@ function StepConfirmar({
   fecha,
   slot,
   nombres,
-  apellidos,
-  nit,
   email,
   telefono,
-  empresa,
-  asunto,
-  numeroCaso,
   submitting,
   error,
   onSubmit,
@@ -1077,13 +957,8 @@ function StepConfirmar({
   fecha: string;
   slot: SlotItem;
   nombres: string;
-  apellidos: string;
-  nit: string;
   email: string;
   telefono: string;
-  empresa: string;
-  asunto: string;
-  numeroCaso: string;
   submitting: boolean;
   error: string;
   onSubmit: () => void;
@@ -1148,43 +1023,19 @@ function StepConfirmar({
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Nombre</span>
-              <span className="text-gray-900 font-medium">
-                {nombres}{apellidos ? ` ${apellidos}` : ''}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">NIT</span>
-              <span className="text-gray-900">{nit}</span>
+              <span className="text-gray-900 font-medium">{nombres}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Email</span>
               <span className="text-gray-900">{email}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Telefono</span>
-              <span className="text-gray-900">{telefono}</span>
-            </div>
-            {empresa && (
+            {telefono && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Empresa</span>
-                <span className="text-gray-900">{empresa}</span>
+                <span className="text-gray-500">Teléfono</span>
+                <span className="text-gray-900">{telefono}</span>
               </div>
             )}
           </div>
-
-          <hr className="border-gray-100" />
-
-          <div>
-            <span className="text-xs text-gray-500 uppercase tracking-wide">Asunto</span>
-            <p className="text-sm text-gray-700 mt-1">{asunto}</p>
-          </div>
-
-          {numeroCaso && (
-            <div>
-              <span className="text-xs text-gray-500 uppercase tracking-wide">Caso/Referencia</span>
-              <p className="text-sm text-gray-700 mt-1">{numeroCaso}</p>
-            </div>
-          )}
 
           {tipo === 'seguimiento' && (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos') && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">

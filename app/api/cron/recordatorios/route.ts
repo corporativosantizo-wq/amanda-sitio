@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { enviarRecordatorios } from '@/lib/services/citas.service';
+import { enviarRecordatoriosLlamadas } from '@/lib/services/llamadas.service';
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 import { checkClassReminders } from '@/lib/molly/telegram-calendar';
 
@@ -15,15 +16,19 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const [result, classReminders] = await Promise.all([
+    const [result, classReminders, llamadas] = await Promise.all([
       enviarRecordatorios(),
       checkClassReminders().catch((err: any) => {
         console.error('[Cron Recordatorios] Error en class reminders:', err.message);
         return 0;
       }),
+      enviarRecordatoriosLlamadas().catch((err: any) => {
+        console.error('[Cron Recordatorios] Error en recordatorios de llamadas:', err.message);
+        return { llamadas: 0 };
+      }),
     ]);
 
-    return NextResponse.json({ ok: true, ...result, classReminders });
+    return NextResponse.json({ ok: true, ...result, classReminders, llamadas: llamadas.llamadas });
   } catch (err: any) {
     console.error('[Cron Recordatorios] Error:', err);
     return NextResponse.json({ error: err.message ?? 'Error interno' }, { status: 500 });
