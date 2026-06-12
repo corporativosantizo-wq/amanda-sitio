@@ -47,13 +47,18 @@ export interface Cita {
   tipo: TipoCita;
   titulo: string;
   descripcion: string | null;
-  fecha: string;
+  fecha: string | null;
   hora_inicio: string;
   hora_fin: string;
   duracion_minutos: number;
   estado: EstadoCita;
   modalidad: ModalidadCita;
   documentos_entrega: string | null;
+  // Solicitudes de entrega/firma: fecha/hora que el cliente pidió (inmutable)
+  // y sus indicaciones adicionales. Null para citas que no nacen como solicitud.
+  fecha_solicitada: string | null;
+  hora_solicitada: string | null;
+  comentarios_cliente: string | null;
   costo: number;
   outlook_event_id: string | null;
   teams_link: string | null;
@@ -83,6 +88,11 @@ export interface CitaInsert {
   modalidad?: ModalidadCita;
   documentos_entrega?: string | null;
   isOnlineMeeting?: boolean;
+  // Solicitudes (entrega/firma): se persisten para que el admin las gestione.
+  estado?: EstadoCita;
+  fecha_solicitada?: string | null;
+  hora_solicitada?: string | null;
+  comentarios_cliente?: string | null;
 }
 
 export interface BloqueoCalendario {

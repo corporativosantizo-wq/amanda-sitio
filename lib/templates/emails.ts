@@ -336,6 +336,161 @@ export function emailCancelacionCita(cita: any): EmailTemplate {
   };
 }
 
+// ── Solicitudes de entrega / firma de documentos ────────────────────────────
+//
+// Flujo: el cliente envía una solicitud con su fecha/hora preferida (la cita
+// nace como estado='pendiente'). Amanda confirma esa fecha, propone otra, o la
+// rechaza desde el panel admin. Estos correos van firmados por Magaly Estrada.
+
+// 'firma' | 'entrega' según la modalidad de la cita.
+function accionSolicitud(cita: any): 'firma' | 'entrega' {
+  return modalidadDeCita(cita) === 'firma_documentos' ? 'firma' : 'entrega';
+}
+
+function firmaMagalyHTML(): string {
+  return `
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:20px;">
+      Atentamente,<br/>
+      <strong>Magaly Estrada</strong> — Asistente de Procesos<br/>
+      Despacho Jurídico Amanda Santizo
+    </p>`;
+}
+
+// Mensaje personalizado opcional que Amanda escribe en el panel.
+function mensajePersonalizadoHTML(mensaje?: string): string {
+  const m = (mensaje ?? '').trim();
+  if (!m) return '';
+  return `<p style="color:#475569;font-size:14px;line-height:1.6;white-space:pre-line;">${escEmail(m)}</p>`;
+}
+
+// Cita CONFIRMADA por Amanda (con la fecha del cliente o una nueva).
+export function emailSolicitudConfirmada(cita: any, mensaje?: string): EmailTemplate {
+  const accion = accionSolicitud(cita);
+  const esFirma = accion === 'firma';
+  const accionLabel = esFirma ? 'firma' : 'entrega';
+  const nombre = cita.cliente?.nombre ?? '';
+  const fechaFmt = cita.fecha ? formatearFechaGT(cita.fecha) : '';
+  const horaFmt = formatearHora(cita.hora_inicio);
+
+  const dpiAviso = esFirma
+    ? `<p style="margin:8px 0;font-size:14px;color:#b45309;"><strong>⚠️ Presentarse con DPI original vigente.</strong></p>`
+    : '';
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita confirmada</h2>
+    ${nombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(nombre)}</strong>,</p>` : ''}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos su cita de ${accionLabel} de documentos:</p>
+    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📍 Lugar:</strong> ${DIRECCION_OFICINA}</p>
+        ${dpiAviso}
+      </td></tr>
+    </table>
+    ${mensajePersonalizadoHTML(mensaje)}
+    <p style="color:#64748b;font-size:13px;margin-top:16px;">Si necesita reprogramar, contáctenos con anticipación.</p>
+    ${firmaMagalyHTML()}
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Cita confirmada — ${esFirma ? 'Firma' : 'Entrega'} de documentos${fechaFmt ? ` — ${fechaFmt}` : ''}`,
+    html,
+  };
+}
+
+// Amanda PROPONE otra fecha (la cita sigue como pendiente hasta que el cliente
+// confirme). `cita.fecha`/`hora_inicio` son la nueva propuesta; `fecha_solicitada`
+// es la que el cliente había pedido originalmente.
+export function emailSolicitudPropuestaFecha(cita: any, mensaje?: string): EmailTemplate {
+  const accion = accionSolicitud(cita);
+  const esFirma = accion === 'firma';
+  const accionLabel = esFirma ? 'firma' : 'entrega';
+  const nombre = cita.cliente?.nombre ?? '';
+  const solicitadaFmt = cita.fecha_solicitada ? formatearFechaGT(cita.fecha_solicitada) : 'la fecha solicitada';
+  const nuevaFechaFmt = cita.fecha ? formatearFechaGT(cita.fecha) : '';
+  const nuevaHoraFmt = formatearHora(cita.hora_inicio);
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Propuesta de nueva fecha</h2>
+    ${nombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(nombre)}</strong>,</p>` : ''}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Gracias por su solicitud de ${accionLabel} de documentos.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Lamentablemente la fecha que seleccionó (<strong>${solicitadaFmt}</strong>) no se encuentra disponible.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">La fecha disponible que tenemos es:</p>
+    <table width="100%" style="margin:16px 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>📅 ${nuevaFechaFmt}</strong></p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 ${nuevaHoraFmt}</strong></p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📍 ${DIRECCION_OFICINA}</strong></p>
+      </td></tr>
+    </table>
+    ${mensajePersonalizadoHTML(mensaje)}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Por favor confírmenos si esta fecha le conviene respondiendo a este correo.</p>
+    ${firmaMagalyHTML()}
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Nueva fecha para su ${esFirma ? 'firma' : 'entrega'} de documentos`,
+    html,
+  };
+}
+
+// Amanda RECHAZA la solicitud (mensaje por defecto = documentos en preparación).
+export function emailSolicitudRechazada(cita: any, mensaje?: string): EmailTemplate {
+  const accion = accionSolicitud(cita);
+  const esFirma = accion === 'firma';
+  const nombre = cita.cliente?.nombre ?? '';
+  const cuerpo = (mensaje ?? '').trim()
+    || 'Sus documentos se encuentran en preparación. Le contactaremos cuando estén listos.';
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Sobre su solicitud</h2>
+    ${nombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(nombre)}</strong>,</p>` : ''}
+    <p style="color:#475569;font-size:14px;line-height:1.6;white-space:pre-line;">${escEmail(cuerpo)}</p>
+    ${firmaMagalyHTML()}
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Sobre su solicitud de ${esFirma ? 'firma' : 'entrega'} de documentos`,
+    html,
+  };
+}
+
+// Aviso INTERNO al despacho (amanda@ + asistente@) de una nueva solicitud.
+export function emailNuevaSolicitudInterno(cita: any): EmailTemplate {
+  const accion = accionSolicitud(cita);
+  const esFirma = accion === 'firma';
+  const nombre = cita.cliente?.nombre ?? 'Cliente';
+  const email = cita.cliente?.email ?? '';
+  const fechaFmt = cita.fecha_solicitada ? formatearFechaGT(cita.fecha_solicitada) : (cita.fecha ? formatearFechaGT(cita.fecha) : '—');
+  const horaFmt = cita.hora_solicitada ? formatearHora(cita.hora_solicitada) : (cita.hora_inicio ? formatearHora(cita.hora_inicio) : '—');
+  const comentarios = (cita.comentarios_cliente ?? '').trim();
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">📋 Nueva solicitud de ${esFirma ? 'firma' : 'entrega'} de documentos</h2>
+    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>Cliente:</strong> ${escEmail(nombre)}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Email:</strong> ${escEmail(email)}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Fecha solicitada:</strong> ${fechaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>Hora solicitada:</strong> ${horaFmt}</p>
+        ${comentarios ? `<p style="margin:8px 0;font-size:14px;"><strong>Comentarios:</strong> ${escEmail(comentarios)}</p>` : ''}
+      </td></tr>
+    </table>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Pendiente de confirmar fecha desde el panel:</p>
+    ${tealButton('Ir al calendario', 'https://amandasantizo.com/admin/calendario')}
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `📋 Nueva solicitud de ${esFirma ? 'firma' : 'entrega'} — ${nombre}`,
+    html,
+  };
+}
+
 // ── Contador Templates ──────────────────────────────────────────────────────
 
 export function emailSolicitudPago(params: {

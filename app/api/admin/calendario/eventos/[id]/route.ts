@@ -10,6 +10,9 @@ import {
   actualizarCita,
   cancelarCita,
   completarCita,
+  confirmarSolicitud,
+  proponerFechaSolicitud,
+  rechazarSolicitud,
   CitaError,
 } from '@/lib/services/citas.service';
 import {
@@ -62,6 +65,34 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     if (body.accion === 'cancelar') {
       const cita = await cancelarCita(id);
+      return NextResponse.json(cita);
+    }
+
+    // ── Solicitudes de entrega/firma ──
+    if (body.accion === 'confirmar_solicitud') {
+      const cita = await confirmarSolicitud(id, {
+        fecha: body.fecha,
+        hora_inicio: body.hora_inicio,
+        hora_fin: body.hora_fin,
+        duracion_minutos: body.duracion_minutos,
+        mensaje: body.mensaje,
+      });
+      return NextResponse.json(cita);
+    }
+
+    if (body.accion === 'proponer_fecha') {
+      const cita = await proponerFechaSolicitud(id, {
+        fecha: body.fecha,
+        hora_inicio: body.hora_inicio,
+        hora_fin: body.hora_fin,
+        duracion_minutos: body.duracion_minutos,
+        mensaje: body.mensaje,
+      });
+      return NextResponse.json(cita);
+    }
+
+    if (body.accion === 'rechazar_solicitud') {
+      const cita = await rechazarSolicitud(id, body.mensaje);
       return NextResponse.json(cita);
     }
 

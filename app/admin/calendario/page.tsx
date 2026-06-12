@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { safeRedirect } from '@/lib/utils/validate-url';
 import { adminFetch } from '@/lib/utils/admin-fetch';
 import { isSessionExpired, SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
+import SolicitudesPendientes from '@/components/admin/SolicitudesPendientes';
 
 const isAuthRedirect = isSessionExpired;
 
@@ -575,6 +576,9 @@ function CalendarioPage() {
           </button>
         </div>
       </header>
+
+      {/* ── Solicitudes pendientes (entrega/firma) ── */}
+      <SolicitudesPendientes onChanged={fetchCitas} />
 
       {/* ── BODY: sidebar + main ── */}
       <div className="flex flex-1 overflow-hidden">

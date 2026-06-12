@@ -31,6 +31,10 @@ import {
   emailRecordatorio24h,
   emailRecordatorio1h,
   emailCancelacionCita,
+  emailSolicitudConfirmada,
+  emailSolicitudPropuestaFecha,
+  emailSolicitudRechazada,
+  emailNuevaSolicitudInterno,
 } from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
@@ -575,6 +579,277 @@ export async function completarCita(id: string): Promise<Cita> {
   return data;
 }
 
+// ── Solicitudes de entrega / firma de documentos ────────────────────────────
+//
+// El cliente envía una solicitud con su fecha/hora preferida; la cita nace como
+// estado='pendiente'. NO se crea evento en Outlook ni se envía confirmación al
+// cliente hasta que Amanda decida (confirmar / proponer otra fecha / rechazar).
+
+// Crea un evento de calendario en Outlook para una cita ya existente y guarda
+// outlook_event_id/teams_link. Best-effort (no lanza). Reutilizado al confirmar.
+async function crearEventoOutlookParaCita(cita: any): Promise<void> {
+  try {
+    if (!(await isOutlookConnected())) {
+      console.log('[Solicitud] Outlook no conectado — no se crea evento');
+      return;
+    }
+    if (!cita.fecha) return;
+    const modalidad = (cita.modalidad ?? 'virtual') as ModalidadCita;
+    const { eventId, teamsLink } = await createCalendarEvent({
+      subject: cita.titulo,
+      startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
+      endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
+      attendees: cita.cliente?.email ? [cita.cliente.email] : [],
+      isOnlineMeeting: MODALIDAD_INFO[modalidad].usaTeams,
+      categories: [cita.categoria_outlook ?? 'Verde'],
+      body: generarBodyEvento(cita),
+    });
+    await db()
+      .from('citas')
+      .update({ outlook_event_id: eventId, teams_link: teamsLink, updated_at: new Date().toISOString() })
+      .eq('id', cita.id);
+    cita.outlook_event_id = eventId;
+    cita.teams_link = teamsLink;
+  } catch (e: any) {
+    console.error('[Solicitud] Error creando evento Outlook:', e?.message ?? e);
+  }
+}
+
+// Avisa al despacho (email a amanda@ + asistente@, Telegram a Mariano) de una
+// nueva solicitud pendiente de asignar fecha. Best-effort.
+async function notificarDespachoNuevaSolicitud(
+  cita: any,
+  extra: { telefono?: string; empresa?: string } = {},
+): Promise<void> {
+  // Email interno
+  try {
+    const email = emailNuevaSolicitudInterno(cita);
+    await sendMail({
+      from: email.from,
+      to: 'amanda@papeleo.legal, asistente@papeleo.legal',
+      subject: email.subject,
+      htmlBody: email.html,
+    });
+  } catch (e: any) {
+    console.error('[Solicitud] Error email interno al despacho:', e?.message ?? e);
+  }
+
+  // Telegram a Mariano
+  const chatId = process.env.TELEGRAM_GROUP_CHAT_ID;
+  if (!chatId) {
+    console.warn('[Solicitud] TELEGRAM_GROUP_CHAT_ID no configurado');
+    return;
+  }
+  const esFirma = cita.modalidad === 'firma_documentos';
+  const nombre = cita.cliente?.nombre ?? 'Cliente';
+  const empresa = (extra.empresa ?? '').trim();
+  const email = cita.cliente?.email ?? '—';
+  const telefono = (extra.telefono ?? '').trim() || '—';
+  const comentarios = (cita.comentarios_cliente ?? '').trim();
+
+  const texto =
+    `📋 <b>Nueva solicitud de ${esFirma ? 'firma' : 'entrega'}</b>\n` +
+    `👤 ${escapeHtmlTg(nombre)}${empresa ? ` — ${escapeHtmlTg(empresa)}` : ''}\n` +
+    `📧 ${escapeHtmlTg(email)} | 📞 ${escapeHtmlTg(telefono)}\n` +
+    (comentarios ? `💬 ${escapeHtmlTg(comentarios)}\n` : '') +
+    `⏳ Pendiente de asignar fecha\n\n` +
+    `→ amandasantizo.com/admin/calendario`;
+
+  try {
+    await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
+  } catch (e: any) {
+    console.error('[Solicitud] Error Telegram a Mariano:', e?.message ?? e);
+  }
+}
+
+// Avisa a Mariano que una cita de entrega/firma quedó confirmada.
+async function notificarMarianoCitaConfirmada(cita: any): Promise<void> {
+  const chatId = process.env.TELEGRAM_GROUP_CHAT_ID;
+  if (!chatId) return;
+  const esFirma = cita.modalidad === 'firma_documentos';
+  const nombre = cita.cliente?.nombre ?? 'Cliente';
+  const fechaFmt = cita.fecha
+    ? new Date(cita.fecha + 'T12:00:00').toLocaleDateString('es-GT', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Guatemala',
+      })
+    : '—';
+  const horaFmt = formatearHora12(cita.hora_inicio);
+  const texto =
+    `✅ <b>Cita confirmada: ${esFirma ? 'firma' : 'entrega'}</b>\n\n` +
+    `👤 ${escapeHtmlTg(nombre)}\n` +
+    `📅 ${fechaFmt} a las ${horaFmt}\n\n` +
+    `Preparar documentos.`;
+  try {
+    await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
+  } catch (e: any) {
+    console.error('[Solicitud] Error Telegram confirmación:', e?.message ?? e);
+  }
+}
+
+export interface SolicitudInsert {
+  tipo: TipoCita;
+  titulo: string;
+  descripcion?: string | null;
+  modalidad: ModalidadCita;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  duracion_minutos: number;
+  cliente_id?: string | null;
+  comentarios_cliente?: string | null;
+  notas?: string | null;
+  // Solo para la notificación al despacho (no se persisten en la cita).
+  cliente_telefono?: string;
+  cliente_empresa?: string;
+}
+
+export async function crearSolicitudCita(input: SolicitudInsert): Promise<Cita> {
+  const config = HORARIOS[input.tipo];
+  const { data: cita, error } = await db()
+    .from('citas')
+    .insert({
+      cliente_id: input.cliente_id ?? null,
+      tipo: input.tipo,
+      titulo: input.titulo,
+      descripcion: input.descripcion ?? null,
+      fecha: input.fecha,
+      hora_inicio: input.hora_inicio,
+      hora_fin: input.hora_fin,
+      duracion_minutos: input.duracion_minutos,
+      estado: 'pendiente' as EstadoCita,
+      costo: 0,
+      categoria_outlook: config?.categoria_outlook ?? 'Verde',
+      modalidad: input.modalidad,
+      fecha_solicitada: input.fecha,
+      hora_solicitada: input.hora_inicio,
+      comentarios_cliente: input.comentarios_cliente ?? null,
+      notas: input.notas ?? null,
+    })
+    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .single();
+
+  if (error) throw new CitaError('Error al crear solicitud', error);
+
+  await notificarDespachoNuevaSolicitud(cita, {
+    telefono: input.cliente_telefono,
+    empresa: input.cliente_empresa,
+  }).catch((e) => console.error('[crearSolicitudCita] Error notificando al despacho:', e?.message ?? e));
+
+  return cita;
+}
+
+export async function listarSolicitudesPendientes(): Promise<Cita[]> {
+  const { data, error } = await db()
+    .from('citas')
+    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .eq('estado', 'pendiente')
+    .in('modalidad', ['entrega_documentos', 'firma_documentos'])
+    .order('created_at', { ascending: true });
+  if (error) throw new CitaError('Error al listar solicitudes', error);
+  return (data ?? []) as Cita[];
+}
+
+interface AccionFechaInput {
+  fecha?: string;
+  hora_inicio?: string;
+  hora_fin?: string;
+  duracion_minutos?: number;
+  mensaje?: string;
+}
+
+// Amanda CONFIRMA la solicitud (con la fecha del cliente o una nueva).
+export async function confirmarSolicitud(id: string, input: AccionFechaInput = {}): Promise<Cita> {
+  const updates: Record<string, unknown> = {
+    estado: 'confirmada' as EstadoCita,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.fecha) updates.fecha = input.fecha;
+  if (input.hora_inicio) updates.hora_inicio = input.hora_inicio;
+  if (input.hora_fin) updates.hora_fin = input.hora_fin;
+  if (input.duracion_minutos) updates.duracion_minutos = input.duracion_minutos;
+
+  const { data: cita, error } = await db()
+    .from('citas')
+    .update(updates)
+    .eq('id', id)
+    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .single();
+  if (error) throw new CitaError('Error al confirmar solicitud', error);
+
+  await crearEventoOutlookParaCita(cita);
+
+  if (cita.cliente?.email) {
+    try {
+      const email = emailSolicitudConfirmada(cita, input.mensaje);
+      await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
+      await db().from('citas').update({ email_confirmacion_enviado: true }).eq('id', cita.id);
+    } catch (e: any) {
+      console.error('[confirmarSolicitud] Error email cliente:', e?.message ?? e);
+    }
+  }
+
+  await notificarMarianoCitaConfirmada(cita).catch((e) =>
+    console.error('[confirmarSolicitud] Error Telegram:', e?.message ?? e));
+
+  return cita;
+}
+
+// Amanda PROPONE otra fecha; la cita sigue 'pendiente' hasta que el cliente
+// confirme (o Amanda la confirme manualmente después). fecha_solicitada NO se
+// toca: conserva la fecha original del cliente para el correo.
+export async function proponerFechaSolicitud(id: string, input: AccionFechaInput = {}): Promise<Cita> {
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.fecha) updates.fecha = input.fecha;
+  if (input.hora_inicio) updates.hora_inicio = input.hora_inicio;
+  if (input.hora_fin) updates.hora_fin = input.hora_fin;
+  if (input.duracion_minutos) updates.duracion_minutos = input.duracion_minutos;
+
+  const { data: cita, error } = await db()
+    .from('citas')
+    .update(updates)
+    .eq('id', id)
+    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .single();
+  if (error) throw new CitaError('Error al proponer fecha', error);
+
+  if (cita.cliente?.email) {
+    try {
+      const email = emailSolicitudPropuestaFecha(cita, input.mensaje);
+      await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
+    } catch (e: any) {
+      console.error('[proponerFechaSolicitud] Error email cliente:', e?.message ?? e);
+    }
+  }
+
+  return cita;
+}
+
+// Amanda RECHAZA la solicitud (mensaje personalizable).
+export async function rechazarSolicitud(id: string, mensaje?: string): Promise<Cita> {
+  const { data: cita, error } = await db()
+    .from('citas')
+    .update({ estado: 'cancelada' as EstadoCita, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .single();
+  if (error) throw new CitaError('Error al rechazar solicitud', error);
+
+  if (cita.outlook_event_id) {
+    try { await deleteCalendarEvent(cita.outlook_event_id); } catch { /* best-effort */ }
+  }
+
+  if (cita.cliente?.email) {
+    try {
+      const email = emailSolicitudRechazada(cita, mensaje);
+      await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
+    } catch (e: any) {
+      console.error('[rechazarSolicitud] Error email cliente:', e?.message ?? e);
+    }
+  }
+
+  return cita;
+}
+
 // ── Bloqueos ────────────────────────────────────────────────────────────────
 
 export async function crearBloqueo(input: BloqueoInsert): Promise<BloqueoCalendario> {
@@ -669,7 +944,9 @@ export async function enviarRecordatorios(): Promise<{
       .select('*, cliente:clientes(id, codigo, nombre, email)')
       .eq('fecha', mananaStr)
       .eq('recordatorio_24h_enviado', false)
-      .in('estado', ['pendiente', 'confirmada']);
+      // Solo citas confirmadas (las solicitudes pendientes de entrega/firma no
+      // reciben recordatorios hasta que Amanda confirme la fecha).
+      .eq('estado', 'confirmada');
 
     for (const cita of citas24h ?? []) {
       if (cita.cliente?.email) {
@@ -694,7 +971,8 @@ export async function enviarRecordatorios(): Promise<{
     .select('*, cliente:clientes(id, codigo, nombre, email)')
     .eq('fecha', hoyStr)
     .eq('recordatorio_1h_enviado', false)
-    .in('estado', ['pendiente', 'confirmada']);
+    // Solo citas confirmadas (ver nota en recordatorios 24h).
+    .eq('estado', 'confirmada');
 
   for (const cita of citasHoy ?? []) {
     // Calcular si estamos a ~1 hora de la cita
@@ -724,7 +1002,9 @@ export async function enviarRecordatorios(): Promise<{
     .from('citas')
     .select('id')
     .lt('fecha', hoyStr)
-    .in('estado', ['pendiente', 'confirmada']);
+    // Solo se autocompletan citas confirmadas; una solicitud pendiente sin
+    // confirmar no debe marcarse como "completada" solo porque pasó la fecha.
+    .eq('estado', 'confirmada');
 
   if (citasPasadas && citasPasadas.length > 0) {
     const ids = citasPasadas.map((c: any) => c.id);
@@ -745,7 +1025,9 @@ export async function enviarRecordatorios(): Promise<{
     .select('*, cliente:clientes(id, nombre, email)')
     .eq('fecha', hoyStr)
     .in('tipo', ['consulta_nueva', 'seguimiento'])
-    .in('estado', ['pendiente', 'confirmada', 'completada'])
+    // 'pendiente' excluido: una solicitud de entrega/firma sin confirmar no
+    // dispara el follow-up post-consulta.
+    .in('estado', ['confirmada', 'completada'])
     .eq('followup_enviado', false);
 
   for (const cita of citasFollowup ?? []) {

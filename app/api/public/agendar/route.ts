@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { crearCita, obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
+import { crearCita, crearSolicitudCita, obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { HORARIOS, TipoCita } from '@/lib/types';
 
@@ -201,6 +201,45 @@ export async function POST(req: NextRequest) {
         ? modalidad
         : 'virtual';
 
+    // Entrega / firma de documentos → FLUJO DE SOLICITUD: la cita nace como
+    // 'pendiente' con la fecha/hora que el cliente eligió, sin confirmar ni
+    // crear evento de Outlook. Amanda decide la fecha desde el panel admin.
+    if (modalidadFinal === 'entrega_documentos' || modalidadFinal === 'firma_documentos') {
+      const solicitud = await crearSolicitudCita({
+        tipo: tipoCita,
+        titulo,
+        descripcion: asunto.trim(),
+        modalidad: modalidadFinal,
+        fecha,
+        hora_inicio: matchedSlot.hora_inicio,
+        hora_fin: matchedSlot.hora_fin,
+        duracion_minutos: matchedSlot.duracion_minutos,
+        cliente_id: clienteId,
+        comentarios_cliente: asunto.trim(),
+        notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
+        cliente_telefono: telefono?.trim(),
+        cliente_empresa: empresa?.trim(),
+      });
+
+      console.log('[Agendar] Solicitud creada OK:', solicitud.id, '(pendiente de confirmar fecha)');
+
+      return NextResponse.json(
+        {
+          success: true,
+          solicitud: true,
+          cita_id: solicitud.id,
+          teams_link: null,
+          modalidad: modalidadFinal,
+          fecha: solicitud.fecha,
+          hora_inicio: solicitud.hora_inicio,
+          hora_fin: solicitud.hora_fin,
+          tipo: solicitud.tipo,
+          costo: 0,
+        },
+        { status: 201 }
+      );
+    }
+
     const cita = await crearCita({
       tipo: tipoCita,
       titulo,
@@ -212,7 +251,6 @@ export async function POST(req: NextRequest) {
       cliente_id: clienteId,
       costo: config.costo,
       modalidad: modalidadFinal,
-      // El cliente no captura documentos; el admin los llena en la nota de entrega.
       isOnlineMeeting: modalidadFinal === 'virtual',
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
     });
@@ -222,6 +260,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         success: true,
+        solicitud: false,
         cita_id: cita.id,
         teams_link: cita.teams_link,
         fecha: cita.fecha,

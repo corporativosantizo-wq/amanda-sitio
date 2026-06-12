@@ -62,6 +62,7 @@ interface SlotItem {
 
 interface BookingResult {
   success: boolean;
+  solicitud?: boolean;
   cita_id: string;
   teams_link: string | null;
   fecha: string;
@@ -1235,6 +1236,51 @@ function StepExito({
   const info = TIPO_INFO[tipo];
   const esFirma = tipo === 'seguimiento' && modalidad === 'firma_documentos';
   const esOficina = tipo === 'seguimiento' && (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos');
+
+  // Entrega / firma = solicitud: el cliente eligió fecha/hora preferida pero la
+  // disponibilidad la confirma Amanda. No mostramos "cita confirmada".
+  if (result.solicitud) {
+    return (
+      <div className="text-center max-w-lg mx-auto">
+        <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl">
+          📋
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Solicitud recibida</h2>
+        <p className="text-gray-600 mb-8 leading-relaxed">
+          {nombres ? `${nombres}, h` : 'H'}emos recibido su solicitud de{' '}
+          {esFirma ? 'firma' : 'entrega'} de documentos para el{' '}
+          <span className="font-medium text-gray-900">{formatDateLong(result.fecha)}</span> a las{' '}
+          <span className="font-medium text-gray-900">{formatHora12(result.hora_inicio)}</span>.
+          <br />
+          Le confirmaremos la disponibilidad a la brevedad por correo electrónico.
+        </p>
+
+        {esOficina && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 text-left mb-6">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              {esFirma ? 'Lugar de la firma' : 'Lugar de entrega'}
+            </p>
+            <p className="text-sm text-gray-700">📍 {DIRECCION_OFICINA}</p>
+            {esFirma && (
+              <p className="text-xs text-gray-400 mt-2">
+                Una vez confirmada la cita, preséntese con DPI original vigente. Si firma como representante legal,
+                traiga su nombramiento vigente; si envía a un mandatario, debe presentar mandato con facultades
+                suficientes y su DPI.
+              </p>
+            )}
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400 mb-6">
+          ¿Alguna consulta? Escríbanos a asistente@papeleo.legal
+        </p>
+
+        <Link href="/" className="text-sm text-teal-600 hover:text-teal-700 font-medium transition">
+          Volver al sitio web
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="text-center max-w-lg mx-auto">
