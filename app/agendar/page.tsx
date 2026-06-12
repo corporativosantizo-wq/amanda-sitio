@@ -20,6 +20,7 @@ type ModalidadPublica = 'virtual' | 'entrega_documentos' | 'firma_documentos';
 const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
   label: string; icono: string; desc: string; resumen: string;
   duracion: string; costo: string; detalle: string; detalleEsDireccion: boolean; nota?: string;
+  dias: readonly number[]; diasLabel: string;
 }> = {
   virtual: {
     label: 'Seguimiento Virtual',
@@ -30,6 +31,8 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: 'Martes y miércoles',
     detalleEsDireccion: false,
+    dias: [2, 3],
+    diasLabel: 'Martes y miércoles',
   },
   entrega_documentos: {
     label: 'Entrega de Documentos',
@@ -40,6 +43,8 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
+    dias: [1, 2, 3, 4, 5],
+    diasLabel: 'Lunes a viernes',
   },
   firma_documentos: {
     label: 'Firma de Documentos',
@@ -51,6 +56,8 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
     nota: 'Presentarse con DPI original vigente',
+    dias: [1, 2, 3, 4, 5],
+    diasLabel: 'Lunes a viernes',
   },
 };
 
@@ -102,7 +109,7 @@ const TIPO_INFO: Record<TipoCita, {
     costoNum: 0,
     modalidad: 'Virtual, entrega o firma de documentos',
     dias: [2, 3],
-    diasLabel: 'Martes y miercoles',
+    diasLabel: 'Según modalidad',
   },
 };
 
@@ -182,7 +189,7 @@ export default function AgendarPage() {
     setSelectedSlot(null);
     try {
       const res = await fetch(
-        `/api/public/disponibilidad?fecha=${selectedDate}&tipo=${tipo}`
+        `/api/public/disponibilidad?fecha=${selectedDate}&tipo=${tipo}&modalidad=${modalidad}`
       );
       const json = await res.json();
       setSlots(json.slots ?? []);
@@ -191,7 +198,7 @@ export default function AgendarPage() {
     } finally {
       setLoadingSlots(false);
     }
-  }, [selectedDate, tipo]);
+  }, [selectedDate, tipo, modalidad]);
 
   useEffect(() => {
     if (step === 3) fetchSlots();
@@ -343,6 +350,7 @@ export default function AgendarPage() {
         {step === 2 && tipo && (
           <StepFecha
             tipo={tipo}
+            modalidad={modalidad}
             selected={selectedDate}
             onSelect={(d) => {
               setSelectedDate(d);
@@ -589,16 +597,24 @@ function StepTipo({
 
 function StepFecha({
   tipo,
+  modalidad,
   selected,
   onSelect,
   onBack,
 }: {
   tipo: TipoCita;
+  modalidad: ModalidadPublica;
   selected: string | null;
   onSelect: (date: string) => void;
   onBack: () => void;
 }) {
-  const info = TIPO_INFO[tipo];
+  // Para el seguimiento, los días disponibles dependen de la modalidad
+  // (virtual = mar/mié; entrega/firma = lun–vie). Consulta usa TIPO_INFO.
+  const tipoInfo = TIPO_INFO[tipo];
+  const modInfo = tipo === 'seguimiento' ? MODALIDAD_PUBLICA[modalidad] : null;
+  const dias = modInfo?.dias ?? tipoInfo.dias;
+  const diasLabel = modInfo?.diasLabel ?? tipoInfo.diasLabel;
+  const tituloLabel = modInfo?.label ?? tipoInfo.label;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -645,7 +661,7 @@ function StepFecha({
   const isDayAllowed = (day: number): boolean => {
     const d = new Date(viewYear, viewMonth, day);
     if (d < today) return false;
-    return info.dias.includes(d.getDay());
+    return dias.includes(d.getDay());
   };
 
   return (
@@ -654,7 +670,7 @@ function StepFecha({
         Seleccione una fecha
       </h2>
       <p className="text-gray-500 mb-6 text-sm">
-        {info.label}: disponible {info.diasLabel.toLowerCase()}.
+        {tituloLabel}: disponible {diasLabel.toLowerCase()}.
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 max-w-md mx-auto">

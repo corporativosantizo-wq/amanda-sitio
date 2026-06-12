@@ -14,6 +14,7 @@ import {
   EstadoCita,
   ModalidadCita,
   HORARIOS,
+  HORARIOS_MODALIDAD,
   ADMIN_ONLY_TIPOS,
   MODALIDAD_INFO,
 } from '@/lib/types';
@@ -54,16 +55,30 @@ export class CitaError extends Error {
 
 export async function obtenerDisponibilidad(
   fecha: string,
-  tipo: TipoCita
+  tipo: TipoCita,
+  modalidad?: ModalidadCita,
 ): Promise<SlotDisponible[]> {
   const config = HORARIOS[tipo];
   if (!config) throw new CitaError(`Tipo de cita inválido: ${tipo}`);
 
-  // Verificar que el día es válido para este tipo
+  // Entrega/firma de documentos: las atiende Mariano en oficina, con horario
+  // propio (lun–vie 9–16), sin consultar la agenda de Outlook de Amanda, y solo
+  // chocan contra otras citas de entrega/firma. El resto usa HORARIOS[tipo].
+  const esEntregaFirma =
+    tipo === 'seguimiento' &&
+    (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos');
+  const modConfig = esEntregaFirma ? HORARIOS_MODALIDAD[modalidad!] : undefined;
+
+  const dias = modConfig?.dias ?? config.dias;
+  const horaInicio = modConfig?.hora_inicio ?? config.hora_inicio;
+  const horaFin = modConfig?.hora_fin ?? config.hora_fin;
+  const duracionMin = modConfig?.duracion ?? config.duracion_min;
+
+  // Verificar que el día es válido
   const date = new Date(fecha + 'T12:00:00');
   const dayOfWeek = date.getDay(); // 0=Dom, 1=Lun, ...
-  if (!config.dias.includes(dayOfWeek)) {
-    console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ': día', dayOfWeek, 'no válido (permitidos:', config.dias + ')');
+  if (!dias.includes(dayOfWeek)) {
+    console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ', modalidad=', modalidad, ': día', dayOfWeek, 'no válido (permitidos:', dias + ')');
     return []; // No hay slots disponibles este día
   }
 
@@ -77,15 +92,20 @@ export async function obtenerDisponibilidad(
   }
 
   // Generar slots base
-  const slots = generarSlots(config.hora_inicio, config.hora_fin, config.duracion_min);
-  console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo + ':', slots.length, 'slots base generados (' + config.hora_inicio + '-' + config.hora_fin + ', cada', config.duracion_min + 'min)');
+  const slots = generarSlots(horaInicio, horaFin, duracionMin);
+  console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ', modalidad=', modalidad + ':', slots.length, 'slots base (' + horaInicio + '-' + horaFin + ', cada', duracionMin + 'min)');
 
-  // Obtener citas existentes del día (no canceladas)
-  const { data: citasExistentes } = await db()
+  // Obtener citas existentes del día (no canceladas). Para entrega/firma solo
+  // importan otras citas de entrega/firma (no sobrecargar a Mariano).
+  let citasQuery = db()
     .from('citas')
     .select('hora_inicio, hora_fin')
     .eq('fecha', fecha)
     .neq('estado', 'cancelada');
+  if (esEntregaFirma) {
+    citasQuery = citasQuery.in('modalidad', ['entrega_documentos', 'firma_documentos']);
+  }
+  const { data: citasExistentes } = await citasQuery;
 
   // Obtener bloqueos del día
   const { data: bloqueos } = await db()
@@ -113,12 +133,14 @@ export async function obtenerDisponibilidad(
   });
   console.log('[Disponibilidad] Después de filtrar bloqueos:', disponibles.length, 'slots');
 
-  // Si Outlook conectado, filtrar por busy slots
+  // Si Outlook conectado, filtrar por busy slots — SOLO para citas que atiende
+  // Amanda. La entrega/firma la atiende Mariano, así que su agenda de Outlook no
+  // debe bloquear estos slots.
   try {
-    const connected = await isOutlookConnected();
+    const connected = !esEntregaFirma && (await isOutlookConnected());
     if (connected) {
-      const startISO = `${fecha}T${config.hora_inicio}:00`;
-      const endISO = `${fecha}T${config.hora_fin}:00`;
+      const startISO = `${fecha}T${horaInicio}:00`;
+      const endISO = `${fecha}T${horaFin}:00`;
       const busySlots = await getFreeBusy(startISO, endISO);
       console.log('[Disponibilidad] Outlook busy slots:', JSON.stringify(busySlots));
 

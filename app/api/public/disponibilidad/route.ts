@@ -5,12 +5,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
-import { HORARIOS, TipoCita } from '@/lib/types';
+import { HORARIOS, TipoCita, ModalidadCita } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const fecha = sp.get('fecha');
   const tipo = sp.get('tipo') as TipoCita | null;
+  const modalidad = (sp.get('modalidad') as ModalidadCita | null) ?? undefined;
 
   if (!fecha || !tipo) {
     return NextResponse.json(
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const slots = await obtenerDisponibilidad(fecha, tipo);
+    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad);
 
     // Filter out past slots if the requested date is today (use Guatemala timezone)
     const nowGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));

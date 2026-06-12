@@ -36,6 +36,22 @@ export const MODALIDAD_INFO: Record<ModalidadCita, { label: string; icono: strin
   presencial:         { label: 'Presencial en oficina',     icono: '🏢',   usaTeams: false, usaOficina: true  },
 };
 
+// Horarios públicos por modalidad de seguimiento. La entrega y la firma de
+// documentos se atienden en oficina (Mariano), de lunes a viernes 9 AM–4 PM; la
+// firma usa slots de 30 min y la entrega de 15. El seguimiento virtual sigue el
+// horario base de HORARIOS.seguimiento (lo atiende Amanda, mar/mié).
+export interface HorarioModalidad {
+  dias: readonly number[];
+  hora_inicio: string;
+  hora_fin: string;
+  duracion: number;
+}
+
+export const HORARIOS_MODALIDAD: Partial<Record<ModalidadCita, HorarioModalidad>> = {
+  entrega_documentos: { dias: [1, 2, 3, 4, 5], hora_inicio: '09:00', hora_fin: '16:00', duracion: 15 },
+  firma_documentos:   { dias: [1, 2, 3, 4, 5], hora_inicio: '09:00', hora_fin: '16:00', duracion: 30 },
+};
+
 // Dirección de la oficina (entregas presenciales). Centralizada para emails/PDF.
 export const DIRECCION_OFICINA =
   '12 calle 1-25 zona 10, Edificio Géminis 10 Torre Sur, Oficina 402, Guatemala';
