@@ -8,7 +8,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 import { getAnthropicClient } from '@/lib/ai/anthropic-client';
-import { bloqueDatosLunares } from '@/lib/services/lunar';
+import { bloqueDatosAstronomicos } from '@/lib/services/astro';
 
 const db = () => createAdminClient();
 const TZ = 'America/Guatemala';
@@ -296,13 +296,14 @@ const REPORTE_DEADLINE_MS = 30_000;
 async function generarReporteAstro(config: ReporteAstroConfig): Promise<string> {
   const t0 = Date.now();
   const { inicio, fin, inicioDate } = semanaReporte();
-  // Datos lunares reales (suncalc, sin red) para que el modelo no invente fases.
-  const datosLunares = bloqueDatosLunares(inicioDate);
+  // Datos astronómicos reales (posiciones planetarias + luna + aspectos,
+  // calculados sin red) para que el modelo no invente posiciones ni signos.
+  const datosAstro = bloqueDatosAstronomicos(inicioDate);
   const tieneKey = !!process.env.ANTHROPIC_API_KEY;
   console.log(
     `[reporte-astro:${config.key}] Iniciando generación | semana ${inicio} → ${fin} | ANTHROPIC_API_KEY presente=${tieneKey}`,
   );
-  console.log(`[reporte-astro:${config.key}] Datos lunares reales (suncalc):\n${datosLunares}`);
+  console.log(`[reporte-astro:${config.key}] Datos astronómicos reales:\n${datosAstro}`);
 
   if (!tieneKey) {
     console.error(`[reporte-astro:${config.key}] ANTHROPIC_API_KEY NO está en el entorno → fallback`);
@@ -330,7 +331,7 @@ async function generarReporteAstro(config: ReporteAstroConfig): Promise<string> 
             role: 'user',
             content:
               `Genera el reporte astrológico para la semana del ${inicio} al ${fin} de 2026 para ${config.nombre}.\n\n` +
-              `${datosLunares}`,
+              `${datosAstro}`,
           },
         ],
       },
