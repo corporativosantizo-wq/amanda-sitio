@@ -101,9 +101,19 @@ export default function LlamadasPage() {
     (async () => {
       try {
         await getToken().catch(() => {});
-        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(busqueda.trim())}&limit=8`);
+        // limit alto + activo=true: una búsqueda puede coincidir por email
+        // compartido en muchos clientes (p.ej. un grupo corporativo cuyos
+        // miembros usan el mismo correo), empujando la coincidencia por nombre
+        // fuera de un límite bajo. Pedimos solo clientes activos.
+        const res = await adminFetch(`/api/admin/clientes?q=${encodeURIComponent(busqueda.trim())}&activo=true&limit=50`);
         const json = await res.json();
-        if (!cancel) setResultados(json.data ?? []);
+        // Ordenar por relevancia: coincidencias en nombre/código primero (las de
+        // solo-email al final), para que la empresa buscada quede arriba.
+        const q = busqueda.trim().toLowerCase();
+        const hit = (c: ClienteOption) =>
+          (c.nombre?.toLowerCase().includes(q) || c.codigo?.toLowerCase().includes(q)) ? 0 : 1;
+        const ranked = ((json.data ?? []) as ClienteOption[]).slice().sort((a, b) => hit(a) - hit(b));
+        if (!cancel) setResultados(ranked);
       } catch {
         if (!cancel) setResultados([]);
       }
