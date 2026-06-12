@@ -153,19 +153,67 @@ export function renderTemplate(
 // Genera un reporte semanal de astrología con la API de Anthropic + web_search
 // para las efemérides reales de la semana. Cache en memoria por día.
 
-const REPORTE_VAR = '{reporte_astrologico}';
 const TELEGRAM_MAX_CHARS = 4096;
 
-const FALLBACK_REPORTE =
-  '🔮 Los astros están en silencio esta semana, pero tu energía Cáncer con ascendente Acuario sigue brillando. ¡Hermosa semana! ❤️';
+// Configuración por persona del reporte astrológico. La variable del template
+// determina qué config se usa: {reporte_astrologico} → Anita,
+// {reporte_astrologico_amanda} → Amanda.
+interface ReporteAstroConfig {
+  key: string;
+  variable: string;
+  nombre: string;
+  signo: string;
+  simbolo: string;
+  ascendente: string;
+  simboloAsc: string;
+  promptExtra?: string;
+  maxChars: number;
+  incluyeDoceSignos: boolean;
+  fallback: string;
+}
+
+const REPORTE_CONFIG_ANITA: ReporteAstroConfig = {
+  key: 'anita',
+  variable: '{reporte_astrologico}',
+  nombre: 'Anita',
+  signo: 'Cáncer',
+  simbolo: '♋',
+  ascendente: 'Acuario',
+  simboloAsc: '♒',
+  maxChars: 3500,
+  incluyeDoceSignos: true,
+  fallback:
+    '🔮 Los astros están en silencio esta semana, pero tu energía Cáncer con ascendente Acuario sigue brillando. ¡Hermosa semana! ❤️',
+};
+
+const REPORTE_CONFIG_AMANDA: ReporteAstroConfig = {
+  key: 'amanda',
+  variable: '{reporte_astrologico_amanda}',
+  nombre: 'Amanda',
+  signo: 'Capricornio',
+  simbolo: '♑',
+  ascendente: 'Escorpio',
+  simboloAsc: '♏',
+  promptExtra:
+    'Amanda nació el 12 de enero de 1986 a la 1:25 AM. Su reporte debe ser más íntimo y personal, enfocado en trabajo, finanzas y energía personal. NO incluir los 12 signos — solo su sección personalizada, tránsitos principales, luna y consejo.',
+  maxChars: 2000,
+  incluyeDoceSignos: false,
+  fallback:
+    '🌟 Los astros están en pausa esta semana, pero tu energía Capricornio con ascendente Escorpio sigue imparable. ¡Hermosa semana! ✨',
+};
+
+// Orden de evaluación. La variable de Amanda contiene literalmente la cadena de
+// Anita como prefijo, pero al exigir la llave de cierre `}` en includes() no hay
+// colisión: '{reporte_astrologico}' ≠ '{reporte_astrologico_amanda}'.
+const REPORTE_CONFIGS: ReporteAstroConfig[] = [REPORTE_CONFIG_ANITA, REPORTE_CONFIG_AMANDA];
 
 // Símbolos de los 12 signos (orden zodiacal). Se usan para truncar sin partir
 // un signo a la mitad si el mensaje excede el límite de Telegram.
 const SIGNOS_ZODIACO = ['♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓'];
 
-// Cache en memoria: si ya se generó el reporte hoy (en este proceso), se reusa
-// para no llamar a la API dos veces el mismo día.
-let reporteCache: { fecha: string; texto: string } | null = null;
+// Cache en memoria por persona: si ya se generó el reporte hoy (en este
+// proceso), se reusa para no llamar a la API dos veces el mismo día.
+const reporteCache = new Map<string, { fecha: string; texto: string }>();
 
 // El reporte del sábado cubre del sábado actual al viernes siguiente.
 function semanaReporte(): { inicio: string; fin: string; inicioDate: Date } {
@@ -195,60 +243,70 @@ function truncarParaTelegram(text: string, limite = TELEGRAM_MAX_CHARS): string 
   return corte > 0 ? text.slice(0, corte).trimEnd() : recortado;
 }
 
-function systemPromptReporte(inicio: string, fin: string): string {
+function systemPromptReporte(config: ReporteAstroConfig, inicio: string, fin: string): string {
+  const NOMBRE_UP = config.nombre.toUpperCase();
+  const extra = config.promptExtra ? `\n\n${config.promptExtra}` : '';
+
+  // La sección de los 12 signos (y la numeración del consejo) varía según la
+  // persona: el reporte de Amanda es más íntimo y omite los 12 signos.
+  const seccionFinal = config.incluyeDoceSignos
+    ? `4. ⭐ LOS 12 SIGNOS:
+Para cada signo (♈♉♊♋♌♍♎♏♐♑♒♓) una predicción de 1-2 líneas.
+
+5. 💫 CONSEJO DE LA SEMANA:
+Un consejo basado en la energía planetaria predominante.`
+    : `4. 💫 CONSEJO DE LA SEMANA:
+Un consejo personalizado para ${config.signo}/${config.ascendente} basado en la energía planetaria predominante.`;
+
   return `Eres una astróloga profesional experta en tránsitos planetarios, aspectos y casas astrológicas. Escribes reportes semanales detallados con conocimiento real de efemérides.
 
 Genera un reporte astrológico para la semana del ${inicio} al ${fin} de 2026.
 
-IMPORTANTE: El reporte es para Anita, Sol en Cáncer (♋) con Ascendente en Acuario (♒). Personaliza la primera sección para ella.
+IMPORTANTE: El reporte es para ${config.nombre}, Sol en ${config.signo} (${config.simbolo}) con Ascendente en ${config.ascendente} (${config.simboloAsc}). Personaliza la primera sección para ${config.nombre}.${extra}
 
 Estructura del reporte:
 
-1. ♋ TU SEMANA, ANITA (Cáncer ☀️ · Acuario ↑):
-Predicción personalizada de 4-5 líneas basada en los tránsitos que afectan a Cáncer y cómo su ascendente Acuario modifica la energía. Menciona qué planetas transitan sus casas solares y del ascendente.
+1. ${config.simbolo} TU SEMANA, ${NOMBRE_UP} (${config.signo} ☀️ · ${config.ascendente} ↑):
+Predicción personalizada de 4-5 líneas basada en los tránsitos que afectan a ${config.signo} y cómo su ascendente ${config.ascendente} modifica la energía. Menciona qué planetas transitan sus casas solares y del ascendente.
 
 2. 🪐 TRÁNSITOS PRINCIPALES:
 Los 3-4 aspectos planetarios más importantes de la semana. Usa símbolos: cuadraturas □, trígonos △, oposiciones ☍, conjunciones ☌, sextiles ⚹. Símbolos planetarios: ☿☀♂♃♄♅♆♇♀☽. Explica brevemente el efecto de cada aspecto.
 
 3. 🌙 LUNA:
-Fase lunar, en qué signo transita y qué energía trae.
+Fase lunar (usa los datos lunares reales proporcionados), en qué signo transita y qué energía trae.
 
-4. ⭐ LOS 12 SIGNOS:
-Para cada signo (♈♉♊♋♌♍♎♏♐♑♒♓) una predicción de 1-2 líneas.
+${seccionFinal}
 
-5. 💫 CONSEJO DE LA SEMANA:
-Un consejo basado en la energía planetaria predominante.
-
-Formato: texto plano para Telegram con emojis. NO uses markdown, NO uses asteriscos para negritas. Máximo 3500 caracteres.
-Empieza directamente con: ♋ TU SEMANA, ANITA
+Formato: texto plano para Telegram con emojis. NO uses markdown, NO uses asteriscos para negritas. Máximo ${config.maxChars} caracteres.
+Empieza directamente con: ${config.simbolo} TU SEMANA, ${NOMBRE_UP}
 No repitas el título del reporte (ya está en el template).`;
 }
 
 // Deadline total para la generación. DEBE ser menor que el maxDuration de las
 // rutas para convertir un timeout duro de Vercel (504) en un fallback elegante:
 // si Anthropic tarda demasiado, abortamos, se captura el error y se envía
-// FALLBACK_REPORTE en vez de matar la función. Sin web_search ni thinking la
+// el fallback de la config en vez de matar la función. Sin web_search ni thinking la
 // respuesta debería llegar en 10-15s, así que 30s es holgado.
 const REPORTE_DEADLINE_MS = 30_000;
 
 // Llama a la API de Anthropic (llamada directa, SIN tools ni thinking) para que
-// sea rápida: Claude genera el reporte con su conocimiento de astrología y
-// posiciones planetarias generales. Devuelve texto plano, o FALLBACK_REPORTE si
-// algo falla.
-async function generarReporteAstrologico(): Promise<string> {
+// sea rápida: Claude genera el reporte con su conocimiento de astrología y los
+// datos lunares reales. Parametrizada por persona (config). Devuelve texto
+// plano, o el fallback de la config si algo falla.
+async function generarReporteAstro(config: ReporteAstroConfig): Promise<string> {
   const t0 = Date.now();
   const { inicio, fin, inicioDate } = semanaReporte();
   // Datos lunares reales (suncalc, sin red) para que el modelo no invente fases.
   const datosLunares = bloqueDatosLunares(inicioDate);
   const tieneKey = !!process.env.ANTHROPIC_API_KEY;
   console.log(
-    `[reporte-astro] Iniciando generación | semana ${inicio} → ${fin} | ANTHROPIC_API_KEY presente=${tieneKey}`,
+    `[reporte-astro:${config.key}] Iniciando generación | semana ${inicio} → ${fin} | ANTHROPIC_API_KEY presente=${tieneKey}`,
   );
-  console.log(`[reporte-astro] Datos lunares reales (suncalc):\n${datosLunares}`);
+  console.log(`[reporte-astro:${config.key}] Datos lunares reales (suncalc):\n${datosLunares}`);
 
   if (!tieneKey) {
-    console.error('[reporte-astro] ANTHROPIC_API_KEY NO está en el entorno → fallback');
-    return FALLBACK_REPORTE;
+    console.error(`[reporte-astro:${config.key}] ANTHROPIC_API_KEY NO está en el entorno → fallback`);
+    return config.fallback;
   }
 
   // Tiempo restante antes del deadline, que pasamos como timeout al request.
@@ -257,7 +315,7 @@ async function generarReporteAstrologico(): Promise<string> {
   try {
     const client = getAnthropicClient();
 
-    console.log('[reporte-astro] Llamando a Anthropic | model=claude-sonnet-4-6 | sin tools, sin thinking');
+    console.log(`[reporte-astro:${config.key}] Llamando a Anthropic | model=claude-sonnet-4-6 | sin tools, sin thinking`);
     // Llamada directa: sin tools (web_search) ni thinking → rápida (~10-15s).
     // timeout = deadline restante; maxRetries: 0 para que el backoff del SDK no
     // consuma el presupuesto de tiempo.
@@ -266,12 +324,12 @@ async function generarReporteAstrologico(): Promise<string> {
         model: 'claude-sonnet-4-6',
         // El reporte cabe en ~3000 caracteres; 1500 tokens son suficientes.
         max_tokens: 1500,
-        system: systemPromptReporte(inicio, fin),
+        system: systemPromptReporte(config, inicio, fin),
         messages: [
           {
             role: 'user',
             content:
-              `Genera el reporte astrológico para la semana del ${inicio} al ${fin} de 2026.\n\n` +
+              `Genera el reporte astrológico para la semana del ${inicio} al ${fin} de 2026 para ${config.nombre}.\n\n` +
               `${datosLunares}`,
           },
         ],
@@ -286,7 +344,7 @@ async function generarReporteAstrologico(): Promise<string> {
       .trim();
 
     console.log(
-      `[reporte-astro] Respuesta Anthropic | stop_reason=${response.stop_reason} | ` +
+      `[reporte-astro:${config.key}] Respuesta Anthropic | stop_reason=${response.stop_reason} | ` +
       `bloques=${response.content.length} | textoLen=${texto.length} | ${Date.now() - t0}ms`,
     );
 
@@ -294,21 +352,22 @@ async function generarReporteAstrologico(): Promise<string> {
     return texto;
   } catch (err) {
     console.error(
-      `[reporte-astro] Error generando reporte (${Date.now() - t0}ms) → fallback:`,
+      `[reporte-astro:${config.key}] Error generando reporte (${Date.now() - t0}ms) → fallback:`,
       err instanceof Error ? `${err.name}: ${err.message}` : err,
     );
-    return FALLBACK_REPORTE;
+    return config.fallback;
   }
 }
 
-// Wrapper con cache diario: no regenera si ya se produjo hoy.
-async function obtenerReporteAstrologico(): Promise<string> {
+// Wrapper con cache diario por persona: no regenera si ya se produjo hoy.
+async function obtenerReporteAstro(config: ReporteAstroConfig): Promise<string> {
   const hoy = gtToday();
-  if (reporteCache && reporteCache.fecha === hoy) return reporteCache.texto;
+  const cached = reporteCache.get(config.key);
+  if (cached && cached.fecha === hoy) return cached.texto;
 
-  const texto = await generarReporteAstrologico();
-  if (texto !== FALLBACK_REPORTE) {
-    reporteCache = { fecha: hoy, texto };
+  const texto = await generarReporteAstro(config);
+  if (texto !== config.fallback) {
+    reporteCache.set(config.key, { fecha: hoy, texto });
   }
   return texto;
 }
@@ -525,17 +584,22 @@ export async function enviarMensaje(m: MensajeProgramado): Promise<string> {
     frasesPersonalizadas: m.frases_personalizadas,
   });
 
-  // {reporte_astrologico}: genera el reporte vía Anthropic. Se escapa el HTML
-  // del reporte (texto plano) y se trunca al límite de Telegram si hace falta.
-  const tieneReporte = text.includes(REPORTE_VAR);
-  if (tieneReporte) {
-    console.log(`[reporte-astro] "${m.nombre}" usa {reporte_astrologico} (templateLen=${m.mensaje_template.length})`);
-    const reporteRaw = await obtenerReporteAstrologico();
-    const esFallback = reporteRaw === FALLBACK_REPORTE;
-    const reporte = escapeHtml(reporteRaw);
-    text = text.split(REPORTE_VAR).join(reporte);
+  // Reportes astrológicos: {reporte_astrologico} (Anita) y
+  // {reporte_astrologico_amanda} (Amanda). Cada uno se genera vía Anthropic con
+  // su propia config. Se escapa el HTML (texto plano) y se trunca al final.
+  let usoReporte = false;
+  for (const config of REPORTE_CONFIGS) {
+    if (!text.includes(config.variable)) continue;
+    usoReporte = true;
+    console.log(`[reporte-astro:${config.key}] "${m.nombre}" usa ${config.variable} (templateLen=${m.mensaje_template.length})`);
+    const reporteRaw = await obtenerReporteAstro(config);
+    const esFallback = reporteRaw === config.fallback;
+    text = text.split(config.variable).join(escapeHtml(reporteRaw));
+    console.log(`[reporte-astro:${config.key}] Reemplazado | esFallback=${esFallback}`);
+  }
+  if (usoReporte) {
     text = truncarParaTelegram(text);
-    console.log(`[reporte-astro] Texto final para Telegram | len=${text.length} | esFallback=${esFallback}`);
+    console.log(`[reporte-astro] Texto final para Telegram | len=${text.length}`);
   }
 
   const chatId = resolveChatId(m);
