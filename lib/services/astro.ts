@@ -1,7 +1,7 @@
 // ============================================================================
 // lib/services/astro.ts
 // Datos astronómicos REALES (sin red, deterministas) para el reporte astrológico.
-//   - Posiciones planetarias geocéntricas (Sol → Plutón): elementos keplerianos
+//   - Posiciones geocéntricas (Sol → Plutón + Quirón): elementos keplerianos
 //     aproximados de JPL (válidos 1800–2050) + precesión a la fecha. Precisión:
 //     signo siempre correcto, grados dentro de ~1° (más que suficiente).
 //   - Retrógrados: por diferencia de longitud entre la fecha y el día siguiente.
@@ -53,6 +53,14 @@ const EL: Record<string, ElementosKepler> = {
   URA:    { a0: 19.18916464, ad: -0.00196176, e0: 0.04725744, ed: -0.00004397, I0: 0.77263783, Id: -0.00242939, L0: 313.23810451, Ld: 428.48202785, w0: 170.95427630, wd: 0.40805281, O0: 74.01692503, Od: 0.04240589, b: 0.00058331, c: -0.97731848, s: 0.17689245, f: 7.67025 },
   NEP:    { a0: 30.06992276, ad: 0.00026291, e0: 0.00859048, ed: 0.00005105, I0: 1.77004347, Id: 0.00035372, L0: -55.12002969, Ld: 218.45945325, w0: 44.96476227, wd: -0.32241464, O0: 131.78422574, Od: -0.00508664, b: -0.00041348, c: 0.68346318, s: -0.10162547, f: 7.67025 },
   PLU:    { a0: 39.48211675, ad: -0.00031596, e0: 0.24882730, ed: 0.00005170, I0: 17.14001206, Id: 0.00004818, L0: 238.92903833, Ld: 145.20780515, w0: 224.06891629, wd: -0.04062942, O0: 110.30393684, Od: -0.01183482, b: -0.01262724 },
+  // Quirón (2060 Chiron): órbita entre Saturno y Urano. a=13.648 UA, e=0.3786,
+  // i=6.93°, Ω=209.39°, ω=339.36° → ϖ=Ω+ω=188.75°, período 50.76 a →
+  // Ld = 360/(50.76·365.25)·36525 = 709.21986 deg/siglo.
+  // L0 (longitud media en J2000) calibrada contra la posición real verificada
+  // del 11-jun-2026 (29°40' Aries) → el cálculo la reproduce con error ~0.2'.
+  // Nota: la anomalía media J2000 provista (72.30°) NO reproducía esa posición
+  // (daba 23°40' Tauro); se calibró M0≈28.8° a partir de la posición verificada.
+  CHIRON: { a0: 13.648, ad: 0, e0: 0.3786, ed: 0, I0: 6.93, Id: 0, L0: 217.560, Ld: 709.21986, w0: 188.75, wd: 0, O0: 209.39, Od: 0 },
 };
 
 // Siglos julianos desde J2000.0 (TT ≈ UTC para esta precisión).
@@ -186,6 +194,7 @@ const PLANETAS: { nombre: string; simbolo: string; el?: ElementosKepler; sun?: b
   { nombre: 'Urano', simbolo: '♅', el: EL.URA },
   { nombre: 'Neptuno', simbolo: '♆', el: EL.NEP },
   { nombre: 'Plutón', simbolo: '♇', el: EL.PLU },
+  { nombre: 'Quirón', simbolo: '⚷', el: EL.CHIRON },
 ];
 
 // Calcula longitud + retrógrado de cada planeta para una fecha, más la Luna.

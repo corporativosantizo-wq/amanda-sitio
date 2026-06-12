@@ -262,6 +262,16 @@ Un consejo personalizado para ${config.signo}/${config.ascendente} basado en la 
 
 Genera un reporte astrológico para la semana del ${inicio} al ${fin} de 2026.
 
+REGLAS ABSOLUTAS:
+- Usa ÚNICAMENTE las posiciones planetarias y aspectos proporcionados en DATOS ASTRONÓMICOS REALES
+- NO inventes posiciones de planetas
+- NO inventes aspectos que no estén en la lista proporcionada
+- Si un aspecto no está en los datos, NO lo menciones
+- Los signos de cada planeta son EXACTOS y no deben cambiarse
+- La fase lunar es EXACTA y no debe cambiarse
+- Puedes interpretar los significados astrológicos de los datos reales, pero NO cambiar los datos mismos
+- Si no estás seguro de algo, omítelo en vez de inventarlo
+
 IMPORTANTE: El reporte es para ${config.nombre}, Sol en ${config.signo} (${config.simbolo}) con Ascendente en ${config.ascendente} (${config.simboloAsc}). Personaliza la primera sección para ${config.nombre}.${extra}
 
 Estructura del reporte:
