@@ -33,6 +33,7 @@ import {
   emailRecordatorio1h,
   emailCancelacionCita,
   emailSolicitudConfirmada,
+  emailFirmaConfirmadaMultiple,
   emailSolicitudPropuestaFecha,
   emailSolicitudRechazada,
   emailNuevaSolicitudInterno,
@@ -239,7 +240,8 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
       estado, costo, categoria_outlook, modalidad, documentos_entrega,
       teams_link, outlook_event_id, es_personal_privada,
       notas, created_at, updated_at,
-      cliente:clientes(id, codigo, nombre, email)
+      cliente:clientes(id, codigo, nombre, email),
+      participantes:cita_participantes(id, nombre, email)
     `, { count: 'exact' });
 
   if (params.fecha_inicio) query = query.gte('fecha', params.fecha_inicio);
@@ -260,7 +262,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
 export async function obtenerCita(id: string): Promise<Cita> {
   const { data, error } = await db()
     .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email), participantes:cita_participantes(id, nombre, email)')
     .eq('id', id)
     .single();
 
@@ -611,7 +613,10 @@ export async function completarCita(id: string): Promise<Cita> {
 
 // Crea un evento de calendario en Outlook para una cita ya existente y guarda
 // outlook_event_id/teams_link. Best-effort (no lanza). Reutilizado al confirmar.
-async function crearEventoOutlookParaCita(cita: any): Promise<void> {
+async function crearEventoOutlookParaCita(
+  cita: any,
+  firmantes: Array<{ nombre: string; email: string | null }> = [],
+): Promise<void> {
   try {
     if (!(await isOutlookConnected())) {
       console.log('[Solicitud] Outlook no conectado — no se crea evento');
@@ -626,7 +631,7 @@ async function crearEventoOutlookParaCita(cita: any): Promise<void> {
       attendees: cita.cliente?.email ? [cita.cliente.email] : [],
       isOnlineMeeting: MODALIDAD_INFO[modalidad].usaTeams,
       categories: [cita.categoria_outlook ?? 'Verde'],
-      body: generarBodyEvento(cita),
+      body: generarBodyEvento(cita, firmantes),
     });
     await db()
       .from('citas')
@@ -686,8 +691,12 @@ async function notificarDespachoNuevaSolicitud(
   }
 }
 
-// Avisa a Mariano que una cita de entrega/firma quedó confirmada.
-async function notificarMarianoCitaConfirmada(cita: any): Promise<void> {
+// Avisa a Mariano que una cita de entrega/firma quedó confirmada. Para firmas
+// con múltiples partes, lista a todos los firmantes (nombre + email).
+async function notificarMarianoCitaConfirmada(
+  cita: any,
+  firmantes: Array<{ nombre: string; email: string | null }> = [],
+): Promise<void> {
   const chatId = process.env.TELEGRAM_GROUP_CHAT_ID;
   if (!chatId) return;
   const esFirma = cita.modalidad === 'firma_documentos';
@@ -698,6 +707,26 @@ async function notificarMarianoCitaConfirmada(cita: any): Promise<void> {
       })
     : '—';
   const horaFmt = formatearHora12(cita.hora_inicio);
+
+  // Firma con varias partes: notificación detallada con la lista de firmantes.
+  const partes = firmantes.filter((f) => (f.nombre ?? '').trim());
+  if (esFirma && partes.length > 1) {
+    const lista = partes
+      .map((f) => `- ${escapeHtmlTg(f.nombre)}${f.email ? ` (${escapeHtmlTg(f.email)})` : ''}`)
+      .join('\n');
+    const texto =
+      `✍️ <b>Cita de firma confirmada</b>\n` +
+      `📅 ${fechaFmt} a las ${horaFmt}\n` +
+      `👥 <b>Firmantes:</b>\n${lista}\n\n` +
+      `Preparar documentos para firma, timbres notariales y protocolo.`;
+    try {
+      await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
+    } catch (e: any) {
+      console.error('[Solicitud] Error Telegram confirmación:', e?.message ?? e);
+    }
+    return;
+  }
+
   const texto =
     `✅ <b>Cita confirmada: ${esFirma ? 'firma' : 'entrega'}</b>\n\n` +
     `👤 ${escapeHtmlTg(nombre)}\n` +
@@ -773,12 +802,19 @@ export async function listarSolicitudesPendientes(): Promise<Cita[]> {
   return (data ?? []) as Cita[];
 }
 
+interface ParticipanteInput {
+  nombre: string;
+  email?: string | null;
+}
+
 interface AccionFechaInput {
   fecha?: string;
   hora_inicio?: string;
   hora_fin?: string;
   duracion_minutos?: number;
   mensaje?: string;
+  // Partes adicionales que firman en la misma cita (solo firma_documentos).
+  participantes?: ParticipanteInput[];
 }
 
 // Amanda CONFIRMA la solicitud (con la fecha del cliente o una nueva).
@@ -800,9 +836,63 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
     .single();
   if (error) throw new CitaError('Error al confirmar solicitud', error);
 
-  await crearEventoOutlookParaCita(cita);
+  const esFirma = cita.modalidad === 'firma_documentos';
 
-  if (cita.cliente?.email) {
+  // Partes adicionales que firman en la misma cita (solo firma_documentos).
+  // Se guardan en legal.cita_participantes y cada una recibe su propio correo.
+  let participantes: Array<{ id: string; nombre: string; email: string }> = [];
+  if (esFirma && Array.isArray(input.participantes)) {
+    const filas = input.participantes
+      .map((p) => ({ nombre: (p.nombre ?? '').trim(), email: (p.email ?? '').trim() }))
+      .filter((p) => p.nombre && p.email);
+    if (filas.length) {
+      const { data: insertadas, error: insErr } = await db()
+        .from('cita_participantes')
+        .insert(filas.map((p) => ({ cita_id: cita.id, nombre: p.nombre, email: p.email })))
+        .select('id, nombre, email');
+      if (insErr) {
+        console.error('[confirmarSolicitud] Error guardando participantes:', insErr);
+      } else {
+        participantes = insertadas ?? [];
+      }
+    }
+  }
+
+  // Lista completa de firmantes: contacto principal + partes adicionales.
+  const firmantes: Array<{ nombre: string; email: string | null }> = [
+    { nombre: cita.cliente?.nombre ?? '', email: cita.cliente?.email ?? null },
+    ...participantes.map((p) => ({ nombre: p.nombre, email: p.email })),
+  ].filter((f) => f.nombre.trim());
+
+  // Solo se listan firmantes en el evento/Telegram cuando hay varias partes.
+  const firmantesParaEvento = esFirma && participantes.length > 0 ? firmantes : [];
+  await crearEventoOutlookParaCita(cita, firmantesParaEvento);
+
+  // ── Correos de confirmación ──
+  if (esFirma && participantes.length > 0) {
+    // Múltiples firmantes: correo personalizado a cada uno (principal + partes),
+    // mencionando a TODAS las partes con quienes va a firmar.
+    if (cita.cliente?.email) {
+      try {
+        const email = emailFirmaConfirmadaMultiple(cita, cita.cliente.nombre ?? '', firmantes, input.mensaje);
+        await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
+        await db().from('citas').update({ email_confirmacion_enviado: true }).eq('id', cita.id);
+      } catch (e: any) {
+        console.error('[confirmarSolicitud] Error email firmante principal:', e?.message ?? e);
+      }
+    }
+    for (const p of participantes) {
+      if (!p.email) continue;
+      try {
+        const email = emailFirmaConfirmadaMultiple(cita, p.nombre, firmantes, input.mensaje);
+        await sendMail({ from: email.from, to: p.email, subject: email.subject, htmlBody: email.html });
+        await db().from('cita_participantes').update({ confirmacion_enviada: true }).eq('id', p.id);
+      } catch (e: any) {
+        console.error('[confirmarSolicitud] Error email participante:', e?.message ?? e);
+      }
+    }
+  } else if (cita.cliente?.email) {
+    // Un solo contacto: correo de confirmación estándar.
     try {
       const email = emailSolicitudConfirmada(cita, input.mensaje);
       await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
@@ -812,10 +902,10 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
     }
   }
 
-  await notificarMarianoCitaConfirmada(cita).catch((e) =>
+  await notificarMarianoCitaConfirmada(cita, firmantes).catch((e) =>
     console.error('[confirmarSolicitud] Error Telegram:', e?.message ?? e));
 
-  return cita;
+  return { ...cita, participantes };
 }
 
 // Amanda PROPONE otra fecha; la cita sigue 'pendiente' hasta que el cliente
@@ -1159,11 +1249,19 @@ const TIPO_LABELS: Record<string, string> = {
   evento_libre: 'Evento Libre',
 };
 
-function generarBodyEvento(cita: any): string {
+function generarBodyEvento(
+  cita: any,
+  firmantes: Array<{ nombre: string; email: string | null }> = [],
+): string {
   const clienteNombre = cita.cliente?.nombre ?? 'Sin cliente asignado';
   const tipo = TIPO_LABELS[cita.tipo] ?? cita.tipo;
+  const nombresFirmantes = firmantes.map((f) => (f.nombre ?? '').trim()).filter(Boolean);
+  const firmantesBlock = nombresFirmantes.length
+    ? `<p><strong>Firmantes:</strong></p>\n<ul>${nombresFirmantes.map((n) => `<li>${n}</li>`).join('')}</ul>`
+    : '';
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
+${firmantesBlock}
 ${cita.costo > 0 ? `<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>` : ''}
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
 }

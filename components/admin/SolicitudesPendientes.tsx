@@ -124,11 +124,19 @@ function SolicitudModal({
   getToken: () => Promise<string | null>;
 }) {
   const mod = MODALIDAD_LABEL[solicitud.modalidad ?? ''] ?? { label: 'Solicitud', icono: '📋' };
+  const esFirma = solicitud.modalidad === 'firma_documentos';
   const [fecha, setFecha] = useState(solicitud.fecha_solicitada ?? solicitud.fecha ?? '');
   const [hora, setHora] = useState((solicitud.hora_solicitada ?? solicitud.hora_inicio ?? '').slice(0, 5));
   const [mensaje, setMensaje] = useState('');
+  const [participantes, setParticipantes] = useState<{ nombre: string; email: string }[]>([]);
   const [busy, setBusy] = useState<null | 'confirmar' | 'proponer' | 'rechazar'>(null);
   const [error, setError] = useState('');
+
+  const addParticipante = () => setParticipantes((prev) => [...prev, { nombre: '', email: '' }]);
+  const removeParticipante = (i: number) =>
+    setParticipantes((prev) => prev.filter((_, idx) => idx !== i));
+  const updateParticipante = (i: number, campo: 'nombre' | 'email', valor: string) =>
+    setParticipantes((prev) => prev.map((p, idx) => (idx === i ? { ...p, [campo]: valor } : p)));
 
   const patch = async (body: Record<string, unknown>) => {
     await getToken().catch(() => {});
@@ -160,6 +168,15 @@ function SolicitudModal({
 
   const confirmar = () => {
     if (!fecha || !hora) { setError('Seleccione fecha y hora.'); return; }
+    const partes = esFirma
+      ? participantes
+          .map((p) => ({ nombre: p.nombre.trim(), email: p.email.trim() }))
+          .filter((p) => p.nombre || p.email)
+      : [];
+    if (partes.some((p) => !p.nombre || !p.email)) {
+      setError('Cada parte adicional necesita nombre y email (para enviarle su confirmación).');
+      return;
+    }
     run('confirmar', {
       accion: 'confirmar_solicitud',
       fecha,
@@ -167,6 +184,7 @@ function SolicitudModal({
       hora_fin: addMinutes(hora, solicitud.duracion_minutos),
       duracion_minutos: solicitud.duracion_minutos,
       mensaje: mensaje.trim() || undefined,
+      participantes: partes.length ? partes : undefined,
     });
   };
 
@@ -207,6 +225,53 @@ function SolicitudModal({
             <p className="font-medium text-gray-900">{solicitud.cliente?.nombre ?? 'Cliente'}</p>
             {solicitud.cliente?.email && <p className="text-gray-500 text-xs">{solicitud.cliente.email}</p>}
           </div>
+
+          {/* Otras partes que deben firmar (solo firma de documentos) */}
+          {esFirma && (
+            <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">👥 Otras partes que deben firmar (opcional)</p>
+                <button
+                  type="button"
+                  onClick={addParticipante}
+                  className="text-xs font-medium text-teal-700 hover:text-teal-900"
+                >
+                  + Agregar parte
+                </button>
+              </div>
+              {participantes.length === 0 && (
+                <p className="text-[11px] text-gray-400">
+                  Si en esta firma participan más personas (p. ej. otra sociedad), agréguelas aquí. Cada una recibirá su propio correo.
+                </p>
+              )}
+              {participantes.map((p, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={p.nombre}
+                    onChange={(e) => updateParticipante(i, 'nombre', e.target.value)}
+                    placeholder="Nombre"
+                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  />
+                  <input
+                    type="email"
+                    value={p.email}
+                    onChange={(e) => updateParticipante(i, 'email', e.target.value)}
+                    placeholder="Email"
+                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeParticipante(i)}
+                    aria-label="Quitar parte"
+                    className="shrink-0 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Fecha/hora solicitada */}
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">

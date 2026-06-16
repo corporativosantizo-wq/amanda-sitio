@@ -400,6 +400,52 @@ export function emailSolicitudConfirmada(cita: any, mensaje?: string): EmailTemp
   };
 }
 
+// Cita de firma CONFIRMADA con MÚLTIPLES firmantes. Cada firmante (contacto
+// principal + cada parte adicional) recibe su propio correo dirigido a su
+// nombre, mencionando a TODAS las partes con quienes va a firmar. `firmantes`
+// es la lista completa de todos los que firman en la cita.
+export function emailFirmaConfirmadaMultiple(
+  cita: any,
+  destinatarioNombre: string,
+  firmantes: Array<{ nombre: string }>,
+  mensaje?: string,
+): EmailTemplate {
+  const fechaFmt = cita.fecha ? formatearFechaGT(cita.fecha) : '';
+  const horaFmt = formatearHora(cita.hora_inicio);
+
+  const listaFirmantes = firmantes
+    .filter((f) => (f.nombre ?? '').trim())
+    .map((f) => `<li style="margin:4px 0;font-size:14px;color:#0f172a;">${escEmail(f.nombre)}</li>`)
+    .join('');
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita confirmada</h2>
+    ${destinatarioNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(destinatarioNombre)}</strong>,</p>` : ''}
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos su cita para la firma de documentos:</p>
+    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>📍 Lugar:</strong> ${DIRECCION_OFICINA}</p>
+      </td></tr>
+    </table>
+    <div style="margin:16px 0;">
+      <p style="margin:0 0 6px;font-size:14px;color:#475569;"><strong>👥 En esta firma participan:</strong></p>
+      <ul style="margin:0;padding-left:20px;">${listaFirmantes}</ul>
+    </div>
+    <p style="margin:8px 0;font-size:14px;color:#b45309;"><strong>⚠️ Importante: Presentarse con DPI original vigente.</strong></p>
+    ${mensajePersonalizadoHTML(mensaje)}
+    <p style="color:#64748b;font-size:13px;margin-top:16px;">Si necesita reprogramar, contáctenos con anticipación.</p>
+    ${firmaMagalyHTML()}
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Cita confirmada — Firma de documentos${fechaFmt ? ` — ${fechaFmt}` : ''}`,
+    html,
+  };
+}
+
 // Amanda PROPONE otra fecha (la cita sigue como pendiente hasta que el cliente
 // confirme). `cita.fecha`/`hora_inicio` son la nueva propuesta; `fecha_solicitada`
 // es la que el cliente había pedido originalmente.

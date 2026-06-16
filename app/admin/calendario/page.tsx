@@ -44,6 +44,7 @@ interface CitaItem {
   teams_link: string | null;
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
+  participantes?: { id: string; nombre: string; email: string | null }[] | null;
   _source?: 'outlook' | 'expediente';
   isAllDay?: boolean;
   expediente_id?: string;
@@ -1444,6 +1445,18 @@ function DetailModal({
                   Requisitos: DPI vigente · representante legal: nombramiento · mandatario: mandato con facultades + DPI ·
                   preparar timbres y protocolo.
                 </p>
+              )}
+              {cita.modalidad === 'firma_documentos' && cita.participantes && cita.participantes.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-xs text-blue-700 font-medium">👥 Otras partes que firman:</p>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {cita.participantes.map((p) => (
+                      <li key={p.id} className="text-sm text-blue-900">
+                        {p.nombre}{p.email ? ` — ${p.email}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               {cita.modalidad === 'entrega_documentos' && cita._source !== 'outlook' && cita._source !== 'expediente' && cita.cliente && (
                 <a

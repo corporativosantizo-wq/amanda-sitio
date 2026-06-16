@@ -76,6 +76,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         hora_fin: body.hora_fin,
         duracion_minutos: body.duracion_minutos,
         mensaje: body.mensaje,
+        participantes: body.participantes,
       });
       return NextResponse.json(cita);
     }
