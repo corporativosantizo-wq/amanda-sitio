@@ -337,7 +337,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
 
   // Insertar cita
   const costo = input.costo ?? config.costo;
-  const modalidad: ModalidadCita = input.modalidad ?? 'virtual';
+  // Las audiencias son presenciales en el juzgado: NUNCA llevan modalidad (queda
+  // null, jamás el default 'virtual'), por lo que tampoco generan reunión de Teams
+  // ni el correo de "Cita Confirmada". El resto de tipos conserva el default.
+  const esAudiencia = input.tipo === 'audiencia';
+  const modalidad: ModalidadCita | null = esAudiencia ? null : (input.modalidad ?? 'virtual');
   const { data: cita, error } = await db()
     .from('citas')
     .insert({
@@ -388,8 +392,9 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
         startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
         endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
         attendees: clienteEmail ? [clienteEmail] : [],
-        // Las entregas de documentos no llevan reunión de Teams.
-        isOnlineMeeting: (input.isOnlineMeeting ?? true) && MODALIDAD_INFO[modalidad].usaTeams,
+        // Las entregas de documentos y las audiencias no llevan reunión de Teams.
+        isOnlineMeeting:
+          (input.isOnlineMeeting ?? true) && !!modalidad && MODALIDAD_INFO[modalidad].usaTeams,
         categories: [config.categoria_outlook],
         body: generarBodyEvento(cita),
       };
@@ -428,8 +433,14 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   }
   console.log('[crearCita] FIN Outlook Calendar (event_id=', cita.outlook_event_id ?? 'NULL', ', teams=', cita.teams_link ? 'SÍ' : 'NULL', ')');
 
-  // Enviar email de confirmación (independiente de Outlook calendar)
-  if (clienteEmail) {
+  // Enviar email de confirmación (independiente de Outlook calendar).
+  // El correo "Cita Confirmada" (con sección de Teams/oficina según modalidad) es
+  // SOLO para consulta/seguimiento. Las audiencias usan su propio recordatorio
+  // (1 día antes vía audiencia_destinatarios) y NUNCA reciben confirmación; las
+  // reuniones, bloqueos y eventos libres tampoco disparan este correo.
+  const enviaConfirmacion =
+    input.tipo === 'consulta_nueva' || input.tipo === 'seguimiento';
+  if (clienteEmail && enviaConfirmacion) {
     console.log(`[crearCita] ── Enviando email de confirmación ──`);
     try {
       const email = emailConfirmacionCita(cita);
@@ -447,7 +458,10 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       console.error('[crearCita] code:', emailErr.code ?? 'N/A');
     }
   } else {
-    console.log(`[crearCita] No se envía email — clienteEmail es null`);
+    console.log(
+      `[crearCita] No se envía email de confirmación —`,
+      !clienteEmail ? 'clienteEmail es null' : `tipo=${input.tipo} no usa confirmación`,
+    );
   }
 
   // ── Entrega / firma de documentos: avisar a Mariano ──
