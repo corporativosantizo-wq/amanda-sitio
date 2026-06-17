@@ -27,6 +27,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       body_html: body.body_html,
       to_emails: body.to_emails,
       cc_emails: body.cc_emails,
+      // Solo se toca si la clave viene en el body (null = desprogramar).
+      programado_para: 'programado_para' in body ? body.programado_para : undefined,
     });
     return NextResponse.json({ data });
   } catch (err) {

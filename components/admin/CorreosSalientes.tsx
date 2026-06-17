@@ -20,6 +20,7 @@ interface Saliente {
   cliente_id: string | null;
   lote: string | null;
   status: string;
+  programado_para: string | null;
   created_at: string;
 }
 
@@ -54,6 +55,18 @@ function AccountBadge({ account }: { account: string }) {
 
 const splitEmails = (s: string): string[] => s.split(/[,;\n]/).map((e) => e.trim()).filter(Boolean);
 
+// Guatemala es UTC-6 fijo (sin horario de verano). Construye un ISO con offset
+// -06:00 a partir de los inputs de fecha (YYYY-MM-DD) y hora (HH:mm) locales GT.
+const gtToISO = (fecha: string, hora: string): string => `${fecha}T${hora}:00-06:00`;
+
+// Muestra un timestamptz (UTC) en hora de Guatemala.
+const fmtGT = (iso: string): string =>
+  new Date(iso).toLocaleString('es-GT', {
+    timeZone: 'America/Guatemala',
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+
 export default function CorreosSalientes() {
   const [items, setItems] = useState<Saliente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +75,9 @@ export default function CorreosSalientes() {
   const [editing, setEditing] = useState<Saliente | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
+  // Programación: borrador individual o lote completo a programar.
+  const [scheduling, setScheduling] = useState<Saliente | null>(null);
+  const [schedulingLote, setSchedulingLote] = useState<{ lote: string; count: number } | null>(null);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -110,6 +126,44 @@ export default function CorreosSalientes() {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // Programa un borrador (iso) o lo desprograma (iso=null).
+  const programarUno = async (id: string, iso: string | null) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/molly/salientes/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ programado_para: iso }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al programar');
+      setScheduling(null);
+      fetchItems();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Programa todos los pendientes de un lote para la misma fecha/hora.
+  const programarLote = async (lote: string, iso: string) => {
+    setError(null);
+    try {
+      const res = await adminFetch('/api/admin/molly/salientes/programar-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lote, programado_para: iso }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Error al programar el lote');
+      setSchedulingLote(null);
+      fetchItems();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error');
     }
   };
 
@@ -188,13 +242,24 @@ export default function CorreosSalientes() {
                 <h3 className="font-semibold text-navy text-sm">
                   {lote === 'Sin lote' ? '📭 Sin lote' : `🗂️ ${lote}`} <span className="text-slate font-normal">({delLote.length})</span>
                 </h3>
-                <button
-                  onClick={() => enviarLote(lote)}
-                  disabled={!!batchProgress || !!busyId}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition"
-                >
-                  📨 Enviar todo el lote
-                </button>
+                <div className="flex items-center gap-2">
+                  {lote !== 'Sin lote' && (
+                    <button
+                      onClick={() => setSchedulingLote({ lote, count: delLote.length })}
+                      disabled={!!batchProgress || !!busyId}
+                      className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 text-indigo-700 rounded-lg text-xs font-semibold transition"
+                    >
+                      🕐 Programar todo el lote
+                    </button>
+                  )}
+                  <button
+                    onClick={() => enviarLote(lote)}
+                    disabled={!!batchProgress || !!busyId}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition"
+                  >
+                    📨 Enviar todo el lote
+                  </button>
+                </div>
               </div>
               <div className="divide-y divide-slate-100">
                 {delLote.map((s) => (
@@ -204,6 +269,11 @@ export default function CorreosSalientes() {
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <AccountBadge account={s.account} />
                           <span className="text-sm font-semibold text-navy truncate">{s.subject}</span>
+                          {s.programado_para && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700">
+                              🕐 Programado para {fmtGT(s.programado_para)}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate">
                           <strong>Para:</strong> {s.to_emails.join(', ')}
@@ -219,6 +289,23 @@ export default function CorreosSalientes() {
                         >
                           ✏️ Editar
                         </button>
+                        {s.programado_para ? (
+                          <button
+                            onClick={() => programarUno(s.id, null)}
+                            disabled={busyId === s.id}
+                            className="px-3 py-1 text-xs font-medium rounded-lg bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 transition"
+                          >
+                            🕐 Cancelar programación
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setScheduling(s)}
+                            disabled={busyId === s.id}
+                            className="px-3 py-1 text-xs font-medium rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 transition"
+                          >
+                            🕐 Programar
+                          </button>
+                        )}
                         <button
                           onClick={() => enviarUno(s.id)}
                           disabled={busyId === s.id || !!batchProgress}
@@ -256,6 +343,105 @@ export default function CorreosSalientes() {
           onSaved={() => { setEditing(null); fetchItems(); }}
         />
       )}
+      {scheduling && (
+        <ScheduleModal
+          titulo={`🕐 Programar envío`}
+          descripcion={`“${scheduling.subject}” → ${scheduling.to_emails.join(', ')}`}
+          inicial={scheduling.programado_para}
+          onClose={() => setScheduling(null)}
+          onConfirm={(iso) => programarUno(scheduling.id, iso)}
+        />
+      )}
+      {schedulingLote && (
+        <ScheduleModal
+          titulo={`🕐 Programar todo el lote`}
+          descripcion={`Se programarán los ${schedulingLote.count} correos pendientes del lote “${schedulingLote.lote}” para la misma fecha/hora.`}
+          inicial={null}
+          onClose={() => setSchedulingLote(null)}
+          onConfirm={(iso) => programarLote(schedulingLote.lote, iso)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal: programar envío (fecha + hora, hora de Guatemala) ─────────────────
+
+function ScheduleModal({
+  titulo,
+  descripcion,
+  inicial,
+  onClose,
+  onConfirm,
+}: {
+  titulo: string;
+  descripcion: string;
+  inicial: string | null;
+  onClose: () => void;
+  onConfirm: (iso: string) => void;
+}) {
+  // Pre-rellena con el valor actual (en hora GT) si lo hay.
+  const initParts = (() => {
+    if (!inicial) return { fecha: '', hora: '' };
+    const d = new Date(inicial);
+    const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+    return { fecha: f, hora: h };
+  })();
+
+  const [fecha, setFecha] = useState(initParts.fecha);
+  const [hora, setHora] = useState(initParts.hora);
+  const [error, setError] = useState<string | null>(null);
+
+  const confirmar = () => {
+    if (!fecha || !hora) { setError('Seleccione fecha y hora.'); return; }
+    const iso = gtToISO(fecha, hora);
+    if (new Date(iso).getTime() <= Date.now()) {
+      setError('La fecha/hora programada debe ser futura.');
+      return;
+    }
+    onConfirm(iso);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-navy">{titulo}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          <p className="text-sm text-slate-600">{descripcion}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
+              <input
+                type="date"
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-cyan"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Hora</label>
+              <input
+                type="time"
+                value={hora}
+                onChange={(e) => setHora(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-cyan"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400">Hora de Guatemala (UTC-6).</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium transition">Cancelar</button>
+          <button onClick={confirmar} className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold transition">
+            🕐 Programar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

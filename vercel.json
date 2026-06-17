@@ -49,6 +49,10 @@
     {
       "path": "/api/cron/mensajes-telegram",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/salientes-programados",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

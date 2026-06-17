@@ -38,6 +38,7 @@ export interface BorradorSaliente {
   status: 'pendiente' | 'enviado' | 'cancelado';
   enviado_via: string | null;
   sent_at: string | null;
+  programado_para: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -156,6 +157,19 @@ export interface SalienteUpdate {
   body_html?: string | null;
   to_emails?: string[];
   cc_emails?: string[] | null;
+  // ISO timestamp (con offset, p.ej. ...-06:00) para programar el envío, o null
+  // para volver a envío manual. undefined = no se toca.
+  programado_para?: string | null;
+}
+
+// Valida que un timestamp de programación sea una fecha futura válida.
+// Devuelve el ISO normalizado, o null si se pasa null/'' (envío manual).
+function validarProgramacion(valor: string | null | undefined): string | null {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const d = new Date(valor);
+  if (isNaN(d.getTime())) throw new SalienteError('Fecha de programación inválida.');
+  if (d.getTime() <= Date.now()) throw new SalienteError('La fecha programada debe ser futura.');
+  return d.toISOString();
 }
 
 export async function editarSaliente(id: string, updates: SalienteUpdate): Promise<BorradorSaliente> {
@@ -192,6 +206,10 @@ export async function editarSaliente(id: string, updates: SalienteUpdate): Promi
     if (updates.body_html === undefined) payload.body_html = null;
   }
   if (updates.body_html !== undefined) payload.body_html = updates.body_html?.trim() || null;
+  if (updates.programado_para !== undefined) {
+    // null/'' → envío manual; con valor → debe ser futura.
+    payload.programado_para = validarProgramacion(updates.programado_para);
+  }
 
   const { data, error } = await db()
     .from('borradores_salientes')
@@ -201,6 +219,25 @@ export async function editarSaliente(id: string, updates: SalienteUpdate): Promi
     .single();
   if (error) throw new SalienteError('Error al editar borrador saliente', error);
   return data as BorradorSaliente;
+}
+
+// Programa (o desprograma) todos los pendientes de un lote para la misma fecha.
+// programadoPara=null vuelve el lote a envío manual.
+export async function programarLoteSaliente(
+  lote: string,
+  programadoPara: string | null,
+): Promise<{ actualizados: number; programado_para: string | null }> {
+  if (!lote.trim()) throw new SalienteError('Lote requerido.');
+  const valor = validarProgramacion(programadoPara);
+
+  const { data, error } = await db()
+    .from('borradores_salientes')
+    .update({ programado_para: valor, updated_at: new Date().toISOString() })
+    .eq('lote', lote)
+    .eq('status', 'pendiente')
+    .select('id');
+  if (error) throw new SalienteError('Error al programar el lote', error);
+  return { actualizados: data?.length ?? 0, programado_para: valor };
 }
 
 // Cancela (no borra físicamente).
@@ -337,4 +374,36 @@ export async function enviarLoteSaliente(lote: string, delayMs = 2500): Promise<
   }
 
   return resultado;
+}
+
+// Envía los correos programados cuya fecha ya venció (status='pendiente',
+// programado_para IS NOT NULL y <= now()). Lo usa el cron. Delay entre correos
+// para no saturar Graph; un fallo individual no detiene el resto.
+export async function enviarProgramadosVencidos(delayMs = 2500): Promise<{ enviados: number; errores: number }> {
+  const { data: pendientes, error } = await db()
+    .from('borradores_salientes')
+    .select('id')
+    .eq('status', 'pendiente')
+    .not('programado_para', 'is', null)
+    .lte('programado_para', new Date().toISOString())
+    .order('programado_para', { ascending: true });
+
+  if (error) throw new SalienteError('Error consultando programados', error);
+  if (!pendientes || pendientes.length === 0) return { enviados: 0, errores: 0 };
+
+  let enviados = 0;
+  let errores = 0;
+  for (let i = 0; i < pendientes.length; i++) {
+    try {
+      await enviarSaliente(pendientes[i].id);
+      enviados++;
+    } catch (e) {
+      console.error('[saliente] Error enviando programado', pendientes[i].id, e instanceof Error ? e.message : e);
+      errores++;
+    }
+    if (i < pendientes.length - 1 && delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return { enviados, errores };
 }
