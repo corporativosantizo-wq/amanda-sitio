@@ -44,6 +44,7 @@ interface CitaItem {
   audiencia_expediente?: string | null;
   audiencia_diligencia?: string | null;
   audiencia_juzgado?: string | null;
+  audiencia_destinatarios?: string[] | null;
   es_personal_privada?: boolean;
   teams_link: string | null;
   notas: string | null;
@@ -1596,9 +1597,11 @@ function EditModal({
   const [fecha, setFecha] = useState(cita.fecha);
   const [horaInicio, setHoraInicio] = useState(cita.hora_inicio.substring(0, 5));
   const [duracion, setDuracion] = useState(cita.duracion_minutos);
+  const [audDestinatarios, setAudDestinatarios] = useState<string[]>(cita.audiencia_destinatarios ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const { getToken } = useAuth();
+  const isAudiencia = cita.tipo === 'audiencia';
 
   const horaFin = calcHoraFin(horaInicio, duracion);
   const horaNum = parseInt(horaInicio.split(':')[0], 10);
@@ -1622,6 +1625,7 @@ function EditModal({
           hora_inicio: horaInicio,
           hora_fin: horaFin,
           duracion_minutos: duracion,
+          ...(isAudiencia ? { audiencia_destinatarios: audDestinatarios.length ? audDestinatarios : null } : {}),
         }),
       });
 
@@ -1725,6 +1729,17 @@ function EditModal({
             />
           </div>
 
+          {/* Destinatarios del recordatorio (solo audiencia) */}
+          {isAudiencia && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <label className="block text-xs font-medium text-red-700 uppercase tracking-wide mb-1">⚖️ Destinatarios del recordatorio <span className="text-gray-400 font-normal normal-case">(opcional)</span></label>
+              <EmailChipsInput value={audDestinatarios} onChange={setAudDestinatarios} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Si lo dejas vacío, el recordatorio se enviará al correo del cliente y sus copias. Si agregas correos aquí, el recordatorio irá únicamente a esos correos.
+              </p>
+            </div>
+          )}
+
           {error && (
             <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
           )}
@@ -1747,6 +1762,44 @@ function EditModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Email chips input (destinatarios de recordatorio de audiencia) ──────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function EmailChipsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+
+  const addFromDraft = () => {
+    const partes = draft.split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+    const validos = partes.filter((e) => EMAIL_RE.test(e) && !value.includes(e));
+    if (validos.length) onChange([...value, ...validos]);
+    setDraft('');
+  };
+
+  return (
+    <div className="border border-gray-300 rounded-lg px-2 py-1.5 flex flex-wrap gap-1.5 focus-within:ring-2 focus-within:ring-cyan">
+      {value.map((email) => (
+        <span key={email} className="inline-flex items-center gap-1 bg-red-100 text-red-800 text-xs rounded-full px-2 py-0.5">
+          {email}
+          <button type="button" onClick={() => onChange(value.filter((e) => e !== email))} className="text-red-500 hover:text-red-700 font-bold leading-none">×</button>
+        </span>
+      ))}
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ',' || e.key === ';') { e.preventDefault(); addFromDraft(); }
+          else if (e.key === 'Backspace' && !draft && value.length) onChange(value.slice(0, -1));
+        }}
+        onBlur={addFromDraft}
+        placeholder={value.length ? '' : 'correo@ejemplo.com, otro@ejemplo.com'}
+        className="flex-1 min-w-[140px] text-sm outline-none py-0.5 bg-transparent"
+      />
     </div>
   );
 }
@@ -1800,6 +1853,7 @@ function CreateModal({
   const [audExpediente, setAudExpediente] = useState('');
   const [audDiligencia, setAudDiligencia] = useState('');
   const [audJuzgado, setAudJuzgado] = useState('');
+  const [audDestinatarios, setAudDestinatarios] = useState<string[]>([]);
   const isAudiencia = tipo === 'audiencia';
   const tipoSubs = SUBCATEGORIAS[tipo] ?? [];
   const showSubcatSelector = tipoSubs.length > 1;
@@ -1825,6 +1879,7 @@ function CreateModal({
     setAudExpediente('');
     setAudDiligencia('');
     setAudJuzgado('');
+    setAudDestinatarios([]);
     if (isFree) {
       setUseCustomTime(true);
       setDuracion(60);
@@ -1971,6 +2026,7 @@ function CreateModal({
                   audiencia_expediente: audExpediente.trim() || null,
                   audiencia_diligencia: audDiligencia.trim() || null,
                   audiencia_juzgado: audJuzgado.trim() || null,
+                  audiencia_destinatarios: audDestinatarios.length ? audDestinatarios : null,
                 } : {}),
               },
         ),
@@ -2309,6 +2365,13 @@ function CreateModal({
                 placeholder="Juzgado Primero de Primera Instancia Penal…"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Destinatarios del recordatorio <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <EmailChipsInput value={audDestinatarios} onChange={setAudDestinatarios} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Si lo dejas vacío, el recordatorio se enviará al correo del cliente y sus copias. Si agregas correos aquí, el recordatorio irá únicamente a esos correos.
+              </p>
             </div>
           </div>
           )}

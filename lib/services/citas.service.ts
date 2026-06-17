@@ -241,6 +241,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
       estado, costo, categoria_outlook, modalidad, documentos_entrega,
       teams_link, outlook_event_id, es_personal_privada,
       audiencia_materia, audiencia_expediente, audiencia_diligencia, audiencia_juzgado,
+      audiencia_destinatarios,
       notas, created_at, updated_at,
       cliente:clientes(id, codigo, nombre, email),
       participantes:cita_participantes(id, nombre, email)
@@ -360,6 +361,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       audiencia_expediente: input.audiencia_expediente ?? null,
       audiencia_diligencia: input.audiencia_diligencia ?? null,
       audiencia_juzgado: input.audiencia_juzgado ?? null,
+      audiencia_destinatarios: input.audiencia_destinatarios ?? null,
     })
     .select('*, cliente:clientes(id, codigo, nombre, email)')
     .single();
@@ -523,7 +525,7 @@ function escapeHtmlTg(s: string): string {
 
 export async function actualizarCita(
   id: string,
-  updates: Partial<Pick<Cita, 'titulo' | 'descripcion' | 'fecha' | 'hora_inicio' | 'hora_fin' | 'duracion_minutos' | 'estado' | 'notas'>>
+  updates: Partial<Pick<Cita, 'titulo' | 'descripcion' | 'fecha' | 'hora_inicio' | 'hora_fin' | 'duracion_minutos' | 'estado' | 'notas' | 'audiencia_destinatarios'>>
 ): Promise<Cita> {
   const citaActual = await obtenerCita(id);
 
@@ -1104,7 +1106,23 @@ export async function enviarRecordatorios(): Promise<{
       //    aviso a Amanda por Telegram privado. Se gatea con el mismo flag. ──
       if (cita.tipo === 'audiencia') {
         try {
-          if (cita.cliente?.email) {
+          // Destinatarios específicos del evento (p.ej. audiencias penales sensibles):
+          // si hay, el recordatorio va SOLO a esos correos (con CC a amanda@), sin
+          // exponer el asunto al email/emails_cc del cliente. Si no, comportamiento
+          // por defecto: email del cliente + sus emails_cc.
+          const destinatariosPropios = (cita.audiencia_destinatarios ?? []).filter(
+            (e: string) => (e ?? '').trim(),
+          );
+          if (destinatariosPropios.length > 0) {
+            const email = emailRecordatorioAudiencia(cita);
+            await sendMail({
+              from: email.from,
+              to: destinatariosPropios,
+              cc: ['amanda@papeleo.legal'],
+              subject: email.subject,
+              htmlBody: email.html,
+            });
+          } else if (cita.cliente?.email) {
             const email = emailRecordatorioAudiencia(cita);
             const cc = [...(cita.cliente.emails_cc ?? []), 'amanda@papeleo.legal'];
             await sendMail({ from: email.from, to: cita.cliente.email, cc, subject: email.subject, htmlBody: email.html });

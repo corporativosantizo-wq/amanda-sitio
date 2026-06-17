@@ -85,6 +85,8 @@ export interface Cita {
   audiencia_expediente: string | null;
   audiencia_diligencia: string | null;
   audiencia_juzgado: string | null;
+  // Destinatarios propios del recordatorio (si tiene valor, reemplaza email+CC del cliente).
+  audiencia_destinatarios: string[] | null;
   costo: number;
   outlook_event_id: string | null;
   teams_link: string | null;
@@ -127,6 +129,7 @@ export interface CitaInsert {
   audiencia_expediente?: string | null;
   audiencia_diligencia?: string | null;
   audiencia_juzgado?: string | null;
+  audiencia_destinatarios?: string[] | null;
 }
 
 export interface BloqueoCalendario {
