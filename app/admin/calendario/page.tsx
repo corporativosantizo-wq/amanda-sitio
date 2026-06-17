@@ -1877,7 +1877,12 @@ function CreateModal({
     if (clienteSearch.length < 2) { setClientes([]); return; }
     const timer = setTimeout(() => {
       getToken().catch(() => {});
-      adminFetch(`/api/admin/clientes?busqueda=${encodeURIComponent(clienteSearch)}&limit=5`)
+      // El endpoint lee el término de búsqueda del parámetro `q` (ILIKE server-side
+      // sobre nombre/nit/email/código). Antes se enviaba `busqueda=`, que el endpoint
+      // ignora, por lo que devolvía SIEMPRE los primeros 5 clientes alfabéticos y
+      // nunca filtraba — de ahí que clientes como "Inmobiliaria Los Robles" (#57)
+      // jamás aparecieran. El límite alto evita truncar prefijos comunes.
+      adminFetch(`/api/admin/clientes?q=${encodeURIComponent(clienteSearch)}&limit=25`)
         .then((r) => r.json())
         .then((json) => { setClientes(json.data ?? []); })
         .catch((err) => {
