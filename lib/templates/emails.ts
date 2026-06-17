@@ -277,6 +277,48 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
   };
 }
 
+// Recordatorio de AUDIENCIA judicial (un día antes). Va firmado por Magaly y
+// menciona materia, expediente, diligencia y (si hay) juzgado.
+export function emailRecordatorioAudiencia(cita: any): EmailTemplate {
+  const fechaFmt = cita.fecha ? formatearFechaGT(cita.fecha) : '';
+  const horaFmt = formatearHora(cita.hora_inicio);
+  const materia = (cita.audiencia_materia ?? '').trim();
+  const expediente = (cita.audiencia_expediente ?? '').trim();
+  const diligencia = (cita.audiencia_diligencia ?? '').trim();
+  const juzgado = (cita.audiencia_juzgado ?? '').trim();
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">⚖️ Recordatorio de Audiencia</h2>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimados señores,</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Reciban un cordial saludo de parte del Despacho Jurídico Amanda Santizo.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Les recordamos que tienen programada una audiencia judicial:</p>
+    <table width="100%" style="margin:16px 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
+        <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
+        ${materia ? `<p style="margin:8px 0;font-size:14px;"><strong>📋 Materia:</strong> ${escEmail(materia)}</p>` : ''}
+        ${expediente ? `<p style="margin:8px 0;font-size:14px;"><strong>📂 Expediente/Juicio:</strong> ${escEmail(expediente)}</p>` : ''}
+        ${diligencia ? `<p style="margin:8px 0;font-size:14px;"><strong>📝 Diligencia:</strong> ${escEmail(diligencia)}</p>` : ''}
+        ${juzgado ? `<p style="margin:8px 0;font-size:14px;"><strong>🏛️ Juzgado:</strong> ${escEmail(juzgado)}</p>` : ''}
+      </td></tr>
+    </table>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Le recomendamos estar preparado y presente con la debida anticipación.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Quedamos atentos a cualquier consulta.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:20px;">
+      Atentamente,<br/>
+      <strong>Magaly Estrada</strong><br/>
+      Asistente de Procesos<br/>
+      Despacho Jurídico Amanda Santizo
+    </p>
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Recordatorio de Audiencia — Expediente ${expediente || '(sin número)'}`,
+    html,
+  };
+}
+
 export function emailRecordatorio1h(cita: any): EmailTemplate {
   const tipoCita = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);

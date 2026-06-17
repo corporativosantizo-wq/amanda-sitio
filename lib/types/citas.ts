@@ -80,6 +80,11 @@ export interface Cita {
   es_personal_privada: boolean;
   detalle_privado: string | null;
   recordatorio_personal_enviado: boolean;
+  // Audiencias judiciales (tipo='audiencia').
+  audiencia_materia: string | null;
+  audiencia_expediente: string | null;
+  audiencia_diligencia: string | null;
+  audiencia_juzgado: string | null;
   costo: number;
   outlook_event_id: string | null;
   teams_link: string | null;
@@ -117,6 +122,11 @@ export interface CitaInsert {
   // Cita personal privada de Amanda.
   es_personal_privada?: boolean;
   detalle_privado?: string | null;
+  // Audiencias judiciales (tipo='audiencia').
+  audiencia_materia?: string | null;
+  audiencia_expediente?: string | null;
+  audiencia_diligencia?: string | null;
+  audiencia_juzgado?: string | null;
 }
 
 export interface BloqueoCalendario {

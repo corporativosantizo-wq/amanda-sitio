@@ -40,6 +40,10 @@ interface CitaItem {
   costo: number;
   modalidad?: string | null;
   documentos_entrega?: string | null;
+  audiencia_materia?: string | null;
+  audiencia_expediente?: string | null;
+  audiencia_diligencia?: string | null;
+  audiencia_juzgado?: string | null;
   es_personal_privada?: boolean;
   teams_link: string | null;
   notas: string | null;
@@ -315,7 +319,7 @@ function getMonthGrid(year: number, month: number): (number | null)[][] {
 const TIPO_CARDS = [
   { value: 'consulta_nueva' as TipoCitaUI, label: '\u2696\uFE0F Consulta Nueva', sub: 'Q500, 30-60 min' },
   { value: 'seguimiento' as TipoCitaUI, label: '\uD83D\uDD04 Seguimiento', sub: 'Gratis, 15 min' },
-  { value: 'audiencia' as TipoCitaUI, label: '\uD83C\uDFDB\uFE0F Audiencia', sub: 'Horario libre' },
+  { value: 'audiencia' as TipoCitaUI, label: '\u2696\uFE0F Audiencia', sub: 'Judicial' },
   { value: 'reunion' as TipoCitaUI, label: '\uD83D\uDC65 Reunión', sub: 'Horario laboral' },
   { value: 'bloqueo_personal' as TipoCitaUI, label: '\u25FC Bloqueo', sub: 'Deep Work, Personal' },
   { value: 'evento_libre' as TipoCitaUI, label: '\u2726 Evento', sub: 'Capacitación, Diligencia' },
@@ -902,7 +906,11 @@ function AgendaView({
                             ) : null;
                           })()}
                           <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                            {cita.tipo === 'audiencia' && <span title="Audiencia judicial">⚖️</span>}
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
+                            {cita.tipo === 'audiencia' && cita.audiencia_materia && (
+                              <span className="text-red-600 font-medium">{cita.audiencia_materia}</span>
+                            )}
                             {cita.modalidad && cita.modalidad !== 'virtual' && MODALIDAD_INFO[cita.modalidad] && (
                               <span title={MODALIDAD_INFO[cita.modalidad].label}>{MODALIDAD_INFO[cita.modalidad].icono}</span>
                             )}
@@ -1431,6 +1439,16 @@ function DetailModal({
             </div>
           )}
 
+          {cita.tipo === 'audiencia' && (cita.audiencia_expediente || cita.audiencia_materia || cita.audiencia_diligencia || cita.audiencia_juzgado) && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+              <p className="text-xs text-red-700 uppercase tracking-wide font-medium">⚖️ Audiencia judicial</p>
+              {cita.audiencia_materia && <p className="text-sm text-red-900"><strong>Materia:</strong> {cita.audiencia_materia}</p>}
+              {cita.audiencia_expediente && <p className="text-sm text-red-900"><strong>Expediente:</strong> {cita.audiencia_expediente}</p>}
+              {cita.audiencia_diligencia && <p className="text-sm text-red-900"><strong>Diligencia:</strong> {cita.audiencia_diligencia}</p>}
+              {cita.audiencia_juzgado && <p className="text-sm text-red-900"><strong>Juzgado:</strong> {cita.audiencia_juzgado}</p>}
+            </div>
+          )}
+
           {cita.modalidad && MODALIDAD_INFO[cita.modalidad]?.usaOficina && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
               <p className="text-xs text-blue-700 uppercase tracking-wide font-medium">
@@ -1777,6 +1795,12 @@ function CreateModal({
   // a su Telegram privado. Al activarla se fuerza tipo=bloqueo_personal.
   const [esPersonalPrivada, setEsPersonalPrivada] = useState(false);
   const [detallePrivado, setDetallePrivado] = useState('');
+  // Audiencia judicial (tipo='audiencia').
+  const [audMateria, setAudMateria] = useState('');
+  const [audExpediente, setAudExpediente] = useState('');
+  const [audDiligencia, setAudDiligencia] = useState('');
+  const [audJuzgado, setAudJuzgado] = useState('');
+  const isAudiencia = tipo === 'audiencia';
   const tipoSubs = SUBCATEGORIAS[tipo] ?? [];
   const showSubcatSelector = tipoSubs.length > 1;
 
@@ -1797,6 +1821,10 @@ function CreateModal({
     setModalidad('virtual');
     setDocumentosEntrega('');
     setSubcategoria('');
+    setAudMateria('');
+    setAudExpediente('');
+    setAudDiligencia('');
+    setAudJuzgado('');
     if (isFree) {
       setUseCustomTime(true);
       setDuracion(60);
@@ -1865,10 +1893,16 @@ function CreateModal({
       setError('Escribe el detalle privado de la cita');
       return;
     }
-    if (!titulo.trim()) {
+    if (isAudiencia && !audExpediente.trim()) {
+      setError('Ingresa el número de juicio/expediente');
+      return;
+    }
+    if (!isAudiencia && !titulo.trim()) {
       setError('Escribe un título');
       return;
     }
+    // Las audiencias derivan su título de los datos del expediente.
+    const tituloAudiencia = `Audiencia${audExpediente.trim() ? ` — Exp. ${audExpediente.trim()}` : ''}`;
 
     let horaInicio: string;
     let horaFin: string;
@@ -1913,7 +1947,7 @@ function CreateModal({
               }
             : {
                 tipo,
-                titulo: titulo.trim(),
+                titulo: isAudiencia ? tituloAudiencia : titulo.trim(),
                 descripcion: subcategoria
                   ? `[${subcategoria}] ${descripcion.trim()}`.trim()
                   : descripcion.trim() || null,
@@ -1926,6 +1960,13 @@ function CreateModal({
                 documentos_entrega: MODALIDAD_INFO[modalidad]?.usaOficina ? (documentosEntrega.trim() || null) : null,
                 // crearCita combina esto con la modalidad (las entregas nunca llevan Teams).
                 isOnlineMeeting: withTeams,
+                // Campos específicos de audiencia judicial.
+                ...(isAudiencia ? {
+                  audiencia_materia: audMateria.trim() || null,
+                  audiencia_expediente: audExpediente.trim() || null,
+                  audiencia_diligencia: audDiligencia.trim() || null,
+                  audiencia_juzgado: audJuzgado.trim() || null,
+                } : {}),
               },
         ),
       });
@@ -2204,8 +2245,8 @@ function CreateModal({
             return null;
           })()}
 
-          {/* Título */}
-          {!esPersonalPrivada && (
+          {/* Título (no aplica a audiencia: se deriva del expediente) */}
+          {!esPersonalPrivada && !isAudiencia && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
             <input
@@ -2215,6 +2256,55 @@ function CreateModal({
               placeholder={isBloqueo ? 'Ej: Almuerzo, Cita médica' : 'Ej: Consulta sobre contrato'}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
+          </div>
+          )}
+
+          {/* Campos de audiencia judicial */}
+          {isAudiencia && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-3">
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">⚖️ Datos de la audiencia</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Materia</label>
+                <input
+                  type="text"
+                  value={audMateria}
+                  onChange={(e) => setAudMateria(e.target.value)}
+                  placeholder="Penal, Civil, Familia…"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">N.º de juicio/expediente</label>
+                <input
+                  type="text"
+                  value={audExpediente}
+                  onChange={(e) => setAudExpediente(e.target.value)}
+                  placeholder="01077-2025-00270"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de diligencia</label>
+              <input
+                type="text"
+                value={audDiligencia}
+                onChange={(e) => setAudDiligencia(e.target.value)}
+                placeholder="Incidente, Audiencia de primera declaración…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Juzgado/Tribunal <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <input
+                type="text"
+                value={audJuzgado}
+                onChange={(e) => setAudJuzgado(e.target.value)}
+                placeholder="Juzgado Primero de Primera Instancia Penal…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
+              />
+            </div>
           </div>
           )}
 
@@ -2321,8 +2411,8 @@ function CreateModal({
             </div>
           )}
 
-          {/* Teams meeting toggle */}
-          {!esPersonalPrivada && (
+          {/* Teams meeting toggle (no aplica a audiencia) */}
+          {!esPersonalPrivada && !isAudiencia && (
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -2348,7 +2438,7 @@ function CreateModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={saving || !titulo.trim()}
+            disabled={saving || (isAudiencia ? !audExpediente.trim() : !titulo.trim())}
             className="flex-1 px-4 py-2 bg-gradient-to-r from-azure to-azure-dark text-white rounded-lg shadow-glow-azure hover:shadow-glow-cyan transition-all text-sm font-semibold disabled:opacity-50"
           >
             {saving ? 'Creando...' : 'Crear Evento'}

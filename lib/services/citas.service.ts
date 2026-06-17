@@ -37,6 +37,7 @@ import {
   emailSolicitudPropuestaFecha,
   emailSolicitudRechazada,
   emailNuevaSolicitudInterno,
+  emailRecordatorioAudiencia,
 } from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
@@ -239,6 +240,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
       fecha, hora_inicio, hora_fin, duracion_minutos,
       estado, costo, categoria_outlook, modalidad, documentos_entrega,
       teams_link, outlook_event_id, es_personal_privada,
+      audiencia_materia, audiencia_expediente, audiencia_diligencia, audiencia_juzgado,
       notas, created_at, updated_at,
       cliente:clientes(id, codigo, nombre, email),
       participantes:cita_participantes(id, nombre, email)
@@ -354,6 +356,10 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       notas: input.notas ?? null,
       es_personal_privada: input.es_personal_privada ?? false,
       detalle_privado: input.detalle_privado ?? null,
+      audiencia_materia: input.audiencia_materia ?? null,
+      audiencia_expediente: input.audiencia_expediente ?? null,
+      audiencia_diligencia: input.audiencia_diligencia ?? null,
+      audiencia_juzgado: input.audiencia_juzgado ?? null,
     })
     .select('*, cliente:clientes(id, codigo, nombre, email)')
     .single();
@@ -376,7 +382,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       console.log(`[crearCita] ⚠ Outlook NO conectado — no se creará evento. Verifica que exista outlook_access_token_encrypted en legal.configuracion`);
     } else {
       const calendarPayload = {
-        subject: cita.titulo,
+        subject: tituloEventoOutlook(cita),
         startDateTime: `${cita.fecha}T${cita.hora_inicio.substring(0, 5)}:00`,
         endDateTime: `${cita.fecha}T${cita.hora_fin.substring(0, 5)}:00`,
         attendees: clienteEmail ? [clienteEmail] : [],
@@ -688,6 +694,36 @@ async function notificarDespachoNuevaSolicitud(
     await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
   } catch (e: any) {
     console.error('[Solicitud] Error Telegram a Mariano:', e?.message ?? e);
+  }
+}
+
+// Avisa a Amanda por Telegram privado de una audiencia próxima (un día antes).
+async function notificarAmandaAudiencia(cita: any): Promise<void> {
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) {
+    console.warn('[Audiencia] TELEGRAM_CHAT_ID no configurado — no se avisa a Amanda');
+    return;
+  }
+  const cliente = cita.cliente?.nombre ?? 'Cliente';
+  const fechaFmt = cita.fecha
+    ? new Date(cita.fecha + 'T12:00:00').toLocaleDateString('es-GT', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Guatemala',
+      })
+    : '—';
+  const horaFmt = formatearHora12(cita.hora_inicio);
+  const materia = (cita.audiencia_materia ?? '').trim();
+  const diligencia = (cita.audiencia_diligencia ?? '').trim();
+  const expediente = (cita.audiencia_expediente ?? '').trim();
+  const linea4 = [materia, diligencia].filter(Boolean).join(' — ');
+  const texto =
+    `⚖️ <b>Audiencia mañana: ${escapeHtmlTg(cliente)}</b>\n` +
+    `📅 ${fechaFmt} ${horaFmt}\n` +
+    (expediente ? `📂 Expediente: ${escapeHtmlTg(expediente)}\n` : '') +
+    (linea4 ? `📋 ${escapeHtmlTg(linea4)}` : '');
+  try {
+    await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
+  } catch (e: any) {
+    console.error('[Audiencia] Error Telegram a Amanda:', e?.message ?? e);
   }
 }
 
@@ -1056,7 +1092,7 @@ export async function enviarRecordatorios(): Promise<{
   if (enHorarioOficina) {
     const { data: citas24h } = await db()
       .from('citas')
-      .select('*, cliente:clientes(id, codigo, nombre, email)')
+      .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc)')
       .eq('fecha', mananaStr)
       .eq('recordatorio_24h_enviado', false)
       // Solo citas confirmadas (las solicitudes pendientes de entrega/firma no
@@ -1064,6 +1100,24 @@ export async function enviarRecordatorios(): Promise<{
       .eq('estado', 'confirmada');
 
     for (const cita of citas24h ?? []) {
+      // ── Audiencias judiciales: correo propio (con CC a emails_cc + amanda@) y
+      //    aviso a Amanda por Telegram privado. Se gatea con el mismo flag. ──
+      if (cita.tipo === 'audiencia') {
+        try {
+          if (cita.cliente?.email) {
+            const email = emailRecordatorioAudiencia(cita);
+            const cc = [...(cita.cliente.emails_cc ?? []), 'amanda@papeleo.legal'];
+            await sendMail({ from: email.from, to: cita.cliente.email, cc, subject: email.subject, htmlBody: email.html });
+          }
+          await notificarAmandaAudiencia(cita);
+          await db().from('citas').update({ recordatorio_24h_enviado: true }).eq('id', cita.id);
+          enviados_24h++;
+        } catch (e: any) {
+          console.warn('[Citas] Error enviando recordatorio de audiencia para cita', cita.id, e?.message ?? e);
+        }
+        continue;
+      }
+
       if (cita.cliente?.email) {
         try {
           const email = emailRecordatorio24h(cita);
@@ -1090,6 +1144,8 @@ export async function enviarRecordatorios(): Promise<{
     .eq('estado', 'confirmada');
 
   for (const cita of citasHoy ?? []) {
+    // Las audiencias solo llevan recordatorio de 1 día antes (no el genérico de 1h).
+    if (cita.tipo === 'audiencia') continue;
     // Calcular si estamos a ~1 hora de la cita
     const [ch, cm] = horaActual.split(':').map(Number);
     const [citaH, citaM] = cita.hora_inicio.split(':').map(Number);
@@ -1249,6 +1305,17 @@ const TIPO_LABELS: Record<string, string> = {
   evento_libre: 'Evento Libre',
 };
 
+// Título del evento de Outlook. Las audiencias usan un formato propio:
+// "⚖️ Audiencia — {cliente} — Exp. {expediente}".
+function tituloEventoOutlook(cita: any): string {
+  if (cita.tipo === 'audiencia') {
+    const cliente = cita.cliente?.nombre ?? 'Cliente';
+    const exp = (cita.audiencia_expediente ?? '').trim();
+    return `⚖️ Audiencia — ${cliente}${exp ? ` — Exp. ${exp}` : ''}`;
+  }
+  return cita.titulo;
+}
+
 function generarBodyEvento(
   cita: any,
   firmantes: Array<{ nombre: string; email: string | null }> = [],
@@ -1259,8 +1326,17 @@ function generarBodyEvento(
   const firmantesBlock = nombresFirmantes.length
     ? `<p><strong>Firmantes:</strong></p>\n<ul>${nombresFirmantes.map((n) => `<li>${n}</li>`).join('')}</ul>`
     : '';
+  const audienciaBlock = cita.tipo === 'audiencia'
+    ? [
+        cita.audiencia_materia ? `<p><strong>Materia:</strong> ${cita.audiencia_materia}</p>` : '',
+        cita.audiencia_expediente ? `<p><strong>Expediente/Juicio:</strong> ${cita.audiencia_expediente}</p>` : '',
+        cita.audiencia_diligencia ? `<p><strong>Diligencia:</strong> ${cita.audiencia_diligencia}</p>` : '',
+        cita.audiencia_juzgado ? `<p><strong>Juzgado:</strong> ${cita.audiencia_juzgado}</p>` : '',
+      ].join('')
+    : '';
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
+${audienciaBlock}
 ${firmantesBlock}
 ${cita.costo > 0 ? `<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>` : ''}
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
