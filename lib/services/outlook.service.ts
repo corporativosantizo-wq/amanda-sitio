@@ -861,6 +861,115 @@ async function sendMailWithUploadSession(
   }
 }
 
+// ── Send NEW outgoing email (draft → send) and return its Graph message id ───
+//
+// A diferencia de sendMail() (que usa POST /sendMail y no devuelve id), esta
+// función crea un borrador y lo envía vía POST /messages/{id}/send, lo que
+// permite capturar el microsoft_id del mensaje. Se usa para los correos
+// salientes nuevos (legal.borradores_salientes), que deben registrarse en el
+// historial (legal.email_messages.microsoft_id es único y obligatorio).
+// Reutiliza getAppToken() y el mismo auto-BCC a amanda@ que sendMail().
+export async function enviarCorreoNuevo(params: {
+  from: MailboxAlias;
+  to: string | string[];
+  subject: string;
+  htmlBody: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+}): Promise<{ messageId: string }> {
+  const toList = parseEmailList(params.to);
+  if (toList.length === 0) throw new OutlookError('No se especificó destinatario (to)', '');
+
+  const appToken = await getAppToken();
+  const graphBase = `https://graph.microsoft.com/v1.0/users/${params.from}`;
+  const headers = {
+    Authorization: `Bearer ${appToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  const toRecipients = toList.map((addr) => ({ emailAddress: { address: addr } }));
+
+  const ccList = parseEmailList(params.cc);
+  const ccRecipients = ccList.length > 0
+    ? ccList.map((addr) => ({ emailAddress: { address: addr } }))
+    : undefined;
+
+  // Auto-BCC amanda@ cuando se envía desde asistente@ o contador@ (igual que sendMail).
+  const AUTO_BCC_SENDERS = ['asistente@papeleo.legal', 'contador@papeleo.legal'];
+  const AUTO_BCC_ADDR = 'amanda@papeleo.legal';
+  const bccList = parseEmailList(params.bcc);
+  if (AUTO_BCC_SENDERS.includes(params.from) && !bccList.includes(AUTO_BCC_ADDR)) {
+    bccList.push(AUTO_BCC_ADDR);
+  }
+  const bccRecipients = bccList.length > 0
+    ? bccList.map((addr) => ({ emailAddress: { address: addr } }))
+    : undefined;
+
+  const messagePayload: Record<string, unknown> = {
+    subject: params.subject,
+    body: { contentType: 'HTML', content: params.htmlBody },
+    toRecipients,
+  };
+  if (ccRecipients) messagePayload.ccRecipients = ccRecipients;
+  if (bccRecipients) messagePayload.bccRecipients = bccRecipients;
+
+  console.log('[enviarCorreoNuevo] from:', params.from, '| to:', toList.length, '| subject:', params.subject);
+
+  // Paso 1: crear el borrador (devuelve el id del mensaje)
+  const draftRes = await fetch(`${graphBase}/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(messagePayload),
+  });
+  if (!draftRes.ok) {
+    const errBody = await draftRes.text();
+    console.error('[enviarCorreoNuevo] Error creando borrador:', draftRes.status, errBody.substring(0, 500));
+    throw new OutlookError(`Error al crear borrador: ${draftRes.status}`, errBody);
+  }
+  const draft = await draftRes.json();
+  const messageId = draft.id as string;
+
+  // Paso 2: enviar el borrador
+  try {
+    const sendRes = await fetch(`${graphBase}/messages/${messageId}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${appToken}` },
+    });
+    if (!sendRes.ok) {
+      const errBody = await sendRes.text();
+      console.error('[enviarCorreoNuevo] Error enviando borrador:', sendRes.status, errBody.substring(0, 500));
+      throw new OutlookError(`Error al enviar correo: ${sendRes.status}`, errBody);
+    }
+  } catch (err) {
+    // Limpieza best-effort: borrar el borrador si el envío falló.
+    try {
+      await fetch(`${graphBase}/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${appToken}` },
+      });
+    } catch { /* best-effort */ }
+    throw err;
+  }
+
+  console.log('[enviarCorreoNuevo] ── ÉXITO — correo nuevo enviado, id:', messageId.substring(0, 24) + '…');
+
+  // Notificación configurable por Telegram (misma regla que sendMail). Best-effort.
+  try {
+    const { notificarDestinatariosTelegram } = await import('@/lib/services/notificaciones-email-telegram.service');
+    await notificarDestinatariosTelegram({
+      from: params.from,
+      to: toList,
+      cc: ccList,
+      subject: params.subject,
+      htmlBody: params.htmlBody,
+    });
+  } catch (notifErr) {
+    console.error('[enviarCorreoNuevo] Notificación Telegram falló (no bloquea):', notifErr instanceof Error ? notifErr.message : notifErr);
+  }
+
+  return { messageId };
+}
+
 /** @deprecated Use sendMail() with explicit `from` parameter instead */
 export async function sendEmail(to: string, subject: string, htmlBody: string): Promise<void> {
   return sendMail({ from: 'asistente@papeleo.legal', to, subject, htmlBody });

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
+import CorreosSalientes from '@/components/admin/CorreosSalientes'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -406,6 +407,9 @@ function MollyMailContent() {
           </button>
         </div>
       )}
+
+      {/* Correos salientes nuevos (sin hilo previo) */}
+      <CorreosSalientes />
 
       {/* Pending drafts */}
       <div className="mb-8">
