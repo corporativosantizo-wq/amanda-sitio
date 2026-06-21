@@ -46,7 +46,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     switch (accion) {
       case 'enviar':
-        resultado = await enviarCotizacion(id);
+        // cc = SOLO lo que Amanda marcó/tipeó en el modal (puede venir vacío →
+        // va solo al principal). Nunca se agrega cliente.emails_cc automático.
+        resultado = await enviarCotizacion(id, Array.isArray(body.cc) ? body.cc : []);
         break;
 
       case 'aceptar':
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           subject: body.subject,
           mensaje: body.mensaje,
           from: body.from,
+          cc: Array.isArray(body.cc) ? body.cc : [],
         });
         resultado = { enviado: true };
         break;

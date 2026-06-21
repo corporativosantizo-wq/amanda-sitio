@@ -14,6 +14,7 @@ import {
   EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
 import { EnviarReciboEmailModal } from '@/components/admin/enviar-recibo-email-modal';
+import { EmailChips } from '@/components/admin/email-chips';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ interface CotizacionDetalle {
     nit: string;
     email: string;
     telefono: string;
+    emails_cc: string[] | null;
   } | null;
   pdf_url: string | null;
   factura_generada: boolean;
@@ -127,6 +129,8 @@ export default function CotizacionDetallePage() {
   }, [id, mutate, router]);
 
   const [showProgramarModal, setShowProgramarModal] = useState(false);
+  // Modal de envío/reenvío con selección manual de CC (heredados desmarcados).
+  const [showEnvioModal, setShowEnvioModal] = useState<null | 'enviar' | 'reenviar'>(null);
 
   const cancelarEnvioProgramado = useCallback(async () => {
     if (!confirm('¿Cancelar el envío programado?')) return;
@@ -319,13 +323,22 @@ export default function CotizacionDetallePage() {
                 </button>
               )}
               <button
-                onClick={() => ejecutarAccion('enviar')}
+                onClick={() => setShowEnvioModal('enviar')}
                 disabled={actuando}
                 className="px-4 py-2 text-sm font-medium bg-[#1E40AF] text-white rounded-lg hover:bg-[#1e3a8a] transition-colors disabled:opacity-50"
               >
                 📤 Enviar al cliente
               </button>
             </>
+          )}
+          {cot.estado !== 'borrador' && (
+            <button
+              onClick={() => setShowEnvioModal('reenviar')}
+              disabled={actuando}
+              className="px-3 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors disabled:opacity-50"
+            >
+              📤 Reenviar
+            </button>
           )}
           {cot.estado === 'enviada' && (
             <>
@@ -856,6 +869,16 @@ export default function CotizacionDetallePage() {
         />
       )}
 
+      {/* Modal enviar / reenviar con selección manual de CC (heredados desmarcados) */}
+      {showEnvioModal && cot.cliente && (
+        <EnviarCotizacionModal
+          cotizacion={cot}
+          modo={showEnvioModal}
+          onClose={() => setShowEnvioModal(null)}
+          onSuccess={() => { setShowEnvioModal(null); refetch(); }}
+        />
+      )}
+
       {/* Modal registrar pago de gastos */}
       {showGastosModal && cot.cliente && montoGastos > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowGastosModal(false)}>
@@ -939,6 +962,130 @@ export default function CotizacionDetallePage() {
           onSuccess={() => { setShowReciboEmailModal(false); refetchRecibo(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ── EnviarCotizacionModal ───────────────────────────────────────────────
+// Envío / reenvío con selección MANUAL de CC: los emails_cc del cliente se
+// muestran como checkboxes DESMARCADOS (regla de confidencialidad). Solo lo que
+// Amanda marca + lo que tipea se copia. Si no marca nada → solo al principal.
+
+function EnviarCotizacionModal({ cotizacion, modo, onClose, onSuccess }: {
+  cotizacion: CotizacionDetalle;
+  modo: 'enviar' | 'reenviar';
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { mutate } = useMutate();
+  const cliente = cotizacion.cliente!;
+  const ccCliente = cliente.emails_cc ?? [];
+  const ccPropiosCotizacion = (cotizacion.cc_emails ?? '')
+    .split(',').map(e => e.trim()).filter(Boolean);
+
+  const [ccChecked, setCcChecked] = useState<string[]>([]);            // heredados marcados (default: ninguno)
+  const [ccExtra, setCcExtra] = useState<string[]>(ccPropiosCotizacion); // tipeados a mano (pre-cargado con el cc_emails propio)
+  const [to, setTo] = useState(cliente.email ?? '');
+  const [subject, setSubject] = useState(`Cotización ${cotizacion.numero} — Despacho Jurídico Amanda Santizo`);
+  const [mensaje, setMensaje] = useState(
+    `Estimado/a ${cliente.nombre ?? ''},\n\nAdjunto la cotización ${cotizacion.numero}.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLic. Amanda Santizo — Despacho Jurídico`,
+  );
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = (email: string) =>
+    setCcChecked(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]);
+
+  const ccFinal = Array.from(
+    new Set([...ccChecked, ...ccExtra].map(e => e.trim().toLowerCase()).filter(Boolean)),
+  );
+
+  const enviar = async () => {
+    setError(null);
+    setEnviando(true);
+    const body = modo === 'reenviar'
+      ? { accion: 'reenviar', to: to.trim(), subject: subject.trim(), mensaje, cc: ccFinal }
+      : { accion: 'enviar', cc: ccFinal };
+    let ok = false;
+    await mutate(`/api/admin/contabilidad/cotizaciones/${cotizacion.id}/acciones`, {
+      body,
+      onSuccess: () => { ok = true; },
+      onError: (e) => setError(typeof e === 'string' ? e : 'Error al enviar'),
+    });
+    setEnviando(false);
+    if (ok) onSuccess();
+  };
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-slate-900 mb-1">
+          {modo === 'reenviar' ? '📤 Reenviar cotización' : '📤 Enviar cotización al cliente'}
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">Cotización {cotizacion.numero}</p>
+
+        {modo === 'reenviar' ? (
+          <div className="space-y-3 mb-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Para</label>
+              <input type="email" value={to} onChange={e => setTo(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Asunto</label>
+              <input type="text" value={subject} onChange={e => setSubject(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Mensaje</label>
+              <textarea value={mensaje} onChange={e => setMensaje(e.target.value)} rows={4} className={inputCls} />
+            </div>
+          </div>
+        ) : (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4 text-sm">
+            <span className="text-slate-500">Para: </span>
+            <span className="font-medium text-slate-800">{cliente.email ?? '(cliente sin email)'}</span>
+          </div>
+        )}
+
+        {/* CC: heredados desmarcados + extras a mano */}
+        <div className="space-y-3 mb-4">
+          {ccCliente.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">CC del cliente (marcá a quién copiar)</label>
+              <div className="space-y-1.5">
+                {ccCliente.map(e => (
+                  <label key={e} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={ccChecked.includes(e)} onChange={() => toggle(e)}
+                      className="rounded border-slate-300 text-[#1E40AF] focus:ring-[#0891B2]/30" />
+                    <span>{e}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                ⚠ Estos correos del cliente <strong>no se copian automáticamente</strong>. Vienen <strong>desmarcados</strong>: marcá solo a quién querés copiar.
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">CC adicional (a mano)</label>
+            <EmailChips value={ccExtra} onChange={setCcExtra} placeholder="copia@email.com" />
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} disabled={enviando}
+            className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+            Cancelar
+          </button>
+          <button onClick={enviar} disabled={enviando || (modo === 'reenviar' && !to.trim())}
+            className="px-4 py-2 text-sm font-medium text-white bg-[#1E40AF] rounded-lg hover:bg-[#1e3a8a] disabled:opacity-50">
+            {enviando ? 'Enviando…' : (modo === 'reenviar' ? 'Reenviar' : 'Enviar')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

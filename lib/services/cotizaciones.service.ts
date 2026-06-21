@@ -396,7 +396,7 @@ export async function eliminarCotizacion(id: string): Promise<void> {
  * Envía cotización por email al cliente y marca como enviada.
  * Si el email falla, la cotización permanece en borrador.
  */
-export async function enviarCotizacion(id: string): Promise<Cotizacion> {
+export async function enviarCotizacion(id: string, ccManual?: string[]): Promise<Cotizacion> {
   const actual = await obtenerCotizacion(id);
 
   if (actual.estado !== EstadoCotizacion.BORRADOR) {
@@ -433,14 +433,12 @@ export async function enviarCotizacion(id: string): Promise<Cotizacion> {
     tokenRespuesta: actual.token_respuesta ?? undefined,
   });
 
-  // CC = cc_emails de la cotización + emails_cc del cliente (deduplicados,
-  // excluyendo el destinatario principal).
-  const ccCotizacion = (actual as any).cc_emails
-    ? (actual as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
-    : [];
-  const ccCliente = Array.isArray(cliente.emails_cc) ? cliente.emails_cc : [];
-  const ccEmails = Array.from(new Set<string>([...ccCotizacion, ...ccCliente]))
-    .filter((e) => e && e.toLowerCase() !== String(cliente.email).toLowerCase());
+  // CC: SOLO lo que Amanda eligió/escribió explícitamente en el modal de envío
+  // (heredados marcados + tipeados). NUNCA se agrega cliente.emails_cc de forma
+  // automática (regla de confidencialidad). Si ccManual viene vacío, la
+  // cotización va únicamente al destinatario principal.
+  const ccEmails = Array.from(new Set<string>((ccManual ?? []).map((e) => e.trim().toLowerCase())))
+    .filter((e) => e && e !== String(cliente.email).toLowerCase());
 
   // Enviar email — si falla, NO cambiamos el estado
   try {
@@ -553,19 +551,19 @@ export async function reenviarCotizacion(id: string, params: {
   subject: string;
   mensaje: string;
   from?: string;
+  cc?: string[];
 }): Promise<void> {
-  const actual = await obtenerCotizacion(id);
-  const cliente = actual.cliente as any;
+  await obtenerCotizacion(id); // valida que la cotización exista
 
   const htmlBody = params.mensaje
     .replace(/\n/g, '<br>')
     .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
     .replace(/$/, '</div>');
 
-  // CC automático con los emails_cc del cliente (excluyendo el destinatario).
-  const ccCliente = Array.isArray(cliente?.emails_cc) ? cliente.emails_cc : [];
-  const ccEmails = Array.from(new Set<string>(ccCliente))
-    .filter((e) => e && e.toLowerCase() !== String(params.to).toLowerCase());
+  // CC: SOLO lo explícito que Amanda eligió/escribió en el modal de reenvío.
+  // NUNCA cliente.emails_cc automático. Si viene vacío, va solo al principal.
+  const ccEmails = Array.from(new Set<string>((params.cc ?? []).map((e) => e.trim().toLowerCase())))
+    .filter((e) => e && e !== String(params.to).toLowerCase());
 
   await sendMail({
     from: (params.from || 'amanda@papeleo.legal') as any,
@@ -657,20 +655,14 @@ export async function enviarCotizacionMasivo(params: {
         .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
         .replace(/$/, '</div>');
 
-      // CC = cc_emails de la cotización + emails_cc del cliente (deduplicados).
-      const ccCotizacion = (cot as any).cc_emails
-        ? (cot as any).cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
-        : [];
-      const ccCliente = Array.isArray(cliente.emails_cc) ? cliente.emails_cc : [];
-      const ccEmails = Array.from(new Set<string>([...ccCotizacion, ...ccCliente]))
-        .filter((e) => e && e.toLowerCase() !== String(cliente.email).toLowerCase());
-
+      // Lote = el sistema actúa solo, sin nadie para elegir los CC → va SOLO al
+      // destinatario principal, sin copias (regla de confidencialidad). El CC
+      // manual queda exclusivamente para el envío/reenvío individual.
       await sendMail({
         from: from as any,
         to: cliente.email,
         subject,
         htmlBody,
-        ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
       });
 
       // Actualizar estado a enviada si es borrador
