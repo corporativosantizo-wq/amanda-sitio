@@ -100,6 +100,30 @@ export function calcularFechaSugeridaEnvio(
   return candidate;
 }
 
+/**
+ * Próxima ventana hábil para enviar (now si estamos dentro; sino el siguiente
+ * inicio de ventana en día hábil no-asueto). Para el aviso de reprogramación.
+ */
+export function proximaVentanaHabil(cfg: ConfigRecordatorios, asuetos: Set<string>, desde = new Date()): Date {
+  const [vh, vm] = cfg.ventana_inicio.split(':').map(Number);
+  const [fh, fm] = cfg.ventana_fin.split(':').map(Number);
+  const vIni = vh * 60 + vm, vFin = fh * 60 + fm;
+  const p = gtParts(desde);
+
+  if (esHabil(p.y, p.mo, p.da, cfg.dias_habiles, asuetos)) {
+    const min = p.h * 60 + p.mi;
+    if (min >= vIni && min <= vFin) return desde;          // dentro de ventana → ya
+    if (min < vIni) return gtInstant(p.y, p.mo, p.da, vh, vm); // antes → hoy a las 8
+  }
+  // sino: siguiente día hábil a ventana_inicio
+  let y = p.y, mo = p.mo, da = p.da;
+  do {
+    const nx = new Date(Date.UTC(y, mo, da) + 24 * 3600 * 1000);
+    y = nx.getUTCFullYear(); mo = nx.getUTCMonth(); da = nx.getUTCDate();
+  } while (!esHabil(y, mo, da, cfg.dias_habiles, asuetos));
+  return gtInstant(y, mo, da, vh, vm);
+}
+
 // ── Encolado automático al crear ────────────────────────────────────────────
 
 export async function encolarRecordatoriosAudiencia(a: Audiencia): Promise<void> {
@@ -132,6 +156,41 @@ export async function encolarRecordatoriosAudiencia(a: Audiencia): Promise<void>
 
   const { error } = await db().from('audiencias_recordatorios').insert(filas);
   if (error) throw new Error('Error al encolar recordatorios: ' + error.message);
+}
+
+// ── Reprogramación (Fase 5) ─────────────────────────────────────────────────
+
+/**
+ * Al cambiar la fecha/hora de una audiencia: descarta los recordatorios
+ * pendientes, re-encola los 2 previos con las fechas nuevas, y encola un aviso
+ * de reprogramación (con el .ics de SEQUENCE incrementado → el calendario del
+ * cliente ACTUALIZA, no duplica). El incremento de ics_sequence lo hace
+ * actualizarAudiencia ANTES de llamar a esta función.
+ */
+export async function reencolarPorReprogramacion(a: Audiencia): Promise<void> {
+  const cfg = await getConfig();
+  const asuetos = await getAsuetos();
+
+  // 1) Descartar lo pendiente (no enviado) de esta audiencia.
+  await db().from('audiencias_recordatorios')
+    .update({ estado: 'descartado' })
+    .eq('audiencia_id', a.id)
+    .is('fecha_enviado', null)
+    .in('estado', ['programado', 'aprobado', 'pendiente_aprobacion']);
+
+  // 2) Re-encolar los 2 previos con las fechas nuevas.
+  await encolarRecordatoriosAudiencia(a);
+
+  // 3) Aviso de reprogramación: sale en la próxima ventana hábil.
+  const repro = emailAudiencia(a, { reprogramada: true });
+  const { error } = await db().from('audiencias_recordatorios').insert({
+    audiencia_id: a.id, tipo: 'reprogramacion', canal: 'email',
+    requiere_aprobacion: false, plantilla: 'reprogramacion',
+    destinatario_nombre: a.cliente?.nombre ?? null, destinatario_email: a.cliente?.email ?? null,
+    asunto: repro.subject, cuerpo: repro.html,
+    estado: 'programado', fecha_sugerida_envio: proximaVentanaHabil(cfg, asuetos).toISOString(),
+  });
+  if (error) throw new Error('Error al encolar aviso de reprogramación: ' + error.message);
 }
 
 // ── Job de envío (lo llama el cron existente) ───────────────────────────────
@@ -176,8 +235,12 @@ export async function procesarRecordatoriosAudiencias(): Promise<{
 
     const tmpl = row.plantilla === 'previo_2horas'
       ? emailAudienciaCorta(a, { bannerPruebaPara: banner })
-      : emailAudiencia(a, { bannerPruebaPara: banner });
+      : row.plantilla === 'reprogramacion'
+        ? emailAudiencia(a, { bannerPruebaPara: banner, reprogramada: true })
+        : emailAudiencia(a, { bannerPruebaPara: banner });
 
+    // El corto (2h) no lleva .ics; el de 2 días y el de reprogramación sí
+    // (reprogramación con el SEQUENCE ya incrementado → el calendario actualiza).
     const attachments = row.plantilla === 'previo_2horas'
       ? [logoInlineAttachment()]
       : [logoInlineAttachment(), icsAttachmentAudiencia(a)];

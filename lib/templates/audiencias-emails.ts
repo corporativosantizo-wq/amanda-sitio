@@ -117,11 +117,16 @@ function bloqueConexion(a: Audiencia): string {
  */
 export function emailAudiencia(
   a: Audiencia,
-  opts: { bannerPruebaPara?: string } = {},
+  opts: { bannerPruebaPara?: string; reprogramada?: boolean } = {},
 ): EmailTemplate {
   const empresa = a.cliente?.nombre ?? 'Cliente';
   const exp = a.expediente?.numero_expediente ?? '';
-  const subject = `Recordatorio de audiencia · ${empresa}${exp ? ` · ${exp}` : ''}`;
+  const subject = opts.reprogramada
+    ? `Audiencia reprogramada · ${empresa}${exp ? ` · ${exp}` : ''}`
+    : `Recordatorio de audiencia · ${empresa}${exp ? ` · ${exp}` : ''}`;
+  const intro = opts.reprogramada
+    ? 'Le informamos que su audiencia fue <strong>reprogramada</strong>. Nueva fecha y hora:'
+    : 'Le recordamos su próxima audiencia:';
 
   const datos = `
     <table width="100%" style="margin:8px 0 4px;">
@@ -153,7 +158,7 @@ export function emailAudiencia(
   const content = `
     ${opts.bannerPruebaPara ? bannerPrueba(opts.bannerPruebaPara) : ''}
     <p style="margin:0 0 12px;font-size:16px;color:#111827;">Estimado/a <strong>${escEmail(empresa)}</strong>,</p>
-    <p style="margin:0 0 4px;font-size:14px;color:#374151;line-height:1.6;">Le recordamos su próxima audiencia:</p>
+    <p style="margin:0 0 4px;font-size:14px;color:#374151;line-height:1.6;">${intro}</p>
     ${datos}
     ${bloqueModalidad}
     ${instrucciones}

@@ -13,7 +13,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { pgrstQuote } from '@/lib/utils/postgrest';
-import { encolarRecordatoriosAudiencia } from '@/lib/services/audiencias-recordatorios.service';
+import { encolarRecordatoriosAudiencia, reencolarPorReprogramacion } from '@/lib/services/audiencias-recordatorios.service';
 import type { Audiencia, AudienciaInsert } from '@/lib/types/audiencias';
 
 const db = () => createAdminClient();
@@ -111,6 +111,7 @@ export async function listarAudiencias(params: ListAudienciasParams = {}): Promi
     );
 
   if (params.estado) query = query.eq('estado', params.estado);
+  else query = query.neq('estado', 'cancelada'); // soft-delete: oculta canceladas por defecto
   if (params.modalidad) query = query.eq('modalidad', params.modalidad);
   if (params.cliente_id) query = query.eq('cliente_id', params.cliente_id);
   if (params.expediente_id) query = query.eq('expediente_id', params.expediente_id);
@@ -159,7 +160,10 @@ const CAMPOS_EDITABLES: (keyof AudienciaInsert)[] = [
 export async function actualizarAudiencia(
   id: string,
   input: Partial<AudienciaInsert>,
+  reprogramarSiCambiaFecha = true,
 ): Promise<Audiencia> {
+  const actual = await obtenerAudiencia(id); // estado previo (detectar cambio de fecha)
+
   const updates: Record<string, unknown> = {};
   for (const k of CAMPOS_EDITABLES) {
     if (k in input) updates[k] = (input as Record<string, unknown>)[k] ?? null;
@@ -170,6 +174,14 @@ export async function actualizarAudiencia(
     updates.emails_cc = cc && cc.length ? cc : null;
   }
 
+  // ¿Cambió la fecha/hora de inicio? → reprogramación: SEQUENCE++ y re-encolar.
+  const nuevaInicio = (input as Record<string, unknown>).fecha_hora_inicio as string | undefined;
+  const cambioFecha = !!nuevaInicio &&
+    new Date(nuevaInicio).getTime() !== new Date(actual.fecha_hora_inicio).getTime();
+  if (cambioFecha) {
+    updates.ics_sequence = (actual.ics_sequence ?? 0) + 1;
+  }
+
   const { data, error } = await db()
     .from('audiencias')
     .update(updates)
@@ -178,5 +190,50 @@ export async function actualizarAudiencia(
     .single();
 
   if (error) throw new AudienciaError('Error al actualizar audiencia', error);
-  return data as Audiencia;
+  const audiencia = data as Audiencia;
+
+  // Reprogramación automática de recordatorios (best-effort).
+  if (cambioFecha && reprogramarSiCambiaFecha) {
+    try {
+      await reencolarPorReprogramacion(audiencia);
+    } catch (e) {
+      console.error('[actualizarAudiencia] Error reprogramando recordatorios:', (e as Error)?.message ?? e);
+    }
+  }
+
+  return audiencia;
+}
+
+/**
+ * Borra una audiencia con la regla de Amanda:
+ * - Si NUNCA envió un recordatorio → borrado real (cascade borra los encolados).
+ * - Si YA envió al menos uno → NO se borra: estado='cancelada' (se oculta de la
+ *   lista) + se descartan los pendientes; la constancia de lo enviado se conserva.
+ */
+export async function eliminarAudiencia(id: string): Promise<{ accion: 'eliminada' | 'cancelada' }> {
+  const { count } = await db()
+    .from('audiencias_recordatorios')
+    .select('id', { count: 'exact', head: true })
+    .eq('audiencia_id', id)
+    .eq('estado', 'enviado');
+  const yaEnvio = (count ?? 0) > 0;
+
+  if (!yaEnvio) {
+    // Borrado real. El FK audiencias_recordatorios.audiencia_id es ON DELETE
+    // CASCADE → los recordatorios encolados se borran solos.
+    const { error } = await db().from('audiencias').delete().eq('id', id);
+    if (error) throw new AudienciaError('Error al eliminar audiencia', error);
+    return { accion: 'eliminada' };
+  }
+
+  // Ya envió: cancelar (no borrar). Descartar pendientes; conservar 'enviado'.
+  await db().from('audiencias_recordatorios')
+    .update({ estado: 'descartado' })
+    .eq('audiencia_id', id)
+    .is('fecha_enviado', null)
+    .in('estado', ['programado', 'aprobado', 'pendiente_aprobacion', 'pospuesto']);
+
+  const { error } = await db().from('audiencias').update({ estado: 'cancelada' }).eq('id', id);
+  if (error) throw new AudienciaError('Error al cancelar audiencia', error);
+  return { accion: 'cancelada' };
 }
