@@ -135,3 +135,27 @@ export function icsAttachmentAudiencia(a: Audiencia): {
     contentBytes: Buffer.from(generarIcsAudiencia(a), 'utf-8').toString('base64'),
   };
 }
+
+/**
+ * Enlace "Agregar a Google Calendar" (comodidad además del .ics adjunto).
+ * Usa horas locales + ctz=America/Guatemala para fijar el huso sin ambigüedad.
+ */
+export function googleCalendarUrl(a: Audiencia): string {
+  const finIso = a.fecha_hora_fin
+    ?? new Date(new Date(a.fecha_hora_inicio).getTime() + 60 * 60 * 1000).toISOString();
+  const empresa = a.cliente?.nombre ?? 'Cliente';
+  const exp = a.expediente?.numero_expediente ?? '';
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Audiencia · ${empresa}${exp ? ` · ${exp}` : ''}`,
+    dates: `${gtLocalStamp(a.fecha_hora_inicio)}/${gtLocalStamp(finIso)}`,
+    ctz: 'America/Guatemala',
+    details: [
+      a.instrucciones ?? '',
+      `Modalidad: ${a.modalidad}`,
+      a.modalidad !== 'presencial' && a.enlace_virtual ? `Enlace: ${a.enlace_virtual}` : '',
+    ].filter(Boolean).join('\n'),
+    location: locationDe(a),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
