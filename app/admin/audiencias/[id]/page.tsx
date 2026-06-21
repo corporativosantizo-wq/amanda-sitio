@@ -7,7 +7,7 @@
 'use client';
 
 import { useRouter, useParams } from 'next/navigation';
-import { useFetch } from '@/lib/hooks/use-fetch';
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import {
   type Audiencia,
   MODALIDAD_AUDIENCIA_LABEL, MODALIDAD_AUDIENCIA_COLOR,
@@ -34,6 +34,26 @@ export default function AudienciaDetallePage() {
     `/api/admin/audiencias/registro/${id}`,
   );
   const a = data?.audiencia;
+
+  const { mutate, loading: borrando } = useMutate();
+
+  async function eliminar() {
+    if (!confirm(
+      '¿Seguro que querés eliminar esta audiencia?\n\n' +
+      '• Si ya se envió algún recordatorio, se CANCELA (no se borra) y se conserva la constancia.\n' +
+      '• Si no se envió ninguno, se ELIMINA por completo.',
+    )) return;
+    await mutate(`/api/admin/audiencias/registro/${id}`, {
+      method: 'DELETE',
+      onSuccess: (res: any) => {
+        alert(res?.accion === 'cancelada'
+          ? 'La audiencia fue cancelada (ya tenía recordatorios enviados; se conserva la constancia).'
+          : 'Audiencia eliminada.');
+        router.push('/admin/audiencias');
+      },
+      onError: (msg) => alert(msg),
+    });
+  }
 
   const sectionCls = 'bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4';
 
@@ -70,10 +90,16 @@ export default function AudienciaDetallePage() {
               {MODALIDAD_AUDIENCIA_LABEL[a.modalidad]}
             </span>
           </div>
-          <button onClick={() => router.push(`/admin/audiencias/${a.id}/editar`)}
-            className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors shrink-0">
-            ✏️ Editar
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => router.push(`/admin/audiencias/${a.id}/editar`)}
+              className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors">
+              ✏️ Editar
+            </button>
+            <button onClick={eliminar} disabled={borrando}
+              className="px-4 py-2 text-sm font-medium border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50">
+              🗑️ Eliminar
+            </button>
+          </div>
         </div>
       </div>
 

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { obtenerAudiencia, actualizarAudiencia, AudienciaError } from '@/lib/services/audiencias.service';
+import { obtenerAudiencia, actualizarAudiencia, eliminarAudiencia, AudienciaError } from '@/lib/services/audiencias.service';
 import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -42,5 +42,18 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     return handleApiError(err, 'audiencias/registro/[id]/PUT');
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    const result = await eliminarAudiencia(id);
+    return NextResponse.json(result);
+  } catch (err) {
+    if (err instanceof AudienciaError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    return handleApiError(err, 'audiencias/registro/[id]/DELETE');
   }
 }
