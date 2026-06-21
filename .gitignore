@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...pero el ejemplo (solo nombres, sin valores) SÍ se versiona
+!.env.local.example
 
 # vercel
 .vercel
@@ -42,3 +44,4 @@ next-env.d.ts
 modulos de administración expedientes/
 schema_fase1_completo.sql
 *.tar.gz
+.env*.local
