@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'La modalidad es obligatoria' }, { status: 400 });
     }
 
-    const audiencia = await crearAudiencia(body);
+    // programar_recordatorios: casilla del form (marcada por defecto).
+    const audiencia = await crearAudiencia(body, body.programar_recordatorios !== false);
     return NextResponse.json({ audiencia }, { status: 201 });
   } catch (err) {
     if (err instanceof AudienciaError) {

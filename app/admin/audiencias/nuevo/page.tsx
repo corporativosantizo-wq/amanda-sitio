@@ -89,6 +89,9 @@ export default function NuevaAudienciaPage() {
   const [instrucciones, setInstrucciones] = useState('');
   const [notasInternas, setNotasInternas] = useState('');
 
+  // Recordatorios automáticos (marcada por defecto).
+  const [programarRecordatorios, setProgramarRecordatorios] = useState(true);
+
   const mostrarLugar = modalidad === 'presencial' || modalidad === 'hibrida';
   const mostrarConexion = modalidad === 'virtual' || modalidad === 'hibrida';
 
@@ -184,6 +187,7 @@ export default function NuevaAudienciaPage() {
       emails_cc: ccFinal.length ? ccFinal : null,
       instrucciones: instrucciones.trim() || null,
       notas_internas: notasInternas.trim() || null,
+      programar_recordatorios: programarRecordatorios,
     };
 
     await mutate('/api/admin/audiencias/registro', {
@@ -393,6 +397,23 @@ export default function NuevaAudienciaPage() {
             <textarea value={notasInternas} onChange={e => setNotasInternas(e.target.value)}
               rows={2} className={inputCls} placeholder="No sale al cliente" />
           </div>
+        </div>
+
+        {/* Recordatorios automáticos */}
+        <div className={sectionCls}>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={programarRecordatorios}
+              onChange={e => setProgramarRecordatorios(e.target.checked)}
+              className="mt-0.5 rounded border-slate-300 text-[#1E40AF] focus:ring-[#0891B2]/30" />
+            <span className="text-sm text-slate-700">
+              <strong>Programar recordatorios automáticos para esta audiencia</strong>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                Encola dos recordatorios al cliente: uno <strong>2 días hábiles antes</strong> (detalle completo) y otro
+                <strong> 2 horas antes</strong> (corto). Quedan agendados sin pasar por aprobación.
+                En modo prueba se envían al correo de prueba con banner [PRUEBA].
+              </span>
+            </span>
+          </label>
         </div>
 
         {/* Submit */}

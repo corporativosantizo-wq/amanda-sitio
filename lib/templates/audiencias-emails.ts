@@ -14,6 +14,7 @@
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { escEmail, type EmailTemplate } from '@/lib/templates/emails';
 import { googleCalendarUrl } from '@/lib/services/audiencias-ics';
+import { LOGO_AUDIENCIA_BASE64 } from '@/lib/assets/logo-audiencia-base64';
 import type { Audiencia } from '@/lib/types/audiencias';
 
 const FROM_AUDIENCIAS: MailboxAlias = 'asistente@papeleo.legal';
@@ -162,4 +163,58 @@ export function emailAudiencia(
     <p style="margin:6px 0 0;font-size:12px;color:#9ca3af;">También adjuntamos un archivo <strong>.ics</strong> (Apple Calendar, Outlook). Ábralo para agregar la cita.</p>`;
 
   return { from: FROM_AUDIENCIAS, subject, html: wrapperAudiencia(content) };
+}
+
+function horaGT(iso: string): string {
+  return new Date(iso).toLocaleString('es-GT', {
+    timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
+/**
+ * Recordatorio CORTO (2 horas antes). Directo: "su audiencia es hoy a las…".
+ * Sin .ics ni botón de calendario (ya es hoy).
+ */
+export function emailAudienciaCorta(
+  a: Audiencia,
+  opts: { bannerPruebaPara?: string } = {},
+): EmailTemplate {
+  const empresa = a.cliente?.nombre ?? 'Cliente';
+  const exp = a.expediente?.numero_expediente ?? '';
+  const subject = `Su audiencia es hoy · ${empresa}${exp ? ` · ${exp}` : ''}`;
+
+  let dondeLinea = '';
+  if (a.modalidad === 'presencial') {
+    const lugar = [a.juzgado, a.sala, a.ubicacion].filter(Boolean).map(escEmail).join(', ');
+    dondeLinea = lugar ? `en <strong>${lugar}</strong>` : '';
+  } else if (a.modalidad === 'virtual') {
+    dondeLinea = a.enlace_virtual
+      ? `de forma <strong>virtual</strong>`
+      : `de forma <strong>virtual</strong>`;
+  } else {
+    const lugar = [a.juzgado, a.sala, a.ubicacion].filter(Boolean).map(escEmail).join(', ');
+    dondeLinea = lugar ? `en <strong>${lugar}</strong> (o por el enlace)` : `de forma <strong>híbrida</strong>`;
+  }
+
+  const botonVirtual = (a.modalidad !== 'presencial' && a.enlace_virtual)
+    ? `<table cellpadding="0" cellspacing="0"><tr><td style="padding:10px 0;">
+        <a href="${escEmail(a.enlace_virtual)}" style="display:inline-block;background:${NAVY};color:#fff;padding:12px 28px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:600;font-size:14px;">Unirse a la audiencia</a>
+      </td></tr></table>`
+    : '';
+
+  const content = `
+    ${opts.bannerPruebaPara ? bannerPrueba(opts.bannerPruebaPara) : ''}
+    <p style="margin:0 0 12px;font-size:16px;color:#111827;">Estimado/a <strong>${escEmail(empresa)}</strong>,</p>
+    <p style="margin:0 0 8px;font-size:18px;color:${NAVY};font-weight:700;">Su audiencia es <u>hoy a las ${escEmail(horaGT(a.fecha_hora_inicio))}</u>${dondeLinea ? ` ${dondeLinea}` : ''}.</p>
+    ${exp ? `<p style="margin:0 0 4px;font-size:14px;color:#374151;">Expediente: <strong>${escEmail(exp)}</strong></p>` : ''}
+    ${botonVirtual}`;
+
+  return { from: FROM_AUDIENCIAS, subject, html: wrapperAudiencia(content) };
+}
+
+/** Adjunto inline del logo (CID) para el header de los correos de audiencia. */
+export function logoInlineAttachment(): {
+  name: string; contentType: string; contentBytes: string; contentId: string; isInline: boolean;
+} {
+  return { name: 'logo.png', contentType: 'image/png', contentBytes: LOGO_AUDIENCIA_BASE64, contentId: LOGO_CID, isInline: true };
 }

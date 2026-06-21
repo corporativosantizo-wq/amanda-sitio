@@ -610,7 +610,7 @@ export async function sendMail(params: {
   htmlBody: string;
   cc?: string | string[];
   bcc?: string | string[];
-  attachments?: Array<{ name: string; contentType: string; contentBytes: string }>;
+  attachments?: Array<{ name: string; contentType: string; contentBytes: string; contentId?: string; isInline?: boolean }>;
 }): Promise<void> {
   const toList = parseEmailList(params.to);
   if (toList.length === 0) throw new OutlookError('No se especificó destinatario (to)', '');
@@ -674,11 +674,13 @@ export async function sendMail(params: {
     if (bccRecipients) message.bccRecipients = bccRecipients;
 
     if (attachments.length > 0) {
-      message.attachments = attachments.map((att: { name: string; contentType: string; contentBytes: string }) => ({
+      message.attachments = attachments.map((att) => ({
         '@odata.type': '#microsoft.graph.fileAttachment',
         name: att.name,
         contentType: att.contentType,
         contentBytes: att.contentBytes,
+        // Inline (CID) para imágenes embebidas como el logo del header.
+        ...(att.contentId ? { contentId: att.contentId, isInline: att.isInline ?? true } : {}),
       }));
       console.log('[sendMail]', attachments.length, 'adjunto(s) inline:', attachments.map((a: { name: string }) => a.name).join(', '));
     }

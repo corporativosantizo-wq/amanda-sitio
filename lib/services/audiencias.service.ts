@@ -13,6 +13,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { pgrstQuote } from '@/lib/utils/postgrest';
+import { encolarRecordatoriosAudiencia } from '@/lib/services/audiencias-recordatorios.service';
 import type { Audiencia, AudienciaInsert } from '@/lib/types/audiencias';
 
 const db = () => createAdminClient();
@@ -27,7 +28,10 @@ export class AudienciaError extends Error {
 const SELECT_CON_RELACIONES =
   '*, cliente:clientes(id, codigo, nombre, email), expediente:expedientes(id, numero_expediente)';
 
-export async function crearAudiencia(input: AudienciaInsert): Promise<Audiencia> {
+export async function crearAudiencia(
+  input: AudienciaInsert,
+  programarRecordatorios = true,
+): Promise<Audiencia> {
   if (!input.fecha_hora_inicio) {
     throw new AudienciaError('fecha_hora_inicio es obligatorio');
   }
@@ -59,7 +63,18 @@ export async function crearAudiencia(input: AudienciaInsert): Promise<Audiencia>
     .single();
 
   if (error) throw new AudienciaError('Error al crear audiencia', error);
-  return data as Audiencia;
+  const audiencia = data as Audiencia;
+
+  // Encolar los 2 recordatorios automáticos (best-effort: no romper la creación).
+  if (programarRecordatorios) {
+    try {
+      await encolarRecordatoriosAudiencia(audiencia);
+    } catch (e) {
+      console.error('[crearAudiencia] Error encolando recordatorios:', (e as Error)?.message ?? e);
+    }
+  }
+
+  return audiencia;
 }
 
 // ── Listado / detalle ───────────────────────────────────────────────────────
