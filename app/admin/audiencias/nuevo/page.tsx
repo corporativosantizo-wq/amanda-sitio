@@ -89,9 +89,6 @@ export default function NuevaAudienciaPage() {
   const [instrucciones, setInstrucciones] = useState('');
   const [notasInternas, setNotasInternas] = useState('');
 
-  // Resultado de creación (sin redirect: el detalle llega en el paso 2)
-  const [creada, setCreada] = useState<{ id: string } | null>(null);
-
   const mostrarLugar = modalidad === 'presencial' || modalidad === 'hibrida';
   const mostrarConexion = modalidad === 'virtual' || modalidad === 'hibrida';
 
@@ -191,7 +188,7 @@ export default function NuevaAudienciaPage() {
 
     await mutate('/api/admin/audiencias/registro', {
       body,
-      onSuccess: (data: any) => setCreada({ id: data.audiencia.id }),
+      onSuccess: (data: any) => router.push(`/admin/audiencias/${data.audiencia.id}`),
       onError: (msg) => alert(msg),
     });
   }
@@ -199,31 +196,6 @@ export default function NuevaAudienciaPage() {
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
   const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
   const sectionCls = 'bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4';
-
-  // ── Pantalla de éxito (sin listado/detalle todavía) ──
-  if (creada) {
-    return (
-      <div className="p-6 max-w-4xl">
-        <div className={sectionCls}>
-          <h1 className="text-lg font-bold text-slate-900">Audiencia creada ✓</h1>
-          <p className="text-sm text-slate-600">
-            Se registró la audiencia (id <code className="text-xs">{creada.id}</code>). El
-            listado y el detalle llegan en el siguiente paso del módulo.
-          </p>
-          <div className="flex gap-3">
-            <button onClick={() => { setCreada(null); window.scrollTo(0, 0); }}
-              className="px-6 py-2.5 bg-gradient-to-r from-[#1E40AF] to-[#0891B2] text-white text-sm font-medium rounded-lg hover:shadow-lg transition-all">
-              Crear otra
-            </button>
-            <button onClick={() => router.push('/admin')}
-              className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">
-              Volver al inicio
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-6 max-w-4xl">

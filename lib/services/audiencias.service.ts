@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Audiencia, AudienciaInsert } from '@/lib/types/audiencias';
 
 const db = () => createAdminClient();
@@ -58,5 +59,75 @@ export async function crearAudiencia(input: AudienciaInsert): Promise<Audiencia>
     .single();
 
   if (error) throw new AudienciaError('Error al crear audiencia', error);
+  return data as Audiencia;
+}
+
+// ── Listado / detalle ───────────────────────────────────────────────────────
+
+interface ListAudienciasParams {
+  busqueda?: string;
+  estado?: string;
+  modalidad?: string;
+  cliente_id?: string;
+  expediente_id?: string;
+  desde?: string;   // fecha/hora ISO mínima (fecha_hora_inicio >=)
+  hasta?: string;   // fecha/hora ISO máxima (fecha_hora_inicio <=)
+  page?: number;
+  limit?: number;
+}
+
+export async function listarAudiencias(params: ListAudienciasParams = {}): Promise<{
+  data: Audiencia[];
+  total: number;
+  totalPages: number;
+}> {
+  const { page = 1, limit = 25 } = params;
+  const offset = (page - 1) * limit;
+
+  let query = db()
+    .from('audiencias')
+    .select(
+      `id, expediente_id, cliente_id, titulo, tipo_audiencia, modalidad,
+       fecha_hora_inicio, fecha_hora_fin, juzgado, sala, estado, ics_sequence,
+       created_at, updated_at,
+       cliente:clientes(id, codigo, nombre),
+       expediente:expedientes(id, numero_expediente)`,
+      { count: 'exact' },
+    );
+
+  if (params.estado) query = query.eq('estado', params.estado);
+  if (params.modalidad) query = query.eq('modalidad', params.modalidad);
+  if (params.cliente_id) query = query.eq('cliente_id', params.cliente_id);
+  if (params.expediente_id) query = query.eq('expediente_id', params.expediente_id);
+  if (params.desde) query = query.gte('fecha_hora_inicio', params.desde);
+  if (params.hasta) query = query.lte('fecha_hora_inicio', params.hasta);
+  if (params.busqueda) {
+    const v = pgrstQuote(`%${params.busqueda}%`);
+    query = query.or(`titulo.ilike.${v},tipo_audiencia.ilike.${v},juzgado.ilike.${v}`);
+  }
+
+  query = query
+    .order('fecha_hora_inicio', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  const { data, error, count } = await query;
+  if (error) throw new AudienciaError('Error al listar audiencias', error);
+
+  const total = count ?? 0;
+  return {
+    data: (data ?? []) as Audiencia[],
+    total,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+  };
+}
+
+export async function obtenerAudiencia(id: string): Promise<Audiencia> {
+  const { data, error } = await db()
+    .from('audiencias')
+    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente)')
+    .eq('id', id)
+    .single();
+
+  if (error) throw new AudienciaError('Audiencia no encontrada', error);
   return data as Audiencia;
 }
