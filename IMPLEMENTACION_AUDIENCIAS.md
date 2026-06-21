@@ -210,6 +210,10 @@ Mientras `config_recordatorios.test_mode = true`:
 - Todo lo demás idéntico a producción: plantillas, `.ics`, huso, ventana de envío, flujo de aprobación, reprogramación automática. La idea es ejercitar el pipeline completo y solo cambiar el destinatario.
 - Cuando Amanda confirme que está impecable, **un solo cambio** (`test_mode = false`) activa el envío real. No debe requerir tocar código.
 
+> **Nota para Fase 3 — CC en modo prueba (decisión de Amanda, 21-jun-2026):** el CC de los recordatorios tiene dos niveles que conviven: el **CC por audiencia** (`legal.audiencias.emails_cc`) y el **CC fijo del cliente** (`legal.clientes.emails_cc`, reusado — ver abajo). En modo prueba, **el destinatario principal Y todos los CC** (por audiencia + fijos del cliente) se redirigen a `test_email`: **nadie en copia recibe nada** hasta `test_mode=false`. Antes de enviar: **validar** los emails y **deduplicar** la lista final (principal + ambos CC + `amanda@`). CC en modo **visible (no BCC)**.
+
+> **REGLA FIRME DE CONFIDENCIALIDAD (decisión de Amanda, 21-jun-2026) — NO es de comodidad:** los `emails_cc` heredados del cliente **NUNCA entran automáticamente** en un recordatorio de audiencia. En el formulario aparecen como lista pero **TODOS DESMARCADOS por defecto**; Amanda marca explícitamente a quién copia en *cada* audiencia. Por eso `legal.audiencias.emails_cc` guarda **solo lo explícito** (lo tipeado + los heredados marcados); el envío de Fase 3 usa **esa columna tal cual**, sin volver a sumar `clientes.emails_cc`. Motivo: clientes como **AGROPE / Grupo Rope** tienen CC de **firmas externas** (p. ej. `lexincorp.com`, `roalatam.com`) que no deben recibir info de toda audiencia. Criterio: **copiar de menos y que Amanda agregue**, nunca de más. (Contraste: el flujo viejo de cotizaciones SÍ copia `emails_cc` automáticamente — ver `BUGS_Y_PENDIENTES.md` DOC-002.)
+
 ---
 
 ## Flujo de reprogramación automática

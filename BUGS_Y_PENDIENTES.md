@@ -52,6 +52,21 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 ---
 
+### [DOC-002] `clientes.emails_cc` se copia AUTOMÁTICO en cotizaciones (exposición a firmas externas)
+
+**Fecha:** 21-jun-2026 (diagnóstico pedido por Amanda en Fase 2 de audiencias). **Solo diagnóstico — no se tocó código ni producción.**
+
+**Cómo se comporta `clientes.emails_cc` hoy, por flujo:**
+- **Cotizaciones** (`cotizaciones.service.ts`, 3 rutas: enviar / reenviar / lote): el CC = `cc_emails` de la cotización **+ `cliente.emails_cc`**, **automático y server-side**. Amanda **no** ve ni puede deseleccionar ese CC al enviar.
+- **Citas / audiencia** (`citas.service.ts`, cron): si la cita-audiencia **no** tiene `audiencia_destinatarios`, el recordatorio hace `cc = [...cliente.emails_cc, 'amanda@']` **automático**. Si tiene `audiencia_destinatarios`, va solo a esos (+ amanda@), **sin** `emails_cc`.
+- **Recibos de caja**, **Molly Mail saliente**, **Llamadas**: **pre-llenan** el CC con `cliente.emails_cc` en un campo **editable** que Amanda ve antes de enviar (puede quitarlo). No es silencioso.
+
+**Exposición real del Grupo Rope (datos de prod, solo lectura):** 13 sociedades Rope/AGROPE, cada una con **9 `emails_cc`**. Dominios en esos CC: `ropecorp.com` (interno), `gmail.com`, y **firmas externas `lexincorp.com` y `roalatam.com`**. **8 de las 13** tienen ≥1 cotización ya enviada por correo → esas firmas externas **ya recibieron copia automática** de cotizaciones. En audiencias **no hay exposición** (0 citas tipo audiencia del grupo).
+
+**Implicación:** la regla de confidencialidad de audiencias (heredados desmarcados por defecto) **no aplica a cotizaciones hoy**. Si Amanda quiere el mismo criterio en cotizaciones, es un cambio aparte a evaluar (fuera del módulo de audiencias). **Pendiente: decisión de Amanda.**
+
+---
+
 ## 🟡 Features pendientes
 
 ### [FEAT-001] Cuadros de notas — Academia DIP
