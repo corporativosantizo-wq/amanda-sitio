@@ -60,14 +60,20 @@ export default function AudienciaDetallePage() {
       {/* Header */}
       <div>
         <button onClick={() => router.back()} className="text-sm text-slate-500 hover:text-slate-700 mb-2">← Volver</button>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-900">{a.titulo || 'Audiencia'}</h1>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_AUDIENCIA_COLOR[a.estado]}`}>
-            {ESTADO_AUDIENCIA_LABEL[a.estado]}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MODALIDAD_AUDIENCIA_COLOR[a.modalidad]}`}>
-            {MODALIDAD_AUDIENCIA_LABEL[a.modalidad]}
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-bold text-slate-900">{a.titulo || 'Audiencia'}</h1>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_AUDIENCIA_COLOR[a.estado]}`}>
+              {ESTADO_AUDIENCIA_LABEL[a.estado]}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MODALIDAD_AUDIENCIA_COLOR[a.modalidad]}`}>
+              {MODALIDAD_AUDIENCIA_LABEL[a.modalidad]}
+            </span>
+          </div>
+          <button onClick={() => router.push(`/admin/audiencias/${a.id}/editar`)}
+            className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors shrink-0">
+            ✏️ Editar
+          </button>
         </div>
       </div>
 

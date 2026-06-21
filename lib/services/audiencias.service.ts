@@ -131,3 +131,37 @@ export async function obtenerAudiencia(id: string): Promise<Audiencia> {
   if (error) throw new AudienciaError('Audiencia no encontrada', error);
   return data as Audiencia;
 }
+
+// Campos editables vía actualizarAudiencia. (La reprogramación con SEQUENCE++
+// es lógica de Fase 5; aquí solo se actualizan campos.)
+const CAMPOS_EDITABLES: (keyof AudienciaInsert)[] = [
+  'expediente_id', 'cliente_id', 'titulo', 'tipo_audiencia', 'modalidad',
+  'fecha_hora_inicio', 'fecha_hora_fin', 'juzgado', 'sala', 'ubicacion',
+  'enlace_virtual', 'plataforma', 'instrucciones', 'emails_cc', 'notas_internas',
+  'estado',
+];
+
+export async function actualizarAudiencia(
+  id: string,
+  input: Partial<AudienciaInsert>,
+): Promise<Audiencia> {
+  const updates: Record<string, unknown> = {};
+  for (const k of CAMPOS_EDITABLES) {
+    if (k in input) updates[k] = (input as Record<string, unknown>)[k] ?? null;
+  }
+  // emails_cc vacío → null (consistente con crearAudiencia).
+  if ('emails_cc' in updates) {
+    const cc = updates.emails_cc as string[] | null;
+    updates.emails_cc = cc && cc.length ? cc : null;
+  }
+
+  const { data, error } = await db()
+    .from('audiencias')
+    .update(updates)
+    .eq('id', id)
+    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente)')
+    .single();
+
+  if (error) throw new AudienciaError('Error al actualizar audiencia', error);
+  return data as Audiencia;
+}
