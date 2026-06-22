@@ -1113,7 +1113,11 @@ export async function enviarRecordatorios(): Promise<{
       .eq('recordatorio_24h_enviado', false)
       // Solo citas confirmadas (las solicitudes pendientes de entrega/firma no
       // reciben recordatorios hasta que Amanda confirme la fecha).
-      .eq('estado', 'confirmada');
+      .eq('estado', 'confirmada')
+      // CUTOVER: las audiencias las maneja el módulo nuevo (legal.audiencias).
+      // El sistema viejo deja de mandar recordatorios de audiencia para evitar
+      // duplicados. Consulta/seguimiento/reunión/personales siguen igual.
+      .neq('tipo', 'audiencia');
 
     for (const cita of citas24h ?? []) {
       // ── Audiencias judiciales: correo propio (con CC a emails_cc + amanda@) y
