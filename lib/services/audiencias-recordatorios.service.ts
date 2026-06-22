@@ -93,7 +93,16 @@ export function calcularFechaSugeridaEnvio(
   }
 
   let candidate = gtInstant(y, mo, da, h, mi);
-  // 3) Nunca después del inicio.
+
+  // 3) [AUD-1] Si la fecha sugerida ya quedó en el pasado (audiencia creada con
+  // poca anticipación), NO disparar a hora rara ni descartar: reprogramar a la
+  // próxima ventana hábil, para que el cliente reciba el aviso igual.
+  const ahora = new Date();
+  if (candidate.getTime() < ahora.getTime()) {
+    candidate = proximaVentanaHabil(cfg, asuetos, ahora);
+  }
+
+  // 4) Nunca después del inicio.
   if (candidate.getTime() >= inicio.getTime()) {
     candidate = new Date(inicio.getTime() - 60 * 60 * 1000);
   }
