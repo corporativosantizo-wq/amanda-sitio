@@ -69,6 +69,14 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 ## 🟡 Features pendientes
 
+### [AUD-1] Recordatorio "2 días antes" cuando la audiencia se crea/recrea con poca anticipación
+
+**Contexto:** al recrear en el módulo nuevo audiencias cuya fecha está muy próxima (p. ej. la penal del 24-jun recreada el 22/23), el cálculo de "2 días hábiles antes" cae **en el pasado**.
+**Comportamiento deseado (decisión de Amanda, 22-jun-2026):** si la fecha sugerida del recordatorio de **2 días antes** quedó en el pasado, **NO descartarlo** ni dispararlo a cualquier hora → **reprogramarlo a la próxima ventana hábil** (mañana 8–17h) para que el cliente reciba el aviso con ~1 día de anticipación. El de **2 horas antes** sale normal el día de la audiencia.
+**Hoy:** `calcularFechaSugeridaEnvio` deja la fecha pasada → el cron lo mandaría en el próximo tick (envío inmediato, posible hora rara). Falta el "bump a próxima ventana hábil" cuando la sugerida < ahora. Existe `proximaVentanaHabil()` reutilizable. **Pendiente de implementar antes de que Amanda recree esa audiencia.**
+
+
+
 ### [FEAT-001] Cuadros de notas — Academia DIP
 
 **Proyecto:** Academia DIP (`urauqhwcfpkysaeporoj`) — **no es este proyecto**  
