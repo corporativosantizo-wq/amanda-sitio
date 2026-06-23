@@ -763,11 +763,10 @@ export function emailPagoRecibido(params: {
 
 // ── Wrapper especializado para cotizaciones (paleta blue/slate) ──────────────
 
-function emailCotizacionWrapper(content: string, logoBase64?: string): string {
-  const logoHtml = logoBase64
-    ? `<img src="data:image/png;base64,${logoBase64}" alt="Amanda Santizo" style="max-height:45px;width:auto;" />`
-    : `<span style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:0.5px;">Amanda Santizo</span><br/><span style="font-size:12px;color:#64748B;">Despacho Jur\u00eddico</span>`;
-
+// Mismo dise\u00f1o de marca que emailWrapper (header blanco + logo inline CID +
+// borde navy y l\u00ednea dorada), a 640px para que la tabla de servicios respire.
+// logoBase64 se conserva por compatibilidad de firma; el logo va inline por CID.
+function emailCotizacionWrapper(content: string, _logoBase64?: string): string {
   return `
 <!DOCTYPE html>
 <html lang="es">
@@ -777,9 +776,12 @@ function emailCotizacionWrapper(content: string, logoBase64?: string): string {
     <tr><td align="center">
       <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
         <!-- Header -->
-        <tr><td style="padding:24px 32px;">${logoHtml}</td></tr>
-        <!-- Gradient line -->
-        <tr><td style="height:3px;background:linear-gradient(90deg,#1E3A8A,#2563EB,#1E3A8A);font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr>
+          <td style="background:#ffffff;border-top:4px solid ${NAVY};padding:28px 32px 22px;text-align:center;border-bottom:1px solid #eef0f4;">
+            <img src="cid:${LOGO_MARCA_CID}" alt="Amanda Santizo — Despacho Jurídico" width="240" style="display:block;margin:0 auto;width:240px;max-width:70%;height:auto;">
+            <div style="height:3px;width:64px;background:${GOLD};margin:16px auto 0;border-radius:2px;"></div>
+          </td>
+        </tr>
         <!-- Content -->
         <tr><td style="padding:32px;">${content}</td></tr>
         <!-- Footer -->
@@ -823,13 +825,13 @@ export function emailCotizacion(params: {
   // Header info (cotizacion number + date)
   let headerInfo = '';
   if (params.numeroCotizacion || params.fechaEmision) {
-    const numHtml = params.numeroCotizacion ? `<span style="display:inline-block;background:#DBEAFE;color:#2563EB;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${params.numeroCotizacion}</span>` : '';
+    const numHtml = params.numeroCotizacion ? `<span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${params.numeroCotizacion}</span>` : '';
     const fechaHtml = params.fechaEmision ? `<span style="font-size:12px;color:#94A3B8;margin-left:8px;">${formatearFechaGT(params.fechaEmision)}</span>` : '';
     headerInfo = `<p style="margin:0 0 16px;text-align:right;">${numHtml}${fechaHtml}</p>`;
   }
 
   // Validity badge
-  const badgeHtml = `<p style="margin:16px 0;"><span style="display:inline-block;background:#DBEAFE;color:#2563EB;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">V\u00e1lida por 30 d\u00edas</span></p>`;
+  const badgeHtml = `<p style="margin:16px 0;"><span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">V\u00e1lida por 30 d\u00edas</span></p>`;
 
   // Services table — 4 columns
   const filasServicios = params.servicios
@@ -847,8 +849,8 @@ export function emailCotizacion(params: {
   // Anticipo row
   const anticipoRow = anticipoCalc > 0
     ? `<tr>
-        <td style="padding:8px 12px;font-size:13px;color:#2563EB;">Anticipo (${antPct}%)</td>
-        <td style="padding:8px 12px;font-size:13px;color:#2563EB;font-weight:600;text-align:right;">${fmtQ(anticipoCalc)}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#1e2a5a;">Anticipo (${antPct}%)</td>
+        <td style="padding:8px 12px;font-size:13px;color:#1e2a5a;font-weight:600;text-align:right;">${fmtQ(anticipoCalc)}</td>
       </tr>`
     : '';
 
@@ -860,8 +862,8 @@ export function emailCotizacion(params: {
     conditionsHtml = `
     <table width="100%" style="margin:20px 0;" cellpadding="0" cellspacing="0">
       <tr>
-        <td style="background:#F8FAFC;border-left:3px solid #2563EB;padding:16px 18px;border-radius:0 6px 6px 0;">
-          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#2563EB;text-transform:uppercase;letter-spacing:0.5px;">Condiciones de pago</p>
+        <td style="background:#eef2f9;border-left:3px solid #1e2a5a;padding:16px 18px;border-radius:0 6px 6px 0;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#1e2a5a;text-transform:uppercase;letter-spacing:0.5px;">Condiciones de pago</p>
           ${condContent}
         </td>
       </tr>
@@ -938,13 +940,13 @@ export function emailCotizacion(params: {
         <table cellpadding="0" cellspacing="0"><tr>
           <td style="padding:0 6px;">
             <a href="https://amandasantizo.com/cotizacion/respuesta?token=${params.tokenRespuesta}&accion=aceptar"
-               style="display:inline-block;background-color:#16a34a;color:#ffffff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
+               style="display:inline-block;background-color:#1e2a5a;color:#ffffff;padding:14px 32px;text-decoration:none;border-radius:8px;border-bottom:3px solid #c2a05a;font-weight:bold;font-size:15px;">
               ✓ Aceptar Cotización
             </a>
           </td>
           <td style="padding:0 6px;">
             <a href="https://amandasantizo.com/cotizacion/respuesta?token=${params.tokenRespuesta}&accion=dudas"
-               style="display:inline-block;background-color:#2563EB;color:#ffffff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
+               style="display:inline-block;background-color:#ffffff;color:#1e2a5a;padding:13px 31px;text-decoration:none;border-radius:8px;border:1px solid #1e2a5a;font-weight:bold;font-size:15px;">
               ? Tengo Dudas
             </a>
           </td>
