@@ -5,6 +5,15 @@
 
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { MODALIDAD_INFO, DIRECCION_OFICINA, type ModalidadCita } from '@/lib/types/citas';
+import { LOGO_MARCA_CID } from '@/lib/assets/brand-logo';
+
+// ── Paleta de marca (colores del logo) ──────────────────────────────────────
+// Unificada con audiencias-emails.ts y el reporte de avance. El logo del header
+// se embebe inline vía CID (lo adjunta sendMail al detectar `cid:logoMarca`).
+const NAVY = '#1e2a5a';
+const GOLD = '#c2a05a';
+const AZUL_CLARO = '#eef2f9'; // recuadros de info (en vez de teal/verde)
+const AZUL_BORDE = '#c3cde4';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,6 +35,8 @@ const CUENTAS_BANCARIAS = [
 
 // ── Shared Infrastructure ───────────────────────────────────────────────────
 
+// Wrapper de marca compartido: header blanco con el logo (CID inline), borde
+// superior navy y l\u00ednea dorada; footer gris. El logo se adjunta en el env\u00edo.
 export function emailWrapper(content: string): string {
   return `
 <!DOCTYPE html>
@@ -37,9 +48,9 @@ export function emailWrapper(content: string): string {
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.07);">
         <!-- Header -->
         <tr>
-          <td style="background:linear-gradient(135deg,#0d9488,#06b6d4);padding:24px 32px;text-align:center;">
-            <span style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:1px;">AS</span>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.9);font-size:13px;">Amanda Santizo \u2014 Despacho Jur\u00eddico</p>
+          <td style="background:#ffffff;border-top:4px solid ${NAVY};padding:28px 32px 22px;text-align:center;border-bottom:1px solid #eef0f4;">
+            <img src="cid:${LOGO_MARCA_CID}" alt="Amanda Santizo \u2014 Despacho Jur\u00eddico" width="240" style="display:block;margin:0 auto;width:240px;max-width:70%;height:auto;">
+            <div style="height:3px;width:64px;background:${GOLD};margin:16px auto 0;border-radius:2px;"></div>
           </td>
         </tr>
         <!-- Content -->
@@ -87,10 +98,11 @@ export function escEmail(s: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function tealButton(label: string, href: string): string {
+// Bot\u00f3n de marca: navy con borde inferior dorado (sin gradiente teal).
+function botonMarca(label: string, href: string): string {
   return `
     <table><tr><td style="padding:16px 0;">
-      <a href="${href}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+      <a href="${href}" style="display:inline-block;background:${NAVY};color:#fff;padding:12px 28px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:600;font-size:14px;">
         ${label}
       </a>
     </td></tr></table>`;
@@ -98,9 +110,9 @@ function tealButton(label: string, href: string): string {
 
 function instruccionesPortal(): string {
   return `
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border-left:3px solid ${NAVY};border-radius:8px;padding:16px;">
       <tr><td>
-        <p style="margin:0 0 8px;font-size:14px;font-weight:600;">C\u00f3mo acceder:</p>
+        <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${NAVY};">C\u00f3mo acceder:</p>
         <ol style="margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.8;">
           <li>Ingrese a <strong>amandasantizo.com/portal</strong></li>
           <li>Escriba su correo electr\u00f3nico y haga click en \u201cSolicitar acceso\u201d</li>
@@ -114,7 +126,7 @@ function instruccionesPortal(): string {
 function teamsButton(link: string): string {
   return `
     <tr><td style="padding:16px 0;">
-      <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+      <a href="${link}" style="display:inline-block;background:${NAVY};color:#fff;padding:12px 28px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:600;font-size:14px;">
         Unirse a la reuni\u00f3n
       </a>
     </td></tr>`;
@@ -139,7 +151,7 @@ function teamsSeccionHTML(cita: any): string {
   if (!cita.teams_link) return '';
   return `
     <table width="100%" style="margin:16px 0;"><tr><td align="center" style="padding:8px 0;">
-      <a href="${cita.teams_link}" style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">
+      <a href="${cita.teams_link}" style="display:inline-block;background:${NAVY};color:#fff;padding:14px 36px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:700;font-size:15px;">
         Unirse a la reunión por Teams
       </a>
     </td></tr></table>`;
@@ -162,7 +174,7 @@ function oficinaSeccionHTML(cita: any): string {
         </ul>` : '';
 
   return `
-    <table width="100%" style="margin:16px 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:0 0 8px;font-size:14px;"><strong>📍 ${lugarLabel}:</strong> ${DIRECCION_OFICINA}</p>
         ${docs && !esFirma ? `<p style="margin:8px 0 0;font-size:14px;"><strong>📋 Documentos:</strong> ${docs}</p>` : ''}
@@ -569,7 +581,7 @@ export function emailNuevaSolicitudInterno(cita: any): EmailTemplate {
       </td></tr>
     </table>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Pendiente de confirmar fecha desde el panel:</p>
-    ${tealButton('Ir al calendario', 'https://amandasantizo.com/admin/calendario')}
+    ${botonMarca('Ir al calendario', 'https://amandasantizo.com/admin/calendario')}
   `);
 
   return {
@@ -1071,7 +1083,7 @@ export function emailDocumentosDisponibles(params: {
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, las copias solicitadas de su expediente ya est\u00e1n disponibles en su portal de cliente.</p>
     ${instruccionesPortal()}
     <p style="color:#64748b;font-size:13px;margin-top:16px;">Sus documentos estar\u00e1n disponibles por 30 d\u00edas. Si necesita acceso posterior, sol\u00edcitelo a este correo.</p>
-    ${tealButton('Ir al portal de cliente', 'https://amandasantizo.com/portal')}
+    ${botonMarca('Ir al portal de cliente', 'https://amandasantizo.com/portal')}
   `);
 
   return {
@@ -1096,7 +1108,7 @@ export function emailActualizacionExpediente(params: {
       </td></tr>
     </table>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Si tiene consultas sobre esta actualizaci\u00f3n, puede responder a este correo o agendar un seguimiento.</p>
-    ${tealButton('Agendar seguimiento', 'https://amandasantizo.com/agendar')}
+    ${botonMarca('Agendar seguimiento', 'https://amandasantizo.com/agendar')}
   `);
 
   return {
@@ -1121,7 +1133,7 @@ export function emailBienvenidaCliente(params: {
         <p style="margin:4px 0;font-size:14px;color:#475569;">Web: amandasantizo.com</p>
       </td></tr>
     </table>
-    ${tealButton('Acceder al portal', 'https://amandasantizo.com/portal')}
+    ${botonMarca('Acceder al portal', 'https://amandasantizo.com/portal')}
   `);
 
   return {
@@ -1156,7 +1168,7 @@ export function emailSolicitudDocumentos(params: {
     </table>
     ${plazoLine}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Puede enviarlos respondiendo a este correo o subi\u00e9ndolos directamente en su portal de cliente.</p>
-    ${tealButton('Ir al portal', 'https://amandasantizo.com/portal')}
+    ${botonMarca('Ir al portal', 'https://amandasantizo.com/portal')}
   `);
 
   return {

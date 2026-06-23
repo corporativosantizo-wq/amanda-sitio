@@ -6,6 +6,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { encrypt, decrypt } from '@/lib/crypto';
+import { BRAND_LOGO_CIDS, brandLogoAttachment } from '@/lib/assets/brand-logo';
 
 const db = () => createAdminClient();
 
@@ -646,8 +647,18 @@ export async function sendMail(params: {
     : undefined;
   if (bccList.length > 0) console.log('[sendMail] bcc:', bccList.join(', '));
 
+  // Logo de marca inline: si el cuerpo referencia el CID de un logo de marca
+  // (headers rediseñados) y no viene ya adjunto, lo agregamos inline para que el
+  // header lo renderice. Gateado por la presencia del CID → solo afecta a las
+  // plantillas que lo usan; el resto de correos no cambia.
+  const attachments = [...(params.attachments ?? [])];
+  for (const cid of BRAND_LOGO_CIDS) {
+    if (params.htmlBody.includes(`cid:${cid}`) && !attachments.some((a) => a.contentId === cid)) {
+      attachments.push(brandLogoAttachment(cid));
+    }
+  }
+
   // Check attachment sizes to decide inline vs upload session
-  const attachments = params.attachments ?? [];
   const hasLargeAttachment = attachments.some((att: { name: string; contentType: string; contentBytes: string }) => {
     const rawSize = base64ByteSize(att.contentBytes);
     console.log(`[sendMail] Adjunto: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB) — ${rawSize < LARGE_ATTACHMENT_THRESHOLD ? 'inline' : 'upload session'}`);
