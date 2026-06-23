@@ -1,8 +1,33 @@
 // ============================================================================
 // lib/templates/seguimiento-cotizacion-email.ts
-// HTML email profesional para la plantilla "Seguimiento de cotización".
-// Diseñado para ser email-safe (tablas, inline styles, sin flexbox).
+// HTML email profesional para la plantilla "Seguimiento de cotización"
+// (Reporte de avance). Diseñado para ser email-safe (tablas, inline styles,
+// sin flexbox).
+//
+// Diseño de marca unificado con los correos de audiencias: header blanco con
+// el logo embebido inline (CID) + borde navy y línea dorada, recuadros azul
+// claro, acentos navy/dorado (sin teal/verde de chrome). El logo se adjunta
+// como inline attachment en la capa de ENVÍO (ver logoReporteInlineAttachment).
 // ============================================================================
+
+import { LOGO_AUDIENCIA_BASE64 } from '@/lib/assets/logo-audiencia-base64';
+
+// Paleta del despacho (colores del logo), idéntica a audiencias-emails.ts.
+const NAVY = '#1e2a5a';
+const GOLD = '#c2a05a';
+const AZUL_CLARO = '#eef2f9'; // recuadros de info
+const AZUL_BORDE = '#c3cde4'; // borde navy-claro para recuadros azules
+
+// CID del logo embebido inline (lo adjunta el motor de envío cuando detecta
+// esta referencia en el cuerpo). Reutiliza el mismo asset base64 de audiencias.
+export const LOGO_REPORTE_CID = 'logoReporte';
+
+/** Adjunto inline del logo (CID) para el header del reporte de avance. */
+export function logoReporteInlineAttachment(): {
+  name: string; contentType: string; contentBytes: string; contentId: string; isInline: boolean;
+} {
+  return { name: 'logo.png', contentType: 'image/png', contentBytes: LOGO_AUDIENCIA_BASE64, contentId: LOGO_REPORTE_CID, isInline: true };
+}
 
 export type EstadoTramiteEmail = 'pendiente' | 'en_proceso' | 'completado' | 'suspendido';
 
@@ -34,11 +59,13 @@ const ESTADO_LABEL: Record<EstadoTramiteEmail, string> = {
   suspendido: 'Suspendido',
 };
 
+// Badges de estado: navy/dorado/azul claro en vez de teal/verde. "Completado"
+// usa navy sólido (señal fuerte de cierre); "suspendido" mantiene ámbar (alerta).
 const ESTADO_BADGE: Record<EstadoTramiteEmail, { bg: string; color: string; border: string }> = {
-  pendiente:  { bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' },
-  en_proceso: { bg: '#dbeafe', color: '#1e40af', border: '#93c5fd' },
-  completado: { bg: '#d1fae5', color: '#065f46', border: '#6ee7b7' },
-  suspendido: { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
+  pendiente:  { bg: '#f1f5f9', color: '#64748b', border: '#cbd5e1' },
+  en_proceso: { bg: AZUL_CLARO, color: NAVY,      border: AZUL_BORDE },
+  completado: { bg: NAVY,       color: '#ffffff', border: NAVY },
+  suspendido: { bg: '#fef3c7',  color: '#92400e', border: '#fcd34d' },
 };
 
 function escapeHtml(s: string): string {
@@ -85,9 +112,10 @@ function renderAvances(avances: AvanceEmail[]): string {
     <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:10px;">
       ${ordenados.map(a => {
         const completado = a.completado !== false;
+        // ✓ completado → navy sólido; → en curso → azul claro con navy. Sin teal.
         const marker = completado ? '✓' : '→';
-        const markerColor = completado ? '#0d9488' : '#1e40af';
-        const markerBg = completado ? '#d1fae5' : '#dbeafe';
+        const markerColor = completado ? '#ffffff' : NAVY;
+        const markerBg = completado ? NAVY : AZUL_CLARO;
         const textColor = completado ? '#334155' : '#1e293b';
         const weight = completado ? '400' : '600';
         return `
@@ -110,11 +138,11 @@ function renderTramite(t: TramiteEmail): string {
   return `
     <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-bottom:16px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
       <tr>
-        <td style="padding:14px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
+        <td style="padding:14px 18px;background:${AZUL_CLARO};border-bottom:1px solid ${AZUL_BORDE};">
           <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
             <tr>
               <td style="vertical-align:middle;">
-                <span style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(t.nombre)}</span>
+                <span style="font-size:14px;font-weight:600;color:${NAVY};">${escapeHtml(t.nombre)}</span>
               </td>
               <td style="vertical-align:middle;text-align:right;white-space:nowrap;">
                 ${badgeEstado(t.estado)}
@@ -144,10 +172,10 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
 
   const comentariosHtml = data.detalleAvance.trim()
     ? `
-      <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:24px;background:#f0fdfa;border-left:4px solid #0d9488;border-radius:6px;">
+      <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:24px;background:${AZUL_CLARO};border-left:4px solid ${NAVY};border-radius:6px;">
         <tr>
           <td style="padding:14px 18px;">
-            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:0.5px;">Comentarios adicionales</p>
+            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:${NAVY};text-transform:uppercase;letter-spacing:0.5px;">Comentarios adicionales</p>
             <div style="font-size:14px;color:#0f172a;line-height:1.6;">${nl2br(data.detalleAvance)}</div>
           </td>
         </tr>
@@ -162,48 +190,38 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reporte de avance</title>
 </head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,Geneva,Verdana,Arial,sans-serif;color:#0f172a;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1f5f9;padding:24px 0;">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Tahoma,Geneva,Verdana,Arial,sans-serif;color:#0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;padding:32px 0;">
     <tr><td align="center">
-      <table width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+      <table width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.07);">
 
-        <!-- HEADER -->
+        <!-- HEADER: blanco + logo inline (CID) + borde navy y línea dorada -->
         <tr>
-          <td style="padding:28px 32px 16px;background:linear-gradient(135deg,#0f766e 0%,#0d9488 50%,#0891b2 100%);">
-            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-              <tr>
-                <td>
-                  <p style="margin:0;color:#ffffff;font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:600;opacity:0.85;">Despacho Jurídico</p>
-                  <h1 style="margin:4px 0 0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.3px;">Amanda Santizo</h1>
-                </td>
-                <td align="right" style="vertical-align:middle;">
-                  <span style="display:inline-block;padding:6px 14px;font-size:11px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);border-radius:999px;letter-spacing:0.5px;text-transform:uppercase;">Reporte</span>
-                </td>
-              </tr>
-            </table>
+          <td style="background:#ffffff;border-top:4px solid ${NAVY};padding:28px 32px 22px;text-align:center;border-bottom:1px solid #eef0f4;">
+            <img src="cid:${LOGO_REPORTE_CID}" alt="Amanda Santizo — Abogada y Notaria" width="240" style="display:block;margin:0 auto;width:240px;max-width:70%;height:auto;">
+            <div style="height:3px;width:64px;background:${GOLD};margin:16px auto 0;border-radius:2px;"></div>
           </td>
         </tr>
-        <tr><td style="height:4px;background:#1e3a8a;line-height:4px;font-size:0;">&nbsp;</td></tr>
 
         <!-- DATOS DEL CASO -->
         <tr>
           <td style="padding:28px 32px 8px;">
-            <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Reporte de avance</p>
+            <p style="margin:0;color:${NAVY};font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Reporte de avance</p>
             <p style="margin:14px 0 16px;color:#334155;font-size:15px;line-height:1.6;">Estimado/a <strong style="color:#0f172a;">${escapeHtml(data.clienteNombre)}</strong>, le informamos sobre el avance del trámite vinculado a la cotización indicada a continuación.</p>
 
-            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:10px;">
               <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
                   <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
                     <tr>
                       <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Cotización</td>
-                      <td style="font-size:14px;color:#0f172a;font-weight:600;font-family:'Courier New',monospace;">${escapeHtml(data.numeroCotizacion)}</td>
+                      <td style="font-size:14px;color:${NAVY};font-weight:700;font-family:'Courier New',monospace;">${escapeHtml(data.numeroCotizacion)}</td>
                     </tr>
                   </table>
                 </td>
               </tr>
               <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
                   <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
                     <tr>
                       <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Cliente</td>
@@ -213,7 +231,7 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
                 </td>
               </tr>
               <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
                   <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
                     <tr>
                       <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Servicio</td>
@@ -239,7 +257,7 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
         <!-- TRÁMITES -->
         <tr>
           <td style="padding:24px 32px 8px;">
-            <h2 style="margin:0 0 14px;font-size:13px;font-weight:700;color:#0f766e;letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid #0d9488;padding-bottom:8px;">Estado de los trámites</h2>
+            <h2 style="margin:0 0 14px;font-size:13px;font-weight:700;color:${NAVY};letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid ${GOLD};padding-bottom:8px;">Estado de los trámites</h2>
             ${tramitesHtml}
           </td>
         </tr>
@@ -256,8 +274,8 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
 
         <!-- FIRMA + FOOTER -->
         <tr>
-          <td style="padding:24px 32px 28px;border-top:1px solid #e2e8f0;background:#fafbfc;">
-            <p style="margin:0;font-size:14px;font-weight:700;color:#0f172a;">Lcda. Amanda Santizo</p>
+          <td style="padding:24px 32px 28px;border-top:1px solid #e2e8f0;background:#f9fafb;">
+            <p style="margin:0;font-size:14px;font-weight:700;color:${NAVY};">Lcda. Amanda Santizo</p>
             <p style="margin:2px 0 0;font-size:12px;color:#64748b;">Colegiado No. 19565 · Abogada y Notaria</p>
             <table cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
               <tr>

@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { LOGO_REPORTE_CID, logoReporteInlineAttachment } from '@/lib/templates/seguimiento-cotizacion-email';
 import type { CampoExtra, PlantillaCorreo } from '@/lib/types/plantillas-correo';
 
 const db = () => createAdminClient();
@@ -235,7 +236,15 @@ export async function enviarCorreoAhora(id: string): Promise<void> {
 
   // Download attachments from Storage if any
   const adjuntosArr = Array.isArray(correo.adjuntos) ? correo.adjuntos : [];
-  const attachments: Array<{ name: string; contentType: string; contentBytes: string }> = [];
+  const attachments: Array<{ name: string; contentType: string; contentBytes: string; contentId?: string; isInline?: boolean }> = [];
+
+  // Logo de marca inline: si el cuerpo referencia el CID del logo (plantillas
+  // con el header rediseñado, p.ej. reporte de avance), adjuntarlo inline para
+  // que el header lo renderice. Gateado por la presencia del CID → solo afecta
+  // a las plantillas que lo usan; el resto de correos no cambia.
+  if (htmlBody.includes(`cid:${LOGO_REPORTE_CID}`)) {
+    attachments.push(logoReporteInlineAttachment());
+  }
 
   for (const adj of adjuntosArr) {
     if (!adj.path) continue;
