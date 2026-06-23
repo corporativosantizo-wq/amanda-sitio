@@ -95,7 +95,7 @@ function formatDia(dateTime: string): string {
   return `${dayName} ${d}/${m}`;
 }
 
-function generarEmailResumen(params: {
+export function generarEmailResumen(params: {
   audiencias: { subject: string; start: string; end: string; location?: string }[];
   lunesFmt: string;
   viernesFmt: string;
@@ -115,7 +115,7 @@ function generarEmailResumen(params: {
     const filas = audiencias
       .map((a) => `
         <tr>
-          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#1E3A8A;font-weight:600;white-space:nowrap;">
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#1e2a5a;font-weight:600;white-space:nowrap;">
             ${formatDia(a.start)}
           </td>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0F172A;white-space:nowrap;">
@@ -136,7 +136,7 @@ function generarEmailResumen(params: {
       </p>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
         <thead>
-          <tr style="background:#1E3A8A;">
+          <tr style="background:#1e2a5a;">
             <th style="padding:10px 14px;text-align:left;font-size:12px;color:#ffffff;text-transform:uppercase;letter-spacing:0.05em;">D\u00eda</th>
             <th style="padding:10px 14px;text-align:left;font-size:12px;color:#ffffff;text-transform:uppercase;letter-spacing:0.05em;">Hora</th>
             <th style="padding:10px 14px;text-align:left;font-size:12px;color:#ffffff;text-transform:uppercase;letter-spacing:0.05em;">Evento</th>
@@ -159,19 +159,21 @@ function generarEmailResumen(params: {
       <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.07);">
         <!-- Header -->
         <tr>
-          <td style="background:linear-gradient(135deg,#1E3A8A,#3B82F6);padding:28px 32px;">
-            <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.8);">&#128203; Resumen Semanal</p>
-            <h1 style="margin:8px 0 0;font-size:22px;font-weight:700;color:#ffffff;">
-              Audiencias del ${lunesFmt} al ${viernesFmt}
-            </h1>
+          <td style="background:#ffffff;border-top:4px solid #1e2a5a;padding:28px 32px 22px;text-align:center;border-bottom:1px solid #eef0f4;">
+            <img src="cid:logoMarca" alt="Amanda Santizo — Despacho Jurídico" width="240" style="display:block;margin:0 auto;width:240px;max-width:70%;height:auto;">
+            <div style="height:3px;width:64px;background:#c2a05a;margin:16px auto 0;border-radius:2px;"></div>
           </td>
         </tr>
         <!-- Content -->
-        <tr><td style="padding:28px 32px;">${contenido}</td></tr>
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0;color:#1e2a5a;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Resumen semanal</p>
+          <h1 style="margin:8px 0 20px;font-size:20px;font-weight:700;color:#0f172a;">Audiencias del ${lunesFmt} al ${viernesFmt}</h1>
+          ${contenido}
+        </td></tr>
         <!-- Footer -->
         <tr>
-          <td style="padding:20px 32px;background:#0F172A;text-align:center;">
-            <p style="margin:0;color:#22D3EE;font-size:13px;font-weight:600;">Amanda Santizo \u2014 Despacho Jur\u00eddico</p>
+          <td style="padding:20px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center;">
+            <p style="margin:0;color:#9ca3af;font-size:13px;font-weight:600;">Amanda Santizo \u2014 Despacho Jur\u00eddico</p>
             <p style="margin:4px 0 0;color:#64748b;font-size:12px;">amandasantizo.com</p>
           </td>
         </tr>
