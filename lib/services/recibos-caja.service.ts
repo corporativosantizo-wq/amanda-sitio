@@ -488,7 +488,7 @@ function buildCuerpoHtml(p: { clienteNombre: string; numero: string; monto: numb
     </p>
     <table cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse;width:100%;">
       <tr>
-        <td style="padding:12px 16px;background:#F8FAFC;border-left:3px solid #22D3EE;border-radius:6px;">
+        <td style="padding:12px 16px;background:#eef2f9;border-left:3px solid #1e2a5a;border-radius:6px;">
           <p style="margin:0 0 6px;color:#64748B;font-size:12px;letter-spacing:0.5px;">CONCEPTO</p>
           <p style="margin:0 0 12px;color:#0F172A;font-size:14px;font-weight:600;">${escapeHtml(p.concepto)}</p>
           <p style="margin:0 0 6px;color:#64748B;font-size:12px;letter-spacing:0.5px;">MONTO</p>

@@ -235,7 +235,7 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Confirmada</h2>
     ${saludo}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Su cita ha sido agendada exitosamente. A continuaci\u00f3n los detalles:</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipo}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
@@ -270,7 +270,7 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Recordatorio: su cita es ma\u00f1ana</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Le recordamos que tiene una cita programada para ma\u00f1ana.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
@@ -434,7 +434,7 @@ export function emailSolicitudConfirmada(cita: any, mensaje?: string): EmailTemp
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita confirmada</h2>
     ${nombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(nombre)}</strong>,</p>` : ''}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos su cita de ${accionLabel} de documentos:</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
@@ -476,7 +476,7 @@ export function emailFirmaConfirmadaMultiple(
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita confirmada</h2>
     ${destinatarioNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a <strong>${escEmail(destinatarioNombre)}</strong>,</p>` : ''}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos su cita para la firma de documentos:</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
@@ -571,7 +571,7 @@ export function emailNuevaSolicitudInterno(cita: any): EmailTemplate {
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">📋 Nueva solicitud de ${esFirma ? 'firma' : 'entrega'} de documentos</h2>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Cliente:</strong> ${escEmail(nombre)}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Email:</strong> ${escEmail(email)}</p>
@@ -611,7 +611,7 @@ export function emailConfirmacionLlamada(params: {
     <p style="color:#475569;font-size:15px;line-height:1.6;">Estimado/a <strong>${escEmail(params.nombre)}</strong>, 👋</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">¡Esperamos que se encuentre muy bien! 🌟</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Le confirmamos que se ha agendado una llamada telefónica con la <strong>Licda. Amanda Santizo</strong>:</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#0f172a;">📞 Llamada programada</p>
         <p style="margin:8px 0;font-size:14px;"><strong>📅 Fecha:</strong> ${fechaFmt}</p>
@@ -674,7 +674,7 @@ export function emailRecordatorioLlamadaInterno(params: {
   const tel = (params.telefono ?? '').trim() || '—';
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">📞 Llamada hoy</h2>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Contacto:</strong> ${escEmail(params.nombre)}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>🕐 Hora:</strong> ${horaFmt}</p>
@@ -708,7 +708,7 @@ export function emailSolicitudPago(params: {
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Recordatorio de pago pendiente</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre},</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">En nuestros registros figura como pendiente de cancelación el siguiente monto correspondiente a los servicios prestados. Le hacemos llegar este recordatorio con los datos para que pueda realizar el pago a su conveniencia.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Concepto:</strong> ${params.concepto}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Monto:</strong> ${montoFmt}</p>
@@ -723,7 +723,7 @@ export function emailSolicitudPago(params: {
     <p style="color:#475569;font-size:14px;line-height:1.6;">Una vez realizado el pago, le agradecemos enviar el comprobante a este mismo correo para confirmar la recepción y proceder con el cierre del expediente correspondiente.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Si ya realizó el pago, por favor desestime este mensaje.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Quedamos atentos a cualquier consulta.</p>
-    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong> — Despacho Jurídico<br/><a href="https://amandasantizo.com" style="color:#1E40AF;text-decoration:none;">amandasantizo.com</a></p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong> — Despacho Jurídico<br/><a href="https://amandasantizo.com" style="color:#1e2a5a;text-decoration:none;">amandasantizo.com</a></p>
   `);
 
   return {
@@ -744,7 +744,7 @@ export function emailPagoRecibido(params: {
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Pago Recibido</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, confirmamos la recepci\u00f3n de su pago.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdf4;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Concepto:</strong> ${params.concepto}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Monto:</strong> ${montoFmt}</p>
@@ -1000,7 +1000,7 @@ export function emailEstadoCuenta(params: {
         ${filasMovimientos}
       </tbody>
     </table>
-    <table width="100%" style="margin:16px 0;background:${params.saldo > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:${params.saldo > 0 ? '#fef2f2' : '#eef2f9'};border-radius:8px;padding:16px;">
       <tr><td style="text-align:right;">
         <p style="margin:0;font-size:16px;font-weight:700;">Saldo: ${saldoFmt}</p>
       </td></tr>
@@ -1043,7 +1043,7 @@ export function emailFactura(params: {
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Factura ${params.numero}</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, adjuntamos su factura.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:4px 0;font-size:14px;"><strong>No. Factura:</strong> ${params.numero}</p>
         <p style="margin:4px 0;font-size:14px;"><strong>NIT:</strong> ${params.nit}</p>
@@ -1058,7 +1058,7 @@ export function emailFactura(params: {
       </thead>
       <tbody>
         ${filasConceptos}
-        <tr style="background:#f0fdfa;">
+        <tr style="background:#eef2f9;">
           <td style="padding:10px 12px;font-size:14px;font-weight:700;">Total</td>
           <td style="padding:10px 12px;font-size:14px;font-weight:700;text-align:right;">${totalFmt}</td>
         </tr>
@@ -1101,7 +1101,7 @@ export function emailActualizacionExpediente(params: {
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Actualizaci\u00f3n de su caso</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, le informamos sobre una novedad en su expediente.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Expediente:</strong> ${params.expediente}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Novedad:</strong> ${params.novedad}</p>
@@ -1191,7 +1191,7 @@ export function emailAvisoAudiencia(params: {
   const fechaFmt = formatearFechaGT(params.fecha);
   const horaFmt = formatearHora(params.hora);
   const presencia = params.presenciaRequerida ? 'Su presencia es requerida' : 'Su presencia no es requerida';
-  const presenciaBg = params.presenciaRequerida ? '#fef2f2' : '#f0fdf4';
+  const presenciaBg = params.presenciaRequerida ? '#fef2f2' : '#eef2f9';
 
   let direccionLine = '';
   if (params.direccion) {
@@ -1228,7 +1228,7 @@ export function emailAvisoAudiencia(params: {
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Aviso importante: audiencia programada</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, le informamos sobre una audiencia programada en su caso.</p>
-    <table width="100%" style="margin:16px 0;background:#f0fdfa;border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
@@ -1293,7 +1293,7 @@ export function emailRecordatorioCobro(params: {
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">${titulo}</h2>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre},</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">${intro}</p>
-    <table width="100%" style="margin:16px 0;background:${params.tipo === 'tercer_aviso' || params.tipo === 'urgente' ? '#fef2f2' : '#f0fdfa'};border-radius:8px;padding:16px;">
+    <table width="100%" style="margin:16px 0;background:${params.tipo === 'tercer_aviso' || params.tipo === 'urgente' ? '#fef2f2' : '#eef2f9'};border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:8px 0;font-size:14px;"><strong>Cobro:</strong> COB-${String(params.numeroCobro).padStart(3, '0')}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Concepto:</strong> ${params.concepto}</p>
