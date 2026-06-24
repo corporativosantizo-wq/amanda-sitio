@@ -36,6 +36,23 @@ export default function AudienciaDetallePage() {
   const a = data?.audiencia;
 
   const { mutate, loading: borrando } = useMutate();
+  const { mutate: sincronizar, loading: sincronizando } = useMutate();
+
+  async function sincronizarOutlook() {
+    await sincronizar(`/api/admin/audiencias/registro/${id}/sincronizar`, {
+      method: 'POST',
+      onSuccess: (res: any) => {
+        if (res?.accion === 'sin_conexion') {
+          alert('Outlook no está conectado. Conectalo desde /admin/calendario y volvé a intentar.');
+          return;
+        }
+        alert(res?.accion === 'actualizado'
+          ? 'Evento actualizado en el calendario de Outlook de Amanda.'
+          : 'Evento creado en el calendario de Outlook de Amanda.');
+      },
+      onError: (msg) => alert(msg),
+    });
+  }
 
   async function eliminar() {
     if (!confirm(
@@ -91,6 +108,10 @@ export default function AudienciaDetallePage() {
             </span>
           </div>
           <div className="flex gap-2 shrink-0">
+            <button onClick={sincronizarOutlook} disabled={sincronizando}
+              className="px-4 py-2 text-sm font-medium border border-[#0891B2] text-[#0891B2] rounded-lg hover:bg-[#0891B2]/5 transition-colors disabled:opacity-50">
+              {sincronizando ? '⏳ Sincronizando…' : '📅 Sincronizar con Outlook'}
+            </button>
             <button onClick={() => router.push(`/admin/audiencias/${a.id}/editar`)}
               className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors">
               ✏️ Editar

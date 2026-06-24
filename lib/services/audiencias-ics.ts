@@ -27,7 +27,9 @@ function escapeIcs(s: string): string {
 }
 
 // timestamptz (instante) → "YYYYMMDDTHHMMSS" en hora local de Guatemala (UTC-6).
-function gtLocalStamp(iso: string): string {
+// Exportada: la reusa audiencias-outlook.service para fijar el huso del evento de
+// Outlook con la MISMA aritmética del .ics (evita que el evento salga corrido 6h).
+export function gtLocalStamp(iso: string): string {
   const d = new Date(new Date(iso).getTime() - 6 * 3600 * 1000);
   return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
     `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;

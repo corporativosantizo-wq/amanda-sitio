@@ -14,6 +14,11 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { pgrstQuote } from '@/lib/utils/postgrest';
 import { encolarRecordatoriosAudiencia, reencolarPorReprogramacion } from '@/lib/services/audiencias-recordatorios.service';
+import {
+  crearEventoOutlookAudiencia,
+  actualizarEventoOutlookAudiencia,
+  eliminarEventoOutlookAudiencia,
+} from '@/lib/services/audiencias-outlook.service';
 import type { Audiencia, AudienciaInsert } from '@/lib/types/audiencias';
 
 const db = () => createAdminClient();
@@ -64,6 +69,11 @@ export async function crearAudiencia(
 
   if (error) throw new AudienciaError('Error al crear audiencia', error);
   const audiencia = data as Audiencia;
+
+  // Espejar al Outlook de Amanda (evento interno, sin attendees). Best-effort:
+  // guarda outlook_event_id en la fila si lo logra. No gateado por test_mode.
+  const eventId = await crearEventoOutlookAudiencia(audiencia);
+  if (eventId) audiencia.outlook_event_id = eventId;
 
   // Encolar los 2 recordatorios automáticos (best-effort: no romper la creación).
   if (programarRecordatorios) {
@@ -192,6 +202,15 @@ export async function actualizarAudiencia(
   if (error) throw new AudienciaError('Error al actualizar audiencia', error);
   const audiencia = data as Audiencia;
 
+  // Espejar el cambio al Outlook de Amanda (best-effort). Si la editaron a
+  // 'cancelada', se quita del calendario; si no, se actualiza el mismo evento
+  // (o se crea si aún no estaba sincronizada). No duplica: reusa outlook_event_id.
+  if (audiencia.estado === 'cancelada') {
+    await eliminarEventoOutlookAudiencia(audiencia.outlook_event_id, audiencia.id);
+  } else {
+    await actualizarEventoOutlookAudiencia(audiencia);
+  }
+
   // Reprogramación automática de recordatorios (best-effort).
   if (cambioFecha && reprogramarSiCambiaFecha) {
     try {
@@ -211,6 +230,15 @@ export async function actualizarAudiencia(
  *   lista) + se descartan los pendientes; la constancia de lo enviado se conserva.
  */
 export async function eliminarAudiencia(id: string): Promise<{ accion: 'eliminada' | 'cancelada' }> {
+  // Leer el evento de Outlook ANTES de borrar la fila (en el borrado real la fila
+  // desaparece y se perdería el id).
+  const { data: fila } = await db()
+    .from('audiencias')
+    .select('outlook_event_id')
+    .eq('id', id)
+    .single();
+  const eventId = (fila?.outlook_event_id as string | null) ?? null;
+
   const { count } = await db()
     .from('audiencias_recordatorios')
     .select('id', { count: 'exact', head: true })
@@ -223,6 +251,8 @@ export async function eliminarAudiencia(id: string): Promise<{ accion: 'eliminad
     // CASCADE → los recordatorios encolados se borran solos.
     const { error } = await db().from('audiencias').delete().eq('id', id);
     if (error) throw new AudienciaError('Error al eliminar audiencia', error);
+    // Quitar el evento del Outlook de Amanda (la fila ya no existe → borrarFila).
+    await eliminarEventoOutlookAudiencia(eventId, id, { borrarFila: true });
     return { accion: 'eliminada' };
   }
 
@@ -235,5 +265,7 @@ export async function eliminarAudiencia(id: string): Promise<{ accion: 'eliminad
 
   const { error } = await db().from('audiencias').update({ estado: 'cancelada' }).eq('id', id);
   if (error) throw new AudienciaError('Error al cancelar audiencia', error);
+  // Quitar el evento del Outlook de Amanda y limpiar outlook_event_id en la fila.
+  await eliminarEventoOutlookAudiencia(eventId, id);
   return { accion: 'cancelada' };
 }
