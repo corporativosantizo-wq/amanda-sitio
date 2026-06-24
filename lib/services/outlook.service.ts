@@ -272,6 +272,7 @@ export interface CreateEventParams {
   isOnlineMeeting: boolean;
   categories: string[];
   body: string;
+  location?: string; // opcional: displayName del lugar (ej. juzgado/enlace de audiencias)
 }
 
 export async function getCalendarEvents(startDate: string, endDate: string): Promise<OutlookEvent[]> {
@@ -391,6 +392,10 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<{ 
     })),
   };
 
+  if (params.location) {
+    event.location = { displayName: params.location };
+  }
+
   if (params.isOnlineMeeting) {
     event.isOnlineMeeting = true;
     event.onlineMeetingProvider = 'teamsForBusiness';
@@ -437,6 +442,7 @@ export async function updateCalendarEvent(eventId: string, updates: Partial<Crea
   if (updates.endDateTime) patch.end = { dateTime: updates.endDateTime, timeZone: 'America/Guatemala' };
   if (updates.body) patch.body = { contentType: 'HTML', content: updates.body };
   if (updates.categories) patch.categories = updates.categories;
+  if (updates.location !== undefined) patch.location = { displayName: updates.location };
 
   const res = await fetch(url, {
     method: 'PATCH',

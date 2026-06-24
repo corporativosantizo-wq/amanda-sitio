@@ -102,6 +102,9 @@ export interface Audiencia {
   estado: EstadoAudiencia;
   ics_sequence: number;
   notas_internas: string | null;
+  // ID del evento en el Outlook de Amanda (evento interno, sin attendees).
+  // NULL = aún no sincronizada. Ver audiencias-outlook.service.ts.
+  outlook_event_id: string | null;
   created_at: string;
   updated_at: string;
   // Embebidos opcionales (cuando se piden con join).
