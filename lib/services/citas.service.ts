@@ -1374,6 +1374,6 @@ function generarBodyEvento(
 <p><strong>Tipo:</strong> ${tipo}</p>
 ${audienciaBlock}
 ${firmantesBlock}
-${cita.costo > 0 ? `<p><strong>Costo:</strong> $${Number(cita.costo).toLocaleString('en-US')} USD</p>` : ''}
+${cita.costo > 0 ? `<p><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>` : ''}
 ${cita.descripcion ? `<p><strong>Descripción:</strong> ${cita.descripcion}</p>` : ''}`;
 }
