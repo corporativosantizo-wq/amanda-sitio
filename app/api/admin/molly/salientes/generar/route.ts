@@ -11,6 +11,11 @@ import { generateOutgoingEmail } from '@/lib/molly/brain';
 import { crearBorradorIA, SalienteError } from '@/lib/services/salientes.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+// La redacción con IA (Anthropic) tarda varios segundos; el default de Vercel
+// (~10-15s) no alcanza y la función se corta con un timeout (HTML) en vez de
+// devolver JSON. Subimos el límite como el resto de endpoints de IA.
+export const maxDuration = 120;
+
 function splitEmails(input: unknown): string[] {
   if (Array.isArray(input)) return input.map((s) => String(s).trim()).filter(Boolean);
   if (typeof input === 'string') return input.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
