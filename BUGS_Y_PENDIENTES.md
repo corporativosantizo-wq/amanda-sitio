@@ -40,6 +40,17 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 ---
 
+### [BUG-003] Stripe cobra citas en USD en vez de quetzales — DINERO REAL
+
+**Estado:** Activo — PENDIENTE, **no tocado** (detectado 1-jul-2026 al corregir el correo de cita).
+**Módulo:** Pagos > Checkout de cita (`app/api/pagos/checkout/route.ts`)
+**Severidad:** IMPORTANTE — afecta cobros reales con tarjeta.
+**Síntoma:** El checkout de Stripe usa `currency: 'usd'` (líneas 38 y 42) y `unit_amount: Math.round(cita.costo * 100)` (línea 47). Como `cita.costo` está en **quetzales** (ej. 500 = Q500), Stripe cobra **$500.00 USD** por tarjeta en lugar de Q500. Además el comentario del archivo dice "$75 USD" pero el código cobra `cita.costo` (inconsistencia preexistente).
+**Alcance:** Independiente del correo de confirmación (ese ya quedó en Q en la rama `fix/correo-cita-moneda-quetzales`). Esto es el flujo de **pago online con tarjeta**.
+**Pendiente (decisión de Amanda):** definir la moneda correcta del cobro. Si debe ser GTQ: (1) verificar que la cuenta de Stripe soporte GTQ, (2) cambiar `currency` en las 2 líneas, (3) validar el monto real (¿Q500, o el "$75" del comentario?). **No tocar sin confirmar — es dinero real.**
+
+---
+
 ## 📝 Notas documentales (corrección de docs)
 
 ### [DOC-001] La auth real es Clerk, no Supabase Auth
