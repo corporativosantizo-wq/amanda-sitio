@@ -932,6 +932,26 @@ export async function enviarCorreoNuevo(params: {
   if (ccRecipients) messagePayload.ccRecipients = ccRecipients;
   if (bccRecipients) messagePayload.bccRecipients = bccRecipients;
 
+  // Logo de marca inline: si el cuerpo referencia el CID de un logo de marca
+  // (plantillas con branding, p.ej. emailWrapper) y no viene ya adjunto, lo
+  // agregamos inline para que el header lo renderice — mismo criterio que
+  // sendMail(). Gateado por la presencia del CID → solo afecta a las plantillas
+  // que lo usan; el resto de correos salientes no cambia.
+  const brandAttachments = BRAND_LOGO_CIDS
+    .filter((cid) => params.htmlBody.includes(`cid:${cid}`))
+    .map((cid) => {
+      const att = brandLogoAttachment(cid);
+      return {
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: att.name,
+        contentType: att.contentType,
+        contentBytes: att.contentBytes,
+        contentId: att.contentId,
+        isInline: att.isInline ?? true,
+      };
+    });
+  if (brandAttachments.length > 0) messagePayload.attachments = brandAttachments;
+
   console.log('[enviarCorreoNuevo] from:', params.from, '| to:', toList.length, '| subject:', params.subject);
 
   // Paso 1: crear el borrador (devuelve el id del mensaje)
