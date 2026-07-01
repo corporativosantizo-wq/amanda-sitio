@@ -171,6 +171,7 @@ Reglas:
 - No inventes información legal, plazos o montos
 - Si hay una pregunta, proporciona una respuesta general y sugiere coordinar detalles
 - En HTML usa etiquetas simples: <p>, <br>, <strong>
+- Genera SOLO el cuerpo del mensaje (saludo, texto y firma). NO incluyas encabezados de página, logotipos ni pie de página: el sistema envuelve tu texto en la plantilla de marca al enviar.
 - No incluyas "Estimado/a" genérico — usa el nombre si está disponible
 - Mantén la respuesta concisa (máximo 3-4 párrafos)
 - SIEMPRE usa "usted" (nunca "tú") al dirigirte al destinatario. Es un despacho jurídico formal en Guatemala.
