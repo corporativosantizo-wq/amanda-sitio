@@ -139,7 +139,7 @@ export async function classifyEmail(
   console.log('[molly-brain] Clasificando email de', fromEmail, '| cuenta:', account ?? 'n/a', '| asunto:', subject.substring(0, 60));
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 512,
     messages: [
       { role: 'user', content: `${prompt}\n\n---\n\n${userMessage}` },
@@ -221,7 +221,7 @@ export async function generateDraft(
   console.log('[molly-brain] Generando borrador para', email.from_email, '| cuenta:', account ?? 'n/a', '| asunto:', threadSubject.substring(0, 60));
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 2048,
     messages: [
       { role: 'user', content: `${prompt}\n\n---\n\n${context}` },

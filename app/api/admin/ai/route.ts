@@ -3494,7 +3494,7 @@ export async function POST(req: Request) {
     }));
 
     let response = await callAnthropicWithRetry(anthropic, {
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: dynamicPrompt,
       tools,
@@ -3666,7 +3666,7 @@ export async function POST(req: Request) {
       ];
 
       response = await callAnthropicWithRetry(anthropic, {
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: dynamicPrompt,
         tools,

@@ -196,7 +196,7 @@ export async function POST(req: Request) {
     let conversationMessages: any[] = messages;
 
     let response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: PORTAL_SYSTEM_PROMPT,
       tools: CITAS_TOOLS,
@@ -267,7 +267,7 @@ export async function POST(req: Request) {
       ];
 
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: PORTAL_SYSTEM_PROMPT,
         tools: CITAS_TOOLS,
