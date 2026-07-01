@@ -235,3 +235,66 @@ export async function generateDraft(
   console.log('[molly-brain] Borrador generado | tone:', result.tone, '| cuenta:', account ?? 'n/a');
   return result;
 }
+
+// ── Generate a NEW outgoing email from a free-text instruction ───────────────
+// Reusa el mismo cliente/modelo y la firma/tono por cuenta que generateDraft,
+// pero parte de una INSTRUCCIÓN del despacho (no de un email entrante).
+
+const OUTGOING_PROMPT_BASE = `Eres Molly, asistente de email IA para Amanda Santizo — papeleo.legal, un despacho jurídico en Guatemala.
+
+Redacta un correo NUEVO (no es una respuesta a otro correo) siguiendo la instrucción del despacho. Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks):
+
+{
+  "subject": "asunto del correo",
+  "body_text": "texto plano del correo",
+  "body_html": "<p>versión HTML del correo</p>",
+  "tone": "formal|semiformal|cordial"
+}
+
+Reglas:
+- Redacta en español salvo que la instrucción indique otro idioma.
+- No inventes información legal, plazos ni montos que no estén en la instrucción.
+- En HTML usa etiquetas simples: <p>, <br>, <strong>.
+- Genera SOLO el cuerpo del mensaje (saludo, texto y firma). NO incluyas encabezados de página, logotipos ni pie de página: el sistema envuelve tu texto en la plantilla de marca al enviar.
+- SIEMPRE usa "usted" (nunca "tú"). Es un despacho jurídico formal en Guatemala.
+- Genera un asunto claro y conciso acorde a la instrucción.`;
+
+function buildOutgoingPrompt(account?: string): string {
+  const config = account && ACCOUNT_DRAFT[account]
+    ? ACCOUNT_DRAFT[account]
+    : ACCOUNT_DRAFT['asistente@papeleo.legal'];
+
+  return OUTGOING_PROMPT_BASE +
+    `\n- Firma siempre: "${config.firma}"` +
+    `\n- ${config.tono}`;
+}
+
+export async function generateOutgoingEmail(
+  instruccion: string,
+  account?: string,
+  clientContext?: string | null,
+): Promise<MollyDraftResult> {
+  const client = getAnthropicClient();
+  const prompt = buildOutgoingPrompt(account);
+
+  let context = `Instrucción del despacho para redactar el correo:\n${instruccion.trim()}`;
+  if (clientContext) {
+    context += `\n\nContexto del cliente destinatario:\n${clientContext}`;
+  }
+
+  console.log('[molly-brain] Redactando correo NUEVO con IA | cuenta:', account ?? 'n/a');
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2048,
+    messages: [
+      { role: 'user', content: `${prompt}\n\n---\n\n${context}` },
+    ],
+  });
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const result = parseJsonResponse<MollyDraftResult>(text);
+
+  console.log('[molly-brain] Correo nuevo generado | tone:', result.tone, '| cuenta:', account ?? 'n/a');
+  return result;
+}

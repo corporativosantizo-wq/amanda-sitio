@@ -7,6 +7,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { enviarCorreoNuevo, type MailboxAlias } from './outlook.service';
+import { emailWrapper } from '@/lib/templates/emails';
 
 const db = () => createAdminClient();
 
@@ -122,6 +123,50 @@ export async function crearBorradoresSalientes(
     .select('*');
   if (error) throw new SalienteError('Error al crear borradores salientes', error);
   return (data ?? []) as BorradorSaliente[];
+}
+
+// Crea un único borrador saliente redactado por IA. A diferencia de
+// crearBorradoresSalientes, el destinatario es OPCIONAL (Amanda lo completa
+// antes de enviar; enviarSaliente exige destinatario al enviar). Nunca envía.
+export async function crearBorradorIA(input: {
+  account: string;
+  subject: string;
+  body_text: string;
+  body_html?: string | null;
+  to_emails?: string[];
+  cc_emails?: string[] | null;
+  cliente_id?: string | null;
+}): Promise<BorradorSaliente> {
+  const account = String(input.account ?? '').trim();
+  if (!CUENTAS_VALIDAS.includes(account as MailboxAlias)) {
+    throw new SalienteError(`Cuenta de envío inválida: ${account || '(vacía)'}`);
+  }
+  const to = normalizarEmails(input.to_emails);
+  const cc = normalizarEmails(input.cc_emails);
+  const malos = [...to, ...cc].filter((e) => !esEmailValido(e));
+  if (malos.length) throw new SalienteError(`Emails inválidos: ${malos.join(', ')}`);
+  const subject = String(input.subject ?? '').trim();
+  if (!subject) throw new SalienteError('La IA no devolvió un asunto.');
+  const bodyText = String(input.body_text ?? '').trim();
+  if (!bodyText) throw new SalienteError('La IA no devolvió un cuerpo.');
+
+  const { data, error } = await db()
+    .from('borradores_salientes')
+    .insert({
+      account,
+      to_emails: to, // puede ir vacío; se exige al enviar
+      cc_emails: cc.length ? cc : null,
+      subject,
+      body_text: bodyText,
+      body_html: input.body_html?.trim() || null,
+      cliente_id: input.cliente_id ?? null,
+      lote: null,
+      status: 'pendiente',
+    })
+    .select('*')
+    .single();
+  if (error) throw new SalienteError('Error al crear el borrador de IA', error);
+  return data as BorradorSaliente;
 }
 
 export async function listarSalientes(params: { lote?: string; status?: string } = {}): Promise<BorradorSaliente[]> {
@@ -318,6 +363,7 @@ export async function enviarSaliente(id: string): Promise<BorradorSaliente> {
   if (to.length === 0) throw new SalienteError('El correo no tiene destinatarios.');
   if (malos.length) throw new SalienteError(`Emails inválidos: ${malos.join(', ')}`);
 
+  // Cuerpo interno (sin marca) — así se guarda en BD e historial.
   const bodyHtml = borrador.body_html?.trim() || textoAHtml(borrador.body_text);
 
   const { messageId } = await enviarCorreoNuevo({
@@ -325,7 +371,9 @@ export async function enviarSaliente(id: string): Promise<BorradorSaliente> {
     to,
     cc: cc.length ? cc : undefined,
     subject: borrador.subject,
-    htmlBody: bodyHtml,
+    // Se envuelve en la plantilla de marca SOLO al enviar (logo/header/footer),
+    // igual que las respuestas de Molly y las cotizaciones/citas.
+    htmlBody: emailWrapper(bodyHtml),
   });
 
   await registrarEnHistorial(borrador, borrador.account, messageId, bodyHtml);
