@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     if (isPdf) {
       const base64 = Buffer.from(bytes).toString('base64');
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16384,
         messages: [
           {
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
     } else {
       const textoDocx = await extraerTextoDocx(bytes);
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16384,
         messages: [
           {

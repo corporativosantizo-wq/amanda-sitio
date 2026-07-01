@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       // PDF: send as base64 document to Claude
       const base64 = Buffer.from(bytes).toString('base64');
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         messages: [
           {
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       // DOCX: extract text with JSZip, then send as text to Claude
       const textoDocx = await extraerTextoDocx(bytes);
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         messages: [
           {

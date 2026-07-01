@@ -562,7 +562,7 @@ export async function POST(req: Request) {
 
     // Initial call (with prompt caching on system prompt)
     let response = await callWithRetry({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: [{ type: 'text', text: dynamicPrompt, cache_control: { type: 'ephemeral' } }],
       tools: CONTABLE_TOOLS,
@@ -597,7 +597,7 @@ export async function POST(req: Request) {
       ];
 
       response = await callWithRetry({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         system: [{ type: 'text', text: dynamicPrompt, cache_control: { type: 'ephemeral' } }],
         tools: CONTABLE_TOOLS,
