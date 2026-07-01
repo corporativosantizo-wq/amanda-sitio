@@ -26,6 +26,7 @@ import {
 } from '@/lib/molly/calendar';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { emailWrapper } from '@/lib/templates/emails';
 import type {
   EmailThread,
   EmailMessage,
@@ -656,12 +657,14 @@ export async function approveDraft(
     ? `<p>${editedBody.replace(/\n/g, '<br>')}</p>`
     : draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`;
 
-  // Send email via Graph API
+  // Send email via Graph API — wrap the AI body in the brand template.
+  // NOTE: the DB keeps `finalBodyHtml` UNWRAPPED (see updatePayload below) so
+  // preview / re-edit never accumulate wrappers; only the sent email is branded.
   await sendMail({
     from: account || 'asistente@papeleo.legal',
     to: draft.to_email,
     subject: draft.subject,
-    htmlBody: finalBodyHtml,
+    htmlBody: emailWrapper(finalBodyHtml),
   });
 
   // Update draft status (and body if edited)
@@ -1147,7 +1150,7 @@ export async function sendScheduledDrafts(): Promise<{ enviados: number; errores
         from: account || 'asistente@papeleo.legal',
         to: draft.to_email,
         subject: draft.subject,
-        htmlBody,
+        htmlBody: emailWrapper(htmlBody),
       });
 
       await db()
