@@ -70,27 +70,52 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
   }
 }
 
+// Headers anti-caché para respuestas de auth generadas en el middleware.
+// El edge de Vercel llegó a cachear el rewrite-404 de auth.protect() para
+// método+ruta (incidente 4-jul-2026): un solo request sin sesión dejaba el
+// endpoint respondiendo 404 a TODOS hasta el siguiente deploy.
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'private, no-store, max-age=0',
+  'CDN-Cache-Control': 'no-store',
+  'Vercel-CDN-Cache-Control': 'no-store',
+};
+
 export default clerkMiddleware(async (auth, req) => {
   // No proteger rutas públicas ni cron endpoints
   if (!isProtectedRoute(req) || isCronEndpoint(req)) return;
 
-  // Autenticación Clerk obligatoria
-  await auth.protect();
+  const { pathname } = req.nextUrl;
+  const isApiRoute = pathname.startsWith('/api/');
+
+  // Autenticación Clerk obligatoria.
+  // - Rutas /api/*: 401 JSON explícito y no cacheable. NO usar auth.protect()
+  //   aquí — su rewrite-404 es cacheable por el edge (ver NO_STORE_HEADERS) y
+  //   además el 404 confundía el diagnóstico (BUG-001).
+  // - Páginas: se mantiene auth.protect() → redirige al sign-in como siempre.
+  const { userId } = await auth();
+  if (!userId) {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { error: 'No autorizado: sesión inválida o expirada' },
+        { status: 401, headers: NO_STORE_HEADERS },
+      );
+    }
+    await auth.protect();
+    return;
+  }
 
   // Verificación de rol admin:
   // - /api/admin/* (excepto auth-only) → 403 JSON si no es admin
   // - /admin/* (páginas) → redirige a home si no es admin
-  const { pathname } = req.nextUrl;
   const isApiAdmin = pathname.startsWith('/api/admin/') && !isAuthOnlyEndpoint(req);
   const isPageAdmin = pathname.startsWith('/admin');
 
   if (isApiAdmin || isPageAdmin) {
-    const { userId } = await auth();
-    if (!userId || !(await checkIsAdmin(userId))) {
+    if (!(await checkIsAdmin(userId))) {
       if (isApiAdmin) {
         return NextResponse.json(
           { error: 'Se requiere rol de administrador' },
-          { status: 403 },
+          { status: 403, headers: NO_STORE_HEADERS },
         );
       }
       return NextResponse.redirect(new URL('/', req.url));
