@@ -8,14 +8,9 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { enviarCorreoNuevo, type MailboxAlias } from './outlook.service';
 import { emailWrapper } from '@/lib/templates/emails';
+import { esCuentaValida } from '@/lib/config/cuentas-correo';
 
 const db = () => createAdminClient();
-
-const CUENTAS_VALIDAS: MailboxAlias[] = [
-  'asistente@papeleo.legal',
-  'contador@papeleo.legal',
-  'amanda@papeleo.legal',
-];
 
 export class SalienteError extends Error {
   constructor(message: string, public details?: unknown) {
@@ -87,7 +82,7 @@ export async function crearBorradoresSalientes(
 
   const filas = items.map((it, idx) => {
     const account = String(it.account ?? '').trim();
-    if (!CUENTAS_VALIDAS.includes(account as MailboxAlias)) {
+    if (!esCuentaValida(account)) {
       throw new SalienteError(`Cuenta de envío inválida en el correo #${idx + 1}: ${account || '(vacía)'}`);
     }
     const to = normalizarEmails(it.to_emails);
@@ -138,7 +133,7 @@ export async function crearBorradorIA(input: {
   cliente_id?: string | null;
 }): Promise<BorradorSaliente> {
   const account = String(input.account ?? '').trim();
-  if (!CUENTAS_VALIDAS.includes(account as MailboxAlias)) {
+  if (!esCuentaValida(account)) {
     throw new SalienteError(`Cuenta de envío inválida: ${account || '(vacía)'}`);
   }
   const to = normalizarEmails(input.to_emails);
@@ -353,7 +348,7 @@ export async function enviarSaliente(id: string): Promise<BorradorSaliente> {
   if (borrador.status !== 'pendiente') {
     throw new SalienteError(`El correo ya está en estado: ${borrador.status}`);
   }
-  if (!CUENTAS_VALIDAS.includes(borrador.account as MailboxAlias)) {
+  if (!esCuentaValida(borrador.account)) {
     throw new SalienteError(`Cuenta de envío inválida: ${borrador.account}`);
   }
 
