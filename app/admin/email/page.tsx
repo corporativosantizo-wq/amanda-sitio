@@ -318,6 +318,10 @@ function MollyMailContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Error ${res.status} al procesar la acción`)
+      }
 
       setDrafts((prev) => prev.filter((d) => d.id !== draftId))
       setEditedBodies((prev) => {
@@ -356,6 +360,10 @@ function MollyMailContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Error ${res.status} al programar`)
+      }
 
       setSchedulingDraft(null)
       setScheduleDate('')
