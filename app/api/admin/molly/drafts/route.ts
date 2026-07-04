@@ -13,6 +13,8 @@ import {
   scheduleDraft,
   cancelScheduledDraft,
 } from '@/lib/services/molly.service';
+import { esCuentaValida } from '@/lib/config/cuentas-correo';
+import type { MailboxAlias } from '@/lib/services/outlook.service';
 
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();
@@ -35,7 +37,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { draftId, action, editedBody, custom_body, scheduled_at } = body;
+    const { draftId, action, editedBody, custom_body, scheduled_at, send_account } = body;
 
     if (!draftId || !action) {
       return NextResponse.json(
@@ -44,16 +46,21 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    if (send_account && !esCuentaValida(String(send_account))) {
+      return NextResponse.json({ error: 'Cuenta emisora no válida' }, { status: 400 });
+    }
+    const sendAccount = (send_account || undefined) as MailboxAlias | undefined;
+
     switch (action) {
       case 'approve':
-        await approveDraft(draftId, 'dashboard', editedBody || custom_body || undefined);
+        await approveDraft(draftId, 'dashboard', editedBody || custom_body || undefined, sendAccount);
         return NextResponse.json({ ok: true, message: 'Borrador aprobado y enviado' });
       case 'reject':
         await rejectDraft(draftId);
         return NextResponse.json({ ok: true, message: 'Borrador rechazado' });
       case 'schedule': {
         if (!scheduled_at) return NextResponse.json({ error: 'scheduled_at requerido' }, { status: 400 });
-        await scheduleDraft(draftId, scheduled_at, editedBody || custom_body || undefined);
+        await scheduleDraft(draftId, scheduled_at, editedBody || custom_body || undefined, sendAccount);
         return NextResponse.json({ ok: true, message: 'Borrador programado' });
       }
       case 'cancel_schedule':

@@ -5,7 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { fetchNewEmails, stripHtmlToText, getOrCreateFilteredFolder, moveEmailToFolder, moveEmailToInbox } from '@/lib/molly/graph-mail';
-import { classifyEmail, generateDraft } from '@/lib/molly/brain';
+import { classifyEmail, generateDraft, adjustDraft } from '@/lib/molly/brain';
 import {
   sendTelegramMessage,
   buildEmailNotification,
@@ -639,6 +639,7 @@ export async function approveDraft(
   draftId: string,
   via: ApprovedVia,
   editedBody?: string,
+  sendAccount?: MailboxAlias,
 ): Promise<void> {
   const { data: draft, error } = await db()
     .from('email_drafts')
@@ -649,7 +650,12 @@ export async function approveDraft(
   if (error || !draft) throw new MollyError('Borrador no encontrado', error);
   if (draft.status !== 'pendiente') throw new MollyError(`Borrador ya está en estado: ${draft.status}`);
 
-  const account = (draft as any).email_threads?.account as MailboxAlias;
+  // Cuenta emisora: la elegida al aprobar > la persistida en el borrador >
+  // la cuenta del hilo (donde llegó el correo — comportamiento histórico).
+  const account =
+    sendAccount ??
+    ((draft as any).send_account as MailboxAlias | null) ??
+    ((draft as any).email_threads?.account as MailboxAlias);
 
   // Use edited body if provided, otherwise use original
   const finalBodyText = editedBody ?? draft.body_text;
@@ -673,6 +679,7 @@ export async function approveDraft(
     approved_via: via,
     approved_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    send_account: account || 'asistente@papeleo.legal',
   };
 
   if (editedBody) {
@@ -686,6 +693,71 @@ export async function approveDraft(
     .eq('id', draftId);
 
   console.log(`[molly] Borrador ${draftId} aprobado via ${via}${editedBody ? ' (editado)' : ''} y enviado`);
+}
+
+// Regenera un borrador pendiente con IA siguiendo una instrucción del
+// despacho. Reusa el mismo contexto que la generación original (correo
+// entrante, cliente, hilo). NUNCA envía: el borrador sigue 'pendiente' y el
+// subject se conserva (es la respuesta de un hilo).
+export async function regenerateDraft(
+  draftId: string,
+  instruccion: string,
+  currentBody?: string,
+  account?: MailboxAlias,
+): Promise<EmailDraft & { thread: EmailThread; message: EmailMessage | null }> {
+  const { data: draft, error } = await db()
+    .from('email_drafts')
+    .select('*, thread:email_threads(*), message:email_messages(*)')
+    .eq('id', draftId)
+    .single();
+
+  if (error || !draft) throw new MollyError('Borrador no encontrado', error);
+  if (draft.status !== 'pendiente') throw new MollyError(`Borrador no está pendiente (estado: ${draft.status})`);
+
+  const thread = (draft as any).thread as EmailThread;
+  const message = (draft as any).message as EmailMessage | null;
+  const cuentaFirma = account ?? (thread?.account as MailboxAlias | undefined);
+
+  // Mensaje entrante original para el contexto; si el draft no tiene message
+  // vinculado, un mínimo con lo que el borrador conoce.
+  const emailMsg: EmailMessage = message ?? ({
+    from_email: draft.to_email,
+    from_name: null,
+    subject: thread?.subject ?? draft.subject,
+    body_text: '',
+  } as EmailMessage);
+
+  const [clientContext, recentMessages] = await Promise.all([
+    getClientContext(emailMsg.from_email),
+    getRecentThreadMessages(draft.thread_id),
+  ]);
+
+  const result = await adjustDraft(
+    emailMsg,
+    thread?.subject ?? draft.subject,
+    { subject: draft.subject, body_text: currentBody ?? draft.body_text },
+    instruccion,
+    clientContext,
+    recentMessages,
+    cuentaFirma,
+  );
+
+  const { data: updated, error: updateErr } = await db()
+    .from('email_drafts')
+    .update({
+      body_text: result.body_text,
+      body_html: result.body_html ?? null,
+      tone: result.tone ?? draft.tone,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', draftId)
+    .select('*, thread:email_threads(*), message:email_messages(*)')
+    .single();
+
+  if (updateErr || !updated) throw new MollyError('Error guardando el borrador ajustado', updateErr);
+
+  console.log(`[molly] Borrador ${draftId} ajustado con IA | cuenta firma: ${cuentaFirma ?? 'hilo'}`);
+  return updated as any;
 }
 
 export async function rejectDraft(draftId: string): Promise<void> {
@@ -1056,6 +1128,7 @@ export async function scheduleDraft(
   draftId: string,
   scheduledAt: string,
   customBody?: string,
+  sendAccount?: MailboxAlias,
 ): Promise<void> {
   const { data: draft, error } = await db()
     .from('email_drafts')
@@ -1071,6 +1144,12 @@ export async function scheduleDraft(
     scheduled_at: scheduledAt,
     updated_at: new Date().toISOString(),
   };
+
+  // Persistir la cuenta elegida: el envío lo hace después el cron
+  // (sendScheduledDrafts), que la lee de send_account.
+  if (sendAccount) {
+    updatePayload.send_account = sendAccount;
+  }
 
   if (customBody) {
     updatePayload.body_text = customBody;
@@ -1143,7 +1222,9 @@ export async function sendScheduledDrafts(): Promise<{ enviados: number; errores
 
   for (const draft of drafts) {
     try {
-      const account = (draft as any).email_threads?.account as MailboxAlias;
+      const account =
+        ((draft as any).send_account as MailboxAlias | null) ??
+        ((draft as any).email_threads?.account as MailboxAlias);
       const htmlBody = draft.body_html || `<p>${draft.body_text.replace(/\n/g, '<br>')}</p>`;
 
       await sendMail({
