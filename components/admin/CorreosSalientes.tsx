@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import { CUENTAS_CORREO as CUENTAS } from '@/lib/config/cuentas-correo';
 
 interface Saliente {
   id: string;
@@ -31,12 +32,6 @@ interface ClienteOpt {
   email: string | null;
   emails_cc: string[] | null;
 }
-
-const CUENTAS = [
-  { value: 'asistente@papeleo.legal', label: '📧 Asistente' },
-  { value: 'contador@papeleo.legal', label: '💰 Contador' },
-  { value: 'amanda@papeleo.legal', label: '⭐ Amanda' },
-];
 
 const ACCOUNT_BADGE: Record<string, { label: string; className: string; emoji: string }> = {
   'contador@papeleo.legal': { label: 'Contador', className: 'bg-amber-100 text-amber-700', emoji: '💰' },

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import CorreosSalientes from '@/components/admin/CorreosSalientes'
+import { CUENTAS_CORREO, swapFirma } from '@/lib/config/cuentas-correo'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ interface Draft {
   tone: string | null
   status: string
   scheduled_at: string | null
+  send_account: string | null
   created_at: string
   thread: { id: string; subject: string; account: string; clasificacion: string; urgencia: number }
   message: { from_email: string; from_name: string | null; resumen: string | null } | null
@@ -166,6 +168,13 @@ function MollyMailContent() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [triggerLoading, setTriggerLoading] = useState(false)
   const [editedBodies, setEditedBodies] = useState<Record<string, string>>({})
+  // Cuenta emisora elegida por borrador (default: la cuenta del hilo)
+  const [sendAccounts, setSendAccounts] = useState<Record<string, string>>({})
+  // Instrucción de "Ajustar con IA" por borrador
+  const [aiInstructions, setAiInstructions] = useState<Record<string, string>>({})
+  const [adjustingId, setAdjustingId] = useState<string | null>(null)
+  // Borradores donde el swap de firma no encontró la firma exacta
+  const [firmaHints, setFirmaHints] = useState<Record<string, boolean>>({})
   const [schedulingDraft, setSchedulingDraft] = useState<string | null>(null)
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
@@ -216,6 +225,82 @@ function MollyMailContent() {
     }
   }, [highlightDraftId, loading, drafts])
 
+  const selectedAccount = (draft: Draft) => sendAccounts[draft.id] ?? draft.thread.account
+
+  // Al cambiar la cuenta emisora, reemplaza la firma horneada en el texto por
+  // la de la cuenta nueva (swap determinístico, sin IA). Si no encuentra una
+  // firma conocida, deja el texto intacto y muestra el aviso ámbar.
+  const handleAccountChange = (draft: Draft, nueva: string) => {
+    const anterior = selectedAccount(draft)
+    if (nueva === anterior) return
+    setSendAccounts((prev) => ({ ...prev, [draft.id]: nueva }))
+
+    const texto = editedBodies[draft.id] ?? draft.body_text
+    const swapped = swapFirma(texto, anterior, nueva)
+    if (swapped !== null) {
+      setEditedBodies((prev) => ({ ...prev, [draft.id]: swapped }))
+      setFirmaHints((prev) => {
+        const next = { ...prev }
+        delete next[draft.id]
+        return next
+      })
+    } else {
+      setFirmaHints((prev) => ({ ...prev, [draft.id]: true }))
+    }
+  }
+
+  const handleAdjustDraft = async (draft: Draft) => {
+    const instruccion = (aiInstructions[draft.id] ?? '').trim()
+    if (!instruccion) return
+    setAdjustingId(draft.id)
+    setErrorMsg(null)
+    try {
+      const payload: Record<string, string> = {
+        instruccion,
+        // Firma/tono de la cuenta seleccionada en este momento
+        account: selectedAccount(draft),
+      }
+      // Si Amanda ya editó el textarea, la IA parte del texto editado
+      const edited = editedBodies[draft.id]
+      if (edited !== undefined && edited !== draft.body_text) payload.currentBody = edited
+
+      const res = await adminFetch(`/api/admin/molly/drafts/${draft.id}/ajustar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Error al ajustar el borrador con IA')
+
+      const nuevo = json.data
+      setDrafts((prev) =>
+        prev.map((d) =>
+          d.id === draft.id ? { ...d, body_text: nuevo.body_text, tone: nuevo.tone } : d,
+        ),
+      )
+      // El textarea pasa a mostrar el borrador regenerado (sigue editable)
+      setEditedBodies((prev) => {
+        const next = { ...prev }
+        delete next[draft.id]
+        return next
+      })
+      setAiInstructions((prev) => {
+        const next = { ...prev }
+        delete next[draft.id]
+        return next
+      })
+      setFirmaHints((prev) => {
+        const next = { ...prev }
+        delete next[draft.id]
+        return next
+      })
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al ajustar el borrador con IA')
+    } finally {
+      setAdjustingId(null)
+    }
+  }
+
   const handleDraftAction = async (
     draftId: string,
     action: 'approve' | 'reject',
@@ -226,12 +311,17 @@ function MollyMailContent() {
     try {
       const payload: Record<string, string> = { draftId, action }
       if (editedBody !== undefined) payload.editedBody = editedBody
+      if (action === 'approve' && sendAccounts[draftId]) payload.send_account = sendAccounts[draftId]
 
       const res = await adminFetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Error ${res.status} al procesar la acción`)
+      }
 
       setDrafts((prev) => prev.filter((d) => d.id !== draftId))
       setEditedBodies((prev) => {
@@ -263,12 +353,17 @@ function MollyMailContent() {
       if (edited !== undefined && edited !== drafts.find((d) => d.id === draftId)?.body_text) {
         payload.editedBody = edited
       }
+      if (sendAccounts[draftId]) payload.send_account = sendAccounts[draftId]
 
       const res = await adminFetch('/api/admin/molly/drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Error ${res.status} al programar`)
+      }
 
       setSchedulingDraft(null)
       setScheduleDate('')
@@ -458,8 +553,9 @@ function MollyMailContent() {
                     <div className="bg-slate-50 rounded-lg p-3 mt-2">
                       <p className="text-xs text-slate mb-1 font-medium">Borrador (editable):</p>
                       <textarea
-                        className="w-full text-sm text-navy bg-white border border-gray-200 rounded-lg p-2 min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan"
+                        className="w-full text-sm text-navy bg-white border border-gray-200 rounded-lg p-2 min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan disabled:opacity-50"
                         value={editedBodies[draft.id] ?? draft.body_text}
+                        disabled={adjustingId === draft.id}
                         onChange={(e) =>
                           setEditedBodies((prev) => ({
                             ...prev,
@@ -467,43 +563,90 @@ function MollyMailContent() {
                           }))
                         }
                       />
+                      {/* Ajustar con IA: regenera el borrador siguiendo la instrucción */}
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          type="text"
+                          value={aiInstructions[draft.id] ?? ''}
+                          onChange={(e) =>
+                            setAiInstructions((prev) => ({ ...prev, [draft.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAdjustDraft(draft)
+                          }}
+                          placeholder='Instrucción para la IA, ej. "más formal", "pedí los documentos primero"'
+                          disabled={adjustingId === draft.id}
+                          className="flex-1 text-sm text-navy bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan disabled:opacity-50"
+                        />
+                        <button
+                          onClick={() => handleAdjustDraft(draft)}
+                          disabled={
+                            !(aiInstructions[draft.id] ?? '').trim() ||
+                            adjustingId === draft.id ||
+                            actionLoading === draft.id
+                          }
+                          className="px-4 py-2 bg-cyan text-navy-dark text-sm font-semibold rounded-lg hover:bg-cyan/90 transition-colors disabled:opacity-50 flex-shrink-0"
+                        >
+                          {adjustingId === draft.id ? 'Ajustando…' : '✨ Ajustar con IA'}
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs text-slate mt-2">{formatDate(draft.created_at)}</p>
                   </div>
-                  <div className="flex flex-col gap-2 flex-shrink-0">
+                  <div className="flex flex-col gap-2 flex-shrink-0 w-44">
+                    {/* Cuenta emisora (default: la cuenta donde llegó el correo) */}
+                    <div>
+                      <label className="block text-xs text-slate font-medium mb-1">Enviar desde:</label>
+                      <select
+                        value={selectedAccount(draft)}
+                        onChange={(e) => handleAccountChange(draft, e.target.value)}
+                        disabled={actionLoading === draft.id || adjustingId === draft.id}
+                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white text-navy focus:outline-none focus:ring-2 focus:ring-cyan/50 disabled:opacity-50"
+                      >
+                        {CUENTAS_CORREO.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      {firmaHints[draft.id] && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          No encontré la firma en el texto — usá &quot;Ajustar con IA&quot; para regenerarla con la cuenta nueva.
+                        </p>
+                      )}
+                    </div>
                     <button
-                      onClick={() => handleDraftAction(draft.id, 'approve')}
-                      disabled={actionLoading === draft.id}
+                      onClick={() =>
+                        handleDraftAction(
+                          draft.id,
+                          'approve',
+                          // Aprueba lo que se ve en el textarea (incluye swap de firma)
+                          editedBodies[draft.id] !== undefined &&
+                            editedBodies[draft.id] !== draft.body_text
+                            ? editedBodies[draft.id]
+                            : undefined,
+                        )
+                      }
+                      disabled={actionLoading === draft.id || adjustingId === draft.id}
                       className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                     >
-                      Aprobar
+                      {editedBodies[draft.id] !== undefined &&
+                      editedBodies[draft.id] !== draft.body_text
+                        ? 'Aprobar (editado)'
+                        : 'Aprobar'}
                     </button>
-                    {editedBodies[draft.id] !== undefined &&
-                      editedBodies[draft.id] !== draft.body_text && (
-                      <button
-                        onClick={() =>
-                          handleDraftAction(draft.id, 'approve', editedBodies[draft.id])
-                        }
-                        disabled={actionLoading === draft.id}
-                        className="px-4 py-2 bg-cyan text-navy-dark text-sm font-semibold rounded-lg hover:bg-cyan/90 transition-colors disabled:opacity-50"
-                      >
-                        Enviar editado
-                      </button>
-                    )}
                     <button
                       onClick={() => {
                         setSchedulingDraft(schedulingDraft === draft.id ? null : draft.id)
                         setScheduleDate('')
                         setScheduleTime('')
                       }}
-                      disabled={actionLoading === draft.id}
+                      disabled={actionLoading === draft.id || adjustingId === draft.id}
                       className="px-4 py-2 bg-amber-50 text-amber-700 text-sm font-semibold rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-50"
                     >
                       Programar
                     </button>
                     <button
                       onClick={() => handleDraftAction(draft.id, 'reject')}
-                      disabled={actionLoading === draft.id}
+                      disabled={actionLoading === draft.id || adjustingId === draft.id}
                       className="px-4 py-2 bg-red-100 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
                     >
                       Rechazar
@@ -596,7 +739,8 @@ function MollyMailContent() {
                     <p className="text-sm text-slate mb-1 flex items-center gap-1.5">
                       <span>Para: {draft.to_email}</span>
                       <span aria-hidden>&bull;</span>
-                      <AccountBadge account={draft.thread.account} />
+                      <span>Desde:</span>
+                      <AccountBadge account={draft.send_account ?? draft.thread.account} />
                     </p>
                     <div className="bg-slate-50 rounded-lg p-3 mt-2">
                       <p className="text-sm text-navy whitespace-pre-wrap">

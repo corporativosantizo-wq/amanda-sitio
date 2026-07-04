@@ -6,6 +6,7 @@
 import type { MollyClassification, MollyDraftResult, EmailMessage } from '@/lib/types/molly';
 import { sanitizeEmailForLLM } from '@/lib/security/email-sanitizer';
 import { getAnthropicClient } from '@/lib/ai/anthropic-client';
+import { firmaDeCuenta } from '@/lib/config/cuentas-correo';
 
 // ── Parse JSON from Claude response (with markdown fence cleanup) ──────────
 
@@ -40,17 +41,19 @@ const ACCOUNT_CLASSIFY: Record<string, AccountClassifyConfig> = {
   },
 };
 
+// Las firmas por cuenta viven en lib/config/cuentas-correo.ts (fuente única,
+// compartida con los selectores de la UI y el swap de firma).
 const ACCOUNT_DRAFT: Record<string, AccountDraftConfig> = {
   'contador@papeleo.legal': {
-    firma: 'Departamento Contable | papeleo.legal',
+    firma: firmaDeCuenta('contador@papeleo.legal'),
     tono: 'Tono contable y profesional. Respuestas técnicas sobre facturas, pagos, retenciones fiscales. No mencionar servicios legales ni citas.',
   },
   'asistente@papeleo.legal': {
-    firma: 'Lic. Amanda Santizo | Despacho Jurídico',
-    tono: 'Tono cordial y profesional. Respuestas amables para consultas generales y agendamiento.',
+    firma: firmaDeCuenta('asistente@papeleo.legal'),
+    tono: 'Tono cordial y profesional. Respuestas amables para consultas generales y agendamiento. La cuenta la usa el equipo de seguimiento del despacho: firma como equipo, no en primera persona de la abogada.',
   },
   'amanda@papeleo.legal': {
-    firma: 'Lic. Amanda Santizo | Despacho Jurídico',
+    firma: firmaDeCuenta('amanda@papeleo.legal'),
     tono: 'Tono personal y directo, de abogada a colega o cliente VIP. Más breve y cercano que las otras cuentas.',
   },
 };
@@ -233,6 +236,64 @@ export async function generateDraft(
   const result = parseJsonResponse<MollyDraftResult>(text);
 
   console.log('[molly-brain] Borrador generado | tone:', result.tone, '| cuenta:', account ?? 'n/a');
+  return result;
+}
+
+// ── Adjust an existing pending draft following an instruction ───────────────
+// Regenera un borrador de RESPUESTA siguiendo una instrucción del despacho.
+// Reusa buildDraftPrompt (firma/tono por cuenta) y el mismo contexto que
+// generateDraft: email original sanitizado, cliente e hilo. La instrucción
+// viene del admin autenticado (no del remitente), no se sanitiza.
+
+export async function adjustDraft(
+  email: EmailMessage,
+  threadSubject: string,
+  currentDraft: { subject: string; body_text: string },
+  instruction: string,
+  clientContext?: string | null,
+  recentMessages?: Array<{ from: string; body: string }>,
+  account?: string,
+): Promise<MollyDraftResult> {
+  const client = getAnthropicClient();
+
+  const prompt = buildDraftPrompt(account) +
+    `\n- Ajusta el borrador actual siguiendo la instrucción del despacho. Mantén lo que la instrucción no pida cambiar.`;
+
+  const { sanitizedContent: sanitizedBody, riskLevel } = sanitizeEmailForLLM(email.body_text || '');
+  if (riskLevel === 'high') {
+    console.warn('[molly-brain] HIGH RISK email for adjust from', email.from_email, '| asunto:', email.subject.substring(0, 60));
+  }
+
+  let context = `Email a responder:\nDe: ${email.from_name || email.from_email} <${email.from_email}>\nAsunto: ${email.subject}\n\n${sanitizedBody}`;
+
+  if (clientContext) {
+    context += `\n\nContexto del cliente:\n${clientContext}`;
+  }
+
+  if (recentMessages?.length) {
+    context += '\n\nMensajes recientes del hilo:';
+    for (const msg of recentMessages.slice(-3)) {
+      context += `\n---\nDe: ${msg.from}\n${msg.body.substring(0, 500)}`;
+    }
+  }
+
+  context += `\n\nBorrador actual (a ajustar):\nAsunto: ${currentDraft.subject}\n${currentDraft.body_text}`;
+  context += `\n\nInstrucción de ajuste del despacho:\n${instruction.trim()}`;
+
+  console.log('[molly-brain] Ajustando borrador para', email.from_email, '| cuenta:', account ?? 'n/a', '| instrucción:', instruction.substring(0, 60));
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2048,
+    messages: [
+      { role: 'user', content: `${prompt}\n\n---\n\n${context}` },
+    ],
+  });
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const result = parseJsonResponse<MollyDraftResult>(text);
+
+  console.log('[molly-brain] Borrador ajustado | tone:', result.tone, '| cuenta:', account ?? 'n/a');
   return result;
 }
 

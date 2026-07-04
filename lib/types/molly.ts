@@ -93,6 +93,8 @@ export interface EmailDraft {
   tone: string | null;
   status: DraftStatus;
   scheduled_at: string | null;
+  // Cuenta emisora elegida en el dashboard; null = cuenta del hilo.
+  send_account: string | null;
   pospuesto_hasta: string | null;
   approved_via: ApprovedVia | null;
   approved_at: string | null;
