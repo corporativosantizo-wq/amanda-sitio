@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
+import { SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect'
 import CorreosSalientes from '@/components/admin/CorreosSalientes'
 import { CUENTAS_CORREO, swapFirma } from '@/lib/config/cuentas-correo'
 
@@ -295,7 +296,7 @@ function MollyMailContent() {
         return next
       })
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error al ajustar el borrador con IA')
+      setErrorMsg(err.message === 'SESSION_EXPIRED' ? SESSION_EXPIRED_MSG : (err.message || 'Error al ajustar el borrador con IA'))
     } finally {
       setAdjustingId(null)
     }
@@ -331,7 +332,7 @@ function MollyMailContent() {
       })
       fetchData()
     } catch (err: any) {
-      const msg = err.message || 'Error al procesar la acción'
+      const msg = err.message === 'SESSION_EXPIRED' ? SESSION_EXPIRED_MSG : (err.message || 'Error al procesar la acción')
       setErrorMsg(msg)
       console.error('Error:', msg)
     } finally {
@@ -375,7 +376,7 @@ function MollyMailContent() {
       })
       fetchData()
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error de conexión')
+      setErrorMsg(err.message === 'SESSION_EXPIRED' ? SESSION_EXPIRED_MSG : (err.message || 'Error de conexión'))
     } finally {
       setActionLoading(null)
     }
@@ -393,7 +394,7 @@ function MollyMailContent() {
 
       fetchData()
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error de conexión')
+      setErrorMsg(err.message === 'SESSION_EXPIRED' ? SESSION_EXPIRED_MSG : (err.message || 'Error de conexión'))
     } finally {
       setActionLoading(null)
     }

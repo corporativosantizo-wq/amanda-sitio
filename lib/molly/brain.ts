@@ -9,13 +9,26 @@ import { getAnthropicClient } from '@/lib/ai/anthropic-client';
 import { firmaDeCuenta } from '@/lib/config/cuentas-correo';
 
 // ── Parse JSON from Claude response (with markdown fence cleanup) ──────────
+// Exportada para poder testearla de forma aislada.
 
-function parseJsonResponse<T>(text: string): T {
+export function parseJsonResponse<T>(text: string): T {
   const cleaned = text
     .replace(/^```json?\s*/i, '')
     .replace(/```\s*$/, '')
     .trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // El modelo a veces antepone texto conversacional ("Entendido. ...") o
+    // envuelve el JSON en prosa (incidente 4-jul-2026 en Ajustar con IA):
+    // extraer del primer '{' al último '}' y reintentar.
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    }
+    throw new Error(`Respuesta del modelo sin JSON válido: "${cleaned.substring(0, 120)}"`);
+  }
 }
 
 // ── Account-specific config ─────────────────────────────────────────────────
@@ -257,7 +270,8 @@ export async function adjustDraft(
   const client = getAnthropicClient();
 
   const prompt = buildDraftPrompt(account) +
-    `\n- Ajusta el borrador actual siguiendo la instrucción del despacho. Mantén lo que la instrucción no pida cambiar.`;
+    `\n- Ajusta el borrador actual siguiendo la instrucción del despacho. Mantén lo que la instrucción no pida cambiar.` +
+    `\n- Aunque la instrucción esté redactada de forma conversacional, tu respuesta debe ser SOLO el JSON — sin "Entendido", sin explicaciones, sin texto antes ni después.`;
 
   const { sanitizedContent: sanitizedBody, riskLevel } = sanitizeEmailForLLM(email.body_text || '');
   if (riskLevel === 'high') {
