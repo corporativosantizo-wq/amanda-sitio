@@ -673,7 +673,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full" style={brushedTexture}>
       {/* ── Profile header ── */}
       <div
-        className="px-5 pt-4 pb-2"
+        className="px-5 pt-4 pb-2.5"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
       >
       <div className="flex items-center gap-3">
@@ -705,30 +705,37 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <div style={{ color: '#2563EB', fontWeight: 600, fontSize: 14 }} className="truncate">
             {displayName}
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              style={{
-                color: '#06B6D4',
-                textTransform: 'uppercase',
-                letterSpacing: 1.8,
-                fontSize: 10,
-                fontWeight: 600,
-              }}
-            >
-              {rolLabel}
-            </span>
-            {/* Clock: desktop only */}
-            <span className="hidden md:inline"><Clock /></span>
+          <div
+            style={{
+              color: '#06B6D4',
+              textTransform: 'uppercase',
+              letterSpacing: 1.8,
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+            className="truncate"
+          >
+            {rolLabel}
           </div>
         </div>
       </div>
 
-      {/* Cerrar sesión — línea propia, sin competir con nombre/rol/hora */}
-      <div className="flex justify-end mt-1.5">
+      {/* Divider sutil entre identidad y barra meta */}
+      <div className="mt-3 mb-1.5" style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
+
+      {/* Barra meta: hora (desktop) + cerrar sesión, mismo peso visual */}
+      <div className="flex items-center">
+        <span className="hidden md:flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="#8494A7" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <Clock />
+        </span>
         <button
           onClick={handleSignOut}
           disabled={signingOut}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-60"
+          className="ml-auto flex items-center gap-1.5 px-2 py-1 -mr-2 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-60"
           style={{ color: signingOut ? '#DC2626' : '#8494A7', fontSize: 11, fontWeight: 500 }}
           onMouseEnter={e => { if (!signingOut) e.currentTarget.style.color = '#DC2626' }}
           onMouseLeave={e => { if (!signingOut) e.currentTarget.style.color = '#8494A7' }}
