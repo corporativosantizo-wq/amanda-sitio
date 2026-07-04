@@ -8,6 +8,7 @@ import type { Modulo } from '@/lib/rbac/permissions'
 import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
 import { useActivityTracker } from '@/lib/hooks/use-activity-tracker'
 import { useSessionKeepAlive } from '@/lib/hooks/use-session-keep-alive'
+import { useClerk } from '@clerk/nextjs'
 import { Toaster } from 'sonner'
 
 export default function AdminLayout({
@@ -600,6 +601,19 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, loading, hasModule, isAdmin } = useAdminUser()
   useActivityTracker()
   const { sessionExpired, handleReconnect } = useSessionKeepAlive()
+  const { signOut } = useClerk()
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleSignOut = useCallback(async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await signOut({ redirectUrl: '/sign-in' })
+    } catch {
+      // Si Clerk falla (p.ej. sesión ya muerta), forzar la pantalla de login
+      window.location.href = '/sign-in'
+    }
+  }, [signOut, signingOut])
 
   const isActive = useCallback((href: string) => {
     if (href === '/admin') return pathname === '/admin'
@@ -706,6 +720,28 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
             <span className="hidden md:inline"><Clock /></span>
           </div>
         </div>
+        {/* Cerrar sesión */}
+        <button
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="flex-shrink-0 p-2 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-50"
+          style={{ color: signingOut ? '#DC2626' : '#8494A7' }}
+          onMouseEnter={e => { if (!signingOut) e.currentTarget.style.color = '#DC2626' }}
+          onMouseLeave={e => { if (!signingOut) e.currentTarget.style.color = '#8494A7' }}
+          title="Cerrar sesión"
+          aria-label="Cerrar sesión"
+        >
+          {signingOut ? (
+            <svg className="w-[18px] h-[18px] animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M12 3a9 9 0 109 9" />
+            </svg>
+          ) : (
+            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15" />
+              <path d="M18 15l3-3m0 0l-3-3m3 3H9" />
+            </svg>
+          )}
+        </button>
       </div>
 
       {/* ── Quick action pads — desktop: full pads, mobile: compact icons ── */}
