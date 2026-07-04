@@ -8,6 +8,7 @@ import type { Modulo } from '@/lib/rbac/permissions'
 import { CONTABILIDAD_SUBMODULES } from '@/lib/rbac/permissions'
 import { useActivityTracker } from '@/lib/hooks/use-activity-tracker'
 import { useSessionKeepAlive } from '@/lib/hooks/use-session-keep-alive'
+import { useClerk } from '@clerk/nextjs'
 import { Toaster } from 'sonner'
 
 export default function AdminLayout({
@@ -600,6 +601,19 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, loading, hasModule, isAdmin } = useAdminUser()
   useActivityTracker()
   const { sessionExpired, handleReconnect } = useSessionKeepAlive()
+  const { signOut } = useClerk()
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleSignOut = useCallback(async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await signOut({ redirectUrl: '/sign-in' })
+    } catch {
+      // Si Clerk falla (p.ej. sesión ya muerta), forzar la pantalla de login
+      window.location.href = '/sign-in'
+    }
+  }, [signOut, signingOut])
 
   const isActive = useCallback((href: string) => {
     if (href === '/admin') return pathname === '/admin'
@@ -659,9 +673,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full" style={brushedTexture}>
       {/* ── Profile header ── */}
       <div
-        className="flex items-center gap-3 px-5 py-4"
+        className="px-5 pt-4 pb-2.5"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
       >
+      <div className="flex items-center gap-3">
         {/* Desktop: 42px avatar */}
         <div
           className="hidden md:flex items-center justify-center flex-shrink-0"
@@ -690,22 +705,55 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <div style={{ color: '#2563EB', fontWeight: 600, fontSize: 14 }} className="truncate">
             {displayName}
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              style={{
-                color: '#06B6D4',
-                textTransform: 'uppercase',
-                letterSpacing: 1.8,
-                fontSize: 10,
-                fontWeight: 600,
-              }}
-            >
-              {rolLabel}
-            </span>
-            {/* Clock: desktop only */}
-            <span className="hidden md:inline"><Clock /></span>
+          <div
+            style={{
+              color: '#06B6D4',
+              textTransform: 'uppercase',
+              letterSpacing: 1.8,
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+            className="truncate"
+          >
+            {rolLabel}
           </div>
         </div>
+      </div>
+
+      {/* Divider sutil entre identidad y barra meta */}
+      <div className="mt-3 mb-1.5" style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
+
+      {/* Barra meta: hora (desktop) + cerrar sesión, mismo peso visual */}
+      <div className="flex items-center">
+        <span className="hidden md:flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="#8494A7" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <Clock />
+        </span>
+        <button
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="ml-auto flex items-center gap-1.5 px-2 py-1 -mr-2 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-60"
+          style={{ color: signingOut ? '#DC2626' : '#8494A7', fontSize: 11, fontWeight: 500 }}
+          onMouseEnter={e => { if (!signingOut) e.currentTarget.style.color = '#DC2626' }}
+          onMouseLeave={e => { if (!signingOut) e.currentTarget.style.color = '#8494A7' }}
+          aria-label="Cerrar sesión"
+        >
+          {signingOut ? (
+            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M12 3a9 9 0 109 9" />
+            </svg>
+          ) : (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15" />
+              <path d="M18 15l3-3m0 0l-3-3m3 3H9" />
+            </svg>
+          )}
+          <span>{signingOut ? 'Saliendo…' : 'Cerrar sesión'}</span>
+        </button>
+      </div>
       </div>
 
       {/* ── Quick action pads — desktop: full pads, mobile: compact icons ── */}
