@@ -673,9 +673,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full" style={brushedTexture}>
       {/* ── Profile header ── */}
       <div
-        className="flex items-center gap-3 px-5 py-4"
+        className="px-5 pt-4 pb-2"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
       >
+      <div className="flex items-center gap-3">
         {/* Desktop: 42px avatar */}
         <div
           className="hidden md:flex items-center justify-center flex-shrink-0"
@@ -720,28 +721,32 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
             <span className="hidden md:inline"><Clock /></span>
           </div>
         </div>
-        {/* Cerrar sesión */}
+      </div>
+
+      {/* Cerrar sesión — línea propia, sin competir con nombre/rol/hora */}
+      <div className="flex justify-end mt-1.5">
         <button
           onClick={handleSignOut}
           disabled={signingOut}
-          className="flex-shrink-0 p-2 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-50"
-          style={{ color: signingOut ? '#DC2626' : '#8494A7' }}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors hover:bg-red-50 disabled:opacity-60"
+          style={{ color: signingOut ? '#DC2626' : '#8494A7', fontSize: 11, fontWeight: 500 }}
           onMouseEnter={e => { if (!signingOut) e.currentTarget.style.color = '#DC2626' }}
           onMouseLeave={e => { if (!signingOut) e.currentTarget.style.color = '#8494A7' }}
-          title="Cerrar sesión"
           aria-label="Cerrar sesión"
         >
           {signingOut ? (
-            <svg className="w-[18px] h-[18px] animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" d="M12 3a9 9 0 109 9" />
             </svg>
           ) : (
-            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15" />
               <path d="M18 15l3-3m0 0l-3-3m3 3H9" />
             </svg>
           )}
+          <span>{signingOut ? 'Saliendo…' : 'Cerrar sesión'}</span>
         </button>
+      </div>
       </div>
 
       {/* ── Quick action pads — desktop: full pads, mobile: compact icons ── */}
