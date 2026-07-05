@@ -5,13 +5,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/api-auth';
-import { getFilteredEmails, restoreFilteredEmail } from '@/lib/services/molly.service';
+import { getFilteredEmails, restoreFilteredEmail, purgeOldFilteredEmails } from '@/lib/services/molly.service';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await requireAdmin();
   if (session instanceof NextResponse) return session;
 
   try {
+    // ?preview_purga=1 → dry-run: lista lo que la próxima purga automática
+    // eliminaría (filtrados con +15 días), SIN borrar nada.
+    if (req.nextUrl.searchParams.get('preview_purga') === '1') {
+      const preview = await purgeOldFilteredEmails(true);
+      return NextResponse.json({ data: preview });
+    }
+
     const data = await getFilteredEmails();
     return NextResponse.json({ data });
   } catch (err: any) {

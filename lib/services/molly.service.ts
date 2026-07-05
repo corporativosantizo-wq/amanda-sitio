@@ -1096,6 +1096,71 @@ export async function getFilteredEmails(limit = 50) {
   return data ?? [];
 }
 
+// ── Purga de filtrados viejos ───────────────────────────────────────────────
+// Elimina de la DB los hilos filtrados (spam/publicidad/notificacion_sistema,
+// status 'archivado') con más de N días. SOLO borra registros del dashboard:
+// el correo físico sigue en la carpeta "Filtrados por Molly" de Outlook (esa
+// es la copia recuperable — aquí no se toca el buzón). Las cascadas de FK se
+// llevan email_messages/email_drafts/email_scheduling_intents.
+
+const PURGE_FILTERED_AFTER_DAYS = 15;
+
+export async function purgeOldFilteredEmails(dryRun = false): Promise<{
+  candidatos: Array<{ id: string; subject: string; clasificacion: string; account: string; updated_at: string }>;
+  eliminados: number;
+  dryRun: boolean;
+}> {
+  const cutoff = new Date(Date.now() - PURGE_FILTERED_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  // Criterio base: SOLO lo que Molly archivó como filtrable, con +15 días.
+  // Hilos abiertos/en gestión y clasificaciones normales son inalcanzables.
+  const { data: candidatosRaw, error } = await db()
+    .from('email_threads')
+    .select('id, subject, clasificacion, account, updated_at')
+    .eq('status', 'archivado')
+    .in('clasificacion', [...FILTERABLE_CATEGORIES])
+    .lt('updated_at', cutoff);
+
+  if (error) throw new MollyError('Error buscando filtrados a purgar', error);
+  if (!candidatosRaw?.length) return { candidatos: [], eliminados: 0, dryRun };
+
+  const ids = candidatosRaw.map((t: any) => t.id);
+
+  // Guardas de paranoia: un hilo que alguna vez fue gestionado (tiene algún
+  // borrador o algún mensaje saliente del despacho) JAMÁS se purga, aunque
+  // haya terminado archivado.
+  const [draftsRes, outboundRes] = await Promise.all([
+    db().from('email_drafts').select('thread_id').in('thread_id', ids),
+    db().from('email_messages').select('thread_id').in('thread_id', ids).eq('direction', 'outbound'),
+  ]);
+
+  if (draftsRes.error) throw new MollyError('Error verificando borradores de filtrados', draftsRes.error);
+  if (outboundRes.error) throw new MollyError('Error verificando salientes de filtrados', outboundRes.error);
+
+  const protegidos = new Set<string>([
+    ...(draftsRes.data ?? []).map((d: any) => d.thread_id),
+    ...(outboundRes.data ?? []).map((m: any) => m.thread_id),
+  ]);
+
+  const candidatos = candidatosRaw.filter((t: any) => !protegidos.has(t.id));
+  if (dryRun || candidatos.length === 0) {
+    return { candidatos, eliminados: 0, dryRun };
+  }
+
+  // Borrado en lotes por si la lista crece (cascadas confirmadas en DB)
+  const idsFinales = candidatos.map((t: any) => t.id);
+  let eliminados = 0;
+  for (let i = 0; i < idsFinales.length; i += 100) {
+    const lote = idsFinales.slice(i, i + 100);
+    const { error: delErr } = await db().from('email_threads').delete().in('id', lote);
+    if (delErr) throw new MollyError('Error purgando filtrados', delErr);
+    eliminados += lote.length;
+  }
+
+  console.log(`[molly] Purga de filtrados: ${eliminados} hilos eliminados (>${PURGE_FILTERED_AFTER_DAYS} días)`);
+  return { candidatos, eliminados, dryRun };
+}
+
 export async function restoreFilteredEmail(threadId: string): Promise<void> {
   const { data: thread } = await db()
     .from('email_threads')

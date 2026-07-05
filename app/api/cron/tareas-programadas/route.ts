@@ -22,7 +22,7 @@ import {
 } from '@/lib/templates/emails';
 
 import { requireCronAuth } from '@/lib/auth/cron-auth';
-import { sendScheduledDrafts } from '@/lib/services/molly.service';
+import { sendScheduledDrafts, purgeOldFilteredEmails } from '@/lib/services/molly.service';
 
 export async function GET(req: NextRequest) {
   const authError = requireCronAuth(req);
@@ -176,6 +176,16 @@ export async function GET(req: NextRequest) {
     const mollyScheduled = await sendScheduledDrafts();
     console.log('[Cron] Molly scheduled:', mollyScheduled.enviados, 'enviados,', mollyScheduled.errores, 'errores');
 
+    // Purga de filtrados viejos (best-effort: no afecta tareas ni borradores)
+    const purgaFiltrados = { eliminados: 0, errores: 0 };
+    try {
+      const r = await purgeOldFilteredEmails();
+      purgaFiltrados.eliminados = r.eliminados;
+    } catch (err: any) {
+      console.error('[Cron Tareas] Error purgando filtrados:', err.message);
+      purgaFiltrados.errores = 1;
+    }
+
     return NextResponse.json({
       ok: true,
       total: tareas.length,
@@ -183,6 +193,7 @@ export async function GET(req: NextRequest) {
       fallidas,
       resultados,
       mollyScheduled,
+      purgaFiltrados,
     });
 
   } catch (err: any) {
