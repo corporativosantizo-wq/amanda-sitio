@@ -210,9 +210,14 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
   }
   const cierreModalidadHTML = `<p style="margin:12px 0 0;color:#64748b;font-size:13px;">${cierreModalidad}</p>`;
 
-  // Payment section for consulta_nueva
+  // Recuadro de pago: SOLO consultas nuevas con costo (virtual o presencial —
+  // la consulta es lo que se cobra). Nunca en entrega/firma de documentos
+  // (trámites logísticos: una consulta_nueva mal combinada con esas modalidades
+  // hereda el costo default Q500 y mostraba el pago — caso Juncaya 4-jul-2026).
+  // Los seguimientos ya quedan fuera por el check de tipo.
+  const modalidadSinPago = modalidad === 'entrega_documentos' || modalidad === 'firma_documentos';
   let pagoSection = '';
-  if (cita.tipo === 'consulta_nueva' && cita.costo > 0) {
+  if (cita.tipo === 'consulta_nueva' && cita.costo > 0 && !modalidadSinPago) {
     pagoSection = `
     <table width="100%" style="margin:16px 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;">
       <tr><td>
