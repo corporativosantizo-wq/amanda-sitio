@@ -210,7 +210,11 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
   }
   const cierreModalidadHTML = `<p style="margin:12px 0 0;color:#64748b;font-size:13px;">${cierreModalidad}</p>`;
 
-  // Payment section for consulta_nueva
+  // Recuadro de pago: SOLO Consulta Legal (consulta_nueva) con costo. El TIPO
+  // es lo que determina el cobro — Seguimiento de Caso nunca paga, en ninguna
+  // de sus modalidades (virtual/entrega/firma). Las citas de entrega/firma mal
+  // creadas como consulta_nueva ya no heredan el costo default Q500 (crearCita
+  // lo fuerza a 0 para modalidades logísticas — caso Juncaya 4-jul-2026).
   let pagoSection = '';
   if (cita.tipo === 'consulta_nueva' && cita.costo > 0) {
     pagoSection = `
