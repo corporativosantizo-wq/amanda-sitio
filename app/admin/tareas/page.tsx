@@ -278,7 +278,7 @@ export default function TareasPage() {
             onChange={(e) => { setQuickInput(e.target.value); if (quickError) setQuickError(''); }}
             onKeyDown={handleQuickInput}
             disabled={mutating}
-            placeholder="Escribe una tarea...  (\u2022 tarea, \u25CB evento, \u2014 nota, !!! urgente)"
+            placeholder="Escribe una tarea...  (• tarea, ○ evento, — nota, !!! urgente)"
             className="flex-1 text-sm text-slate-700 placeholder:text-slate-400 outline-none bg-transparent disabled:opacity-50"
           />
           <span className="text-xs text-slate-400 shrink-0">
@@ -417,7 +417,7 @@ export default function TareasPage() {
       {!loading && allTareas.length === 0 && (
         <div className="text-center py-16">
           <p className="text-4xl mb-3">{'\u2022'}</p>
-          <p className="text-slate-500 font-medium">No hay tareas a\u00fan</p>
+          <p className="text-slate-500 font-medium">No hay tareas aún</p>
           <p className="text-sm text-slate-400 mt-1">Escribe tu primera tarea en el campo de arriba</p>
         </div>
       )}
