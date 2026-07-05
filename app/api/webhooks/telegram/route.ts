@@ -15,8 +15,8 @@ import {
 import { approveDraft, rejectDraft, postponeDraft, listPendingDrafts, getStats, getAgenda, getAvailability, getDayView, getWeekView, getMultiDayAvailability } from '@/lib/services/molly.service';
 import { createCalendarEvent } from '@/lib/services/outlook.service';
 import { crearTarea, listarTareas, completarTarea, migrarTarea, resumenTareas } from '@/lib/services/tareas.service';
-import { HORARIOS, CategoriaTarea, EstadoTarea } from '@/lib/types';
-import type { TipoCita, TareaInsert } from '@/lib/types';
+import { HORARIOS, CategoriaTarea, EstadoTarea, CATEGORIA_TAREA_LABEL } from '@/lib/types';
+import type { TipoCita, TareaInsert, TareaConCliente } from '@/lib/types';
 import {
   getConversation,
   clearConversation,
@@ -36,6 +36,38 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const db = () => createAdminClient();
 
 const SEARCH_ACCOUNTS: MailboxAlias[] = ['amanda@papeleo.legal', 'asistente@papeleo.legal', 'contador@papeleo.legal'];
+
+// ── Teclado persistente (menú principal) ────────────────────────────────────
+// Los botones envían su texto; se remapean a los comandos existentes.
+
+const BTN_TAREAS = '📋 Mis tareas';
+const BTN_NUEVA = '➕ Nueva tarea';
+const BTN_HOY = '📅 Hoy';
+const BTN_SEMANA = '🗓 Semana';
+const BTN_LIBRE = '🕐 Espacios';
+const BTN_BUSCAR = '🔍 Buscar';
+
+const MAIN_KEYBOARD = {
+  keyboard: [
+    [{ text: BTN_TAREAS }, { text: BTN_NUEVA }],
+    [{ text: BTN_HOY }, { text: BTN_SEMANA }],
+    [{ text: BTN_LIBRE }, { text: BTN_BUSCAR }],
+  ],
+  is_persistent: true,
+  resize_keyboard: true,
+};
+
+const BUTTON_TO_COMMAND: Record<string, string> = {
+  [BTN_TAREAS]: '/tareas',
+  [BTN_HOY]: '/hoy',
+  [BTN_SEMANA]: '/semana',
+  [BTN_LIBRE]: '/libre',
+};
+
+// Prompts con force_reply: la respuesta de Amanda a estos mensajes se detecta
+// por prefijo en reply_to_message (sin estado en memoria — sobrevive cold starts).
+const PROMPT_NUEVA_TAREA = '📝 Nueva tarea — respondé este mensaje con el título.\n\nTips: !! = prioridad alta · @cobros @documentos @audiencias @tramites @personal @seguimiento = categoría.';
+const PROMPT_BUSCAR = '🔍 ¿Qué querés buscar? Respondé este mensaje (cliente, documento, asunto...).';
 
 // In-memory store for /buscar "Ver hilo" callbacks
 let lastSearchEmails: Array<{
@@ -163,6 +195,23 @@ async function handleCallbackQuery(query: any): Promise<void> {
       return;
     }
 
+    // Task list callbacks (fila de acciones de /tareas)
+    if (data === 'tareas_pick_done' || data === 'tareas_pick_move') {
+      await answerCallbackQuery(query.id);
+      await handleTareasPick(data === 'tareas_pick_done' ? 'done' : 'move');
+      return;
+    }
+    if (data === 'tareas_all') {
+      await answerCallbackQuery(query.id);
+      await handleTareasListCommand(true);
+      return;
+    }
+    if (data === 'tareas_nueva') {
+      await answerCallbackQuery(query.id);
+      await sendTelegramMessage(PROMPT_NUEVA_TAREA, { reply_markup: { force_reply: true } });
+      return;
+    }
+
     // Habit callbacks
     if (data.startsWith('habit_toggle:')) {
       await answerCallbackQuery(query.id);
@@ -265,10 +314,36 @@ async function handleTextMessage(message: any): Promise<void> {
 
   if (!isAuthorizedChat(chatId)) return;
 
-  const text = (message.text as string).trim();
+  let text = (message.text as string).trim();
 
   // Log command
   await logCommand(String(chatId), text, {});
+
+  // ── Respuestas a prompts con force_reply (Nueva tarea / Buscar) ──────
+  const replyTo: string = message.reply_to_message?.text ?? '';
+  if (!text.startsWith('/') && replyTo) {
+    if (replyTo.startsWith('📝 Nueva tarea')) {
+      await handleTareaCommand(text);
+      return;
+    }
+    if (replyTo.startsWith('🔍 ¿Qué querés buscar?')) {
+      await handleBuscarCommand(text);
+      return;
+    }
+  }
+
+  // ── Botones del teclado persistente ──────────────────────────────────
+  if (text === BTN_NUEVA) {
+    await sendTelegramMessage(PROMPT_NUEVA_TAREA, { reply_markup: { force_reply: true } });
+    return;
+  }
+  if (text === BTN_BUSCAR) {
+    await sendTelegramMessage(PROMPT_BUSCAR, { reply_markup: { force_reply: true } });
+    return;
+  }
+  if (BUTTON_TO_COMMAND[text]) {
+    text = BUTTON_TO_COMMAND[text];
+  }
 
   // Check if there's an active conversation flow expecting text input
   const conv = getConversation();
@@ -286,6 +361,17 @@ async function handleTextMessage(message: any): Promise<void> {
       clearConversation();
       await sendTelegramMessage('Flujo cancelado.');
     }
+    return;
+  }
+
+  // ── Menú principal ───────────────────────────────────────────────────
+
+  if (text === '/start' || text === '/menu') {
+    await sendTelegramMessage(
+      '👋 Hola Amanda. Usá los botones de abajo — no hace falta memorizar comandos.\n\n' +
+      'También tenés el botón azul <b>Menú</b> (junto al campo de texto) con la lista completa de comandos explicados.',
+      { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD },
+    );
     return;
   }
 
@@ -494,10 +580,18 @@ async function handleTextMessage(message: any): Promise<void> {
       `<b>Buscar:</b>\n` +
       `/buscar [texto] — archivos y emails\n\n` +
       `<b>Otros:</b>\n` +
+      `/menu — mostrar teclado de botones\n` +
       `/x — cancelar flujo activo`,
-      { parse_mode: 'HTML' },
+      { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD },
     );
+    return;
   }
+
+  // Texto libre sin flujo activo: orientar hacia el menú
+  await sendTelegramMessage(
+    '🤔 No entendí ese mensaje. Usá los botones de abajo, o /tarea para anotar algo rápido.',
+    { reply_markup: MAIN_KEYBOARD },
+  );
 }
 
 // ── Scheduling intent callbacks ──────────────────────────────────────────────
@@ -779,8 +873,8 @@ async function handleTareaCommand(text: string): Promise<void> {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '\u2715 Completar', callback_data: `tarea_done:${tarea.id}` },
-            { text: '> Migrar', callback_data: `tarea_migrar:${tarea.id}` },
+            { text: '\u2714 Completar', callback_data: `tarea_done:${tarea.id}` },
+            { text: '\u23ed Posponer', callback_data: `tarea_migrar:${tarea.id}` },
           ]],
         },
       },
@@ -790,60 +884,148 @@ async function handleTareaCommand(text: string): Promise<void> {
   }
 }
 
-async function handleTareasListCommand(): Promise<void> {
-  try {
-    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
-    const { data: tareas } = await listarTareas({
-      estado: 'pendiente',
-      limit: 15,
-    });
+const PRIO_RANK: Record<string, number> = { alta: 0, media: 1, baja: 2 };
 
-    if (tareas.length === 0) {
-      await sendTelegramMessage('\u2705 No hay tareas pendientes. ¡Buen trabajo!');
+function hoyGT(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+}
+
+// "hoy" / "mañana" / "ayer" / "hace N días" / "vie 11 jul"
+function fechaHumana(fecha: string, hoy: string): string {
+  const diff = Math.round(
+    (new Date(fecha + 'T12:00:00').getTime() - new Date(hoy + 'T12:00:00').getTime()) / 86400000,
+  );
+  if (diff === 0) return 'hoy';
+  if (diff === 1) return 'mañana';
+  if (diff === -1) return 'ayer';
+  if (diff < -1) return `hace ${-diff} días`;
+  return new Intl.DateTimeFormat('es', {
+    timeZone: 'America/Guatemala', weekday: 'short', day: 'numeric', month: 'short',
+  }).format(new Date(fecha + 'T12:00:00'));
+}
+
+// Orden estable compartido entre la lista y el selector numerado: los números
+// que ve Amanda en /tareas son los mismos que en los botones de Completar/Posponer.
+async function fetchTareasOrdenadas(): Promise<{
+  hoy: string;
+  vencidas: TareaConCliente[];
+  paraHoy: TareaConCliente[];
+  proximas: TareaConCliente[];
+  ordenadas: TareaConCliente[];
+}> {
+  const hoy = hoyGT();
+  const { data: tareas } = await listarTareas({ estado: 'pendiente', limit: 50 });
+
+  const byFecha = (a: TareaConCliente, b: TareaConCliente) =>
+    (a.fecha_limite ?? '').localeCompare(b.fecha_limite ?? '') ||
+    (PRIO_RANK[a.prioridad] ?? 1) - (PRIO_RANK[b.prioridad] ?? 1);
+  const byPrio = (a: TareaConCliente, b: TareaConCliente) =>
+    (PRIO_RANK[a.prioridad] ?? 1) - (PRIO_RANK[b.prioridad] ?? 1);
+
+  const vencidas = tareas.filter((t) => t.fecha_limite && t.fecha_limite < hoy).sort(byFecha);
+  const paraHoy = tareas.filter((t) => !t.fecha_limite || t.fecha_limite === hoy).sort(byPrio);
+  const proximas = tareas.filter((t) => t.fecha_limite && t.fecha_limite > hoy).sort(byFecha);
+
+  return { hoy, vencidas, paraHoy, proximas, ordenadas: [...vencidas, ...paraHoy, ...proximas] };
+}
+
+const TAREAS_VISTA_CORTA = 8;
+const TAREAS_VISTA_COMPLETA = 25;
+
+async function handleTareasListCommand(showAll = false): Promise<void> {
+  try {
+    const { hoy, vencidas, paraHoy, proximas, ordenadas } = await fetchTareasOrdenadas();
+
+    if (ordenadas.length === 0) {
+      await sendTelegramMessage('✅ No hay tareas pendientes. ¡Buen trabajo!');
       return;
     }
 
-    // Sort: overdue first, then high priority, then by date
-    const sorted = [...tareas].sort((a, b) => {
-      const aOverdue = a.fecha_limite && a.fecha_limite < hoy ? -1 : 0;
-      const bOverdue = b.fecha_limite && b.fecha_limite < hoy ? -1 : 0;
-      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
-      const prio: Record<string, number> = { alta: 0, media: 1, baja: 2 };
-      return (prio[a.prioridad] ?? 1) - (prio[b.prioridad] ?? 1);
-    });
+    const max = showAll ? TAREAS_VISTA_COMPLETA : TAREAS_VISTA_CORTA;
+    const fechaHeader = new Intl.DateTimeFormat('es', {
+      timeZone: 'America/Guatemala', weekday: 'long', day: 'numeric', month: 'short',
+    }).format(new Date());
 
-    let msg = `\uD83D\uDCCB <b>Tareas pendientes</b> (${tareas.length})\n`;
+    let msg = `📋 <b>Tus tareas</b> — ${fechaHeader}\n`;
+    let shown = 0;
 
-    const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+    const addSection = (
+      emoji: string,
+      nombre: string,
+      items: TareaConCliente[],
+      extra: (t: TareaConCliente) => string,
+    ) => {
+      if (items.length === 0 || shown >= max) return;
+      msg += `\n${emoji} <b>${nombre} (${items.length})</b>\n`;
+      for (const t of items.slice(0, max - shown)) {
+        shown++;
+        const alta = t.prioridad === 'alta' ? ' ‼️' : '';
+        msg += ` ${shown}. ${escapeHtml(t.titulo)} · ${extra(t)}${alta}\n`;
+      }
+    };
 
-    for (const t of sorted.slice(0, 10)) {
-      const overdue = t.fecha_limite && t.fecha_limite < hoy ? '\uD83D\uDD34' : '';
-      const prio = t.prioridad === 'alta' ? '\u203C\uFE0F' : '';
-      const fecha = t.fecha_limite ? ` (${t.fecha_limite})` : '';
-      msg += `\n${overdue}${prio}\u2022 ${escapeHtml(t.titulo)}${fecha}`;
+    addSection('🔴', 'Vencidas', vencidas, (t) => fechaHumana(t.fecha_limite!, hoy));
+    addSection('📌', 'Para hoy', paraHoy, (t) => CATEGORIA_TAREA_LABEL[t.categoria] ?? t.categoria);
+    addSection('🗓', 'Próximas', proximas, (t) => fechaHumana(t.fecha_limite!, hoy));
 
-      buttons.push([
-        { text: `\u2715 ${t.titulo.substring(0, 25)}`, callback_data: `tarea_done:${t.id}` },
-        { text: '>', callback_data: `tarea_migrar:${t.id}` },
-      ]);
+    const ocultas = ordenadas.length - shown;
+    if (ocultas > 0) {
+      msg += `\n<i>...y ${ocultas} más</i>\n`;
     }
 
-    if (tareas.length > 10) {
-      msg += `\n\n... y ${tareas.length - 10} más`;
-    }
-
-    // Add summary
     const resumen = await resumenTareas();
-    if (resumen.vencidas > 0) {
-      msg += `\n\n\uD83D\uDD34 ${resumen.vencidas} vencidas`;
+    if (resumen.completadas_hoy > 0) {
+      msg += `\n✅ Hoy completaste ${resumen.completadas_hoy}`;
+    }
+
+    const filaAcciones: Array<{ text: string; callback_data: string }> = [
+      { text: '✔ Completar', callback_data: 'tareas_pick_done' },
+      { text: '⏭ Posponer', callback_data: 'tareas_pick_move' },
+    ];
+    const filaExtra: Array<{ text: string; callback_data: string }> = [
+      { text: '➕ Nueva tarea', callback_data: 'tareas_nueva' },
+    ];
+    if (ocultas > 0 && !showAll) {
+      filaExtra.push({ text: `Ver todas (${ordenadas.length})`, callback_data: 'tareas_all' });
     }
 
     await sendTelegramMessage(msg, {
       parse_mode: 'HTML',
-      reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
+      reply_markup: { inline_keyboard: [filaAcciones, filaExtra] },
     });
   } catch (err: any) {
-    await sendTelegramMessage(`\u274C Error: ${err.message}`);
+    await sendTelegramMessage(`❌ Error: ${err.message}`);
+  }
+}
+
+// Selector numerado: los números corresponden a la lista de /tareas.
+// callback_data lleva el id directo — no depende de estado en memoria.
+async function handleTareasPick(mode: 'done' | 'move'): Promise<void> {
+  try {
+    const { ordenadas } = await fetchTareasOrdenadas();
+
+    if (ordenadas.length === 0) {
+      await sendTelegramMessage('✅ No hay tareas pendientes.');
+      return;
+    }
+
+    const list = ordenadas.slice(0, TAREAS_VISTA_COMPLETA);
+    const action = mode === 'done' ? 'tarea_done' : 'tarea_migrar';
+    const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (let i = 0; i < list.length; i += 5) {
+      rows.push(list.slice(i, i + 5).map((t, j) => ({
+        text: String(i + j + 1),
+        callback_data: `${action}:${t.id}`,
+      })));
+    }
+
+    const titulo = mode === 'done'
+      ? '✔ Tocá el número de la tarea que completaste:'
+      : '⏭ Tocá el número de la tarea a posponer para mañana:';
+
+    await sendTelegramMessage(titulo, { reply_markup: { inline_keyboard: rows } });
+  } catch (err: any) {
+    await sendTelegramMessage(`❌ Error: ${err.message}`);
   }
 }
 
@@ -856,7 +1038,7 @@ async function handleTareaCallback(data: string): Promise<void> {
     if (action === 'tarea_done') {
       const tarea = await completarTarea(tareaId);
       await sendTelegramMessage(
-        `\u2715 <b>Completada:</b> ${escapeHtml(tarea.titulo)}`,
+        `\u2714 <b>Completada:</b> ${escapeHtml(tarea.titulo)}`,
         { parse_mode: 'HTML' },
       );
     } else if (action === 'tarea_migrar') {
@@ -865,7 +1047,7 @@ async function handleTareaCallback(data: string): Promise<void> {
       const mananaStr = manana.toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
       const tarea = await migrarTarea(tareaId, mananaStr);
       await sendTelegramMessage(
-        `> <b>Migrada a ${mananaStr}:</b> ${escapeHtml(tarea.titulo)}`,
+        `⏭ <b>Pospuesta a ${mananaStr}:</b> ${escapeHtml(tarea.titulo)}`,
         { parse_mode: 'HTML' },
       );
     }
