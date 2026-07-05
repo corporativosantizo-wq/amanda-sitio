@@ -336,7 +336,15 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   }
 
   // Insertar cita
-  const costo = input.costo ?? config.costo;
+  // La entrega/firma de documentos son trámites logísticos sin costo (en el
+  // agendar público solo existen como Seguimiento). Si una cita se crea con
+  // esas modalidades bajo otro tipo (p. ej. consulta_nueva por error), NO debe
+  // heredar el costo default del tipo (Q500) — eso disparaba el recuadro de
+  // pago en el correo de confirmación (caso Juncaya 4-jul-2026). Un costo
+  // explícito en input sigue ganando.
+  const esModalidadSinCosto =
+    input.modalidad === 'entrega_documentos' || input.modalidad === 'firma_documentos';
+  const costo = input.costo ?? (esModalidadSinCosto ? 0 : config.costo);
   // Las audiencias son presenciales en el juzgado: NUNCA llevan modalidad (queda
   // null, jamás el default 'virtual'), por lo que tampoco generan reunión de Teams
   // ni el correo de "Cita Confirmada". El resto de tipos conserva el default.
