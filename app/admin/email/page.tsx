@@ -1,11 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { adminFetch } from '@/lib/utils/admin-fetch'
 import { SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect'
 import CorreosSalientes from '@/components/admin/CorreosSalientes'
+import HiloDetalleModal from '@/components/admin/HiloDetalleModal'
 import { CUENTAS_CORREO, swapFirma } from '@/lib/config/cuentas-correo'
+import {
+  AccountBadge,
+  CLASIFICACION_COLORS,
+  URGENCIA_LABELS,
+  URGENCIA_COLORS,
+} from '@/components/admin/molly-badges'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -60,52 +67,14 @@ interface Thread {
 }
 
 // ── Badge helpers ──────────────────────────────────────────────────────────
-
-const CLASIFICACION_COLORS: Record<string, string> = {
-  legal: 'bg-blue-100 text-blue-700',
-  administrativo: 'bg-gray-100 text-gray-700',
-  financiero: 'bg-green-100 text-green-700',
-  spam: 'bg-red-100 text-red-700',
-  publicidad: 'bg-amber-100 text-amber-700',
-  notificacion_sistema: 'bg-slate-100 text-slate-600',
-  personal: 'bg-purple-100 text-purple-700',
-  urgente: 'bg-orange-100 text-orange-700',
-  pendiente: 'bg-yellow-100 text-yellow-700',
-}
-
-// Cuenta de buzón → badge (color + etiqueta corta)
-const ACCOUNT_BADGE: Record<string, { label: string; className: string; emoji: string }> = {
-  'contador@papeleo.legal':  { label: 'Contador',  className: 'bg-amber-100 text-amber-700',  emoji: '💰' },
-  'asistente@papeleo.legal': { label: 'Asistente', className: 'bg-blue-100 text-blue-700',    emoji: '📧' },
-  'amanda@papeleo.legal':    { label: 'Amanda',    className: 'bg-purple-100 text-purple-700', emoji: '⭐' },
-}
-
-function AccountBadge({ account }: { account: string }) {
-  const cfg = ACCOUNT_BADGE[account] ?? {
-    label: account.split('@')[0],
-    className: 'bg-slate-100 text-slate-600',
-    emoji: '📬',
-  }
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full ${cfg.className}`}>
-      <span aria-hidden>{cfg.emoji}</span>{cfg.label}
-    </span>
-  )
-}
+// (AccountBadge, CLASIFICACION_COLORS, URGENCIA_* viven en molly-badges.tsx,
+// compartidos con HiloDetalleModal)
 
 // Cuentas seleccionables en el filtro (debe coincidir con ACCOUNTS del backend)
 const ACCOUNT_FILTERS = [
   { value: '', label: 'Todas' },
   { value: 'contador@papeleo.legal', label: '💰 Contador' },
   { value: 'asistente@papeleo.legal', label: '📧 Asistente' },
-]
-
-const URGENCIA_LABELS = ['Info', 'Normal', 'Importante', 'Urgente']
-const URGENCIA_COLORS = [
-  'bg-gray-100 text-gray-600',
-  'bg-blue-100 text-blue-600',
-  'bg-orange-100 text-orange-600',
-  'bg-red-100 text-red-600',
 ]
 
 function formatDate(dateString: string) {
@@ -158,6 +127,7 @@ function formatScheduledDate(isoStr: string): string {
 
 function MollyMailContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const highlightDraftId = searchParams.get('draft')
   const draftRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -183,6 +153,8 @@ function MollyMailContent() {
   const [filtered, setFiltered] = useState<FilteredThread[]>([])
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [accountFilter, setAccountFilter] = useState('')
+  // Hilo abierto en el modal de detalle
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -225,6 +197,14 @@ function MollyMailContent() {
       draftRefs.current[highlightDraftId]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [highlightDraftId, loading, drafts])
+
+  // Desde el modal de hilo: cerrar, refrescar (la tarjeta nueva debe existir
+  // ANTES del scroll) y navegar al deep-link ?draft= (scroll+highlight existente)
+  const handleGoToDraft = async (draftId: string) => {
+    setOpenThreadId(null)
+    await fetchData()
+    router.replace(`/admin/email?draft=${draftId}`, { scroll: false })
+  }
 
   const selectedAccount = (draft: Draft) => sendAccounts[draft.id] ?? draft.thread.account
 
@@ -876,7 +856,11 @@ function MollyMailContent() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {threads.map((thread) => (
-                  <tr key={thread.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={thread.id}
+                    onClick={() => setOpenThreadId(thread.id)}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
                     <td className="px-5 py-3">
                       <span className="text-sm font-medium text-navy">
                         {thread.subject.length > 50
@@ -916,6 +900,15 @@ function MollyMailContent() {
           )}
         </div>
       </div>
+
+      {/* Detalle de hilo */}
+      {openThreadId && (
+        <HiloDetalleModal
+          threadId={openThreadId}
+          onClose={() => setOpenThreadId(null)}
+          onGoToDraft={handleGoToDraft}
+        />
+      )}
     </div>
   )
 }

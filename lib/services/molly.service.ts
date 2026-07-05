@@ -27,6 +27,7 @@ import {
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { emailWrapper } from '@/lib/templates/emails';
+import { sanitizeEmailHtml } from '@/lib/utils/sanitize-email-html';
 import type {
   EmailThread,
   EmailMessage,
@@ -901,6 +902,133 @@ export async function listThreads(params: ListThreadsParams = {}) {
     limit,
     totalPages: Math.ceil((count ?? 0) / limit),
   };
+}
+
+// ── Thread detail + generación on-demand ───────────────────────────────────
+
+export interface ThreadDetail {
+  thread: EmailThread;
+  messages: Array<
+    Pick<
+      EmailMessage,
+      | 'id' | 'from_email' | 'from_name' | 'to_emails' | 'cc_emails'
+      | 'subject' | 'direction' | 'body_text' | 'body_html'
+      | 'attachments' | 'received_at'
+    >
+  >;
+  drafts: Array<Pick<EmailDraft, 'id' | 'status' | 'subject' | 'to_email' | 'scheduled_at' | 'created_at'>>;
+}
+
+export async function getThreadDetail(threadId: string): Promise<ThreadDetail> {
+  const { data: thread, error } = await db()
+    .from('email_threads')
+    .select('*')
+    .eq('id', threadId)
+    .maybeSingle();
+
+  if (error) throw new MollyError('Error consultando hilo', error);
+  if (!thread) throw new MollyError('Hilo no encontrado');
+
+  const [messagesRes, draftsRes] = await Promise.all([
+    db()
+      .from('email_messages')
+      .select('id, from_email, from_name, to_emails, cc_emails, subject, direction, body_text, body_html, attachments, received_at')
+      .eq('thread_id', threadId)
+      .order('received_at', { ascending: true }),
+    db()
+      .from('email_drafts')
+      .select('id, status, subject, to_email, scheduled_at, created_at')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (messagesRes.error) throw new MollyError('Error consultando mensajes del hilo', messagesRes.error);
+  if (draftsRes.error) throw new MollyError('Error consultando borradores del hilo', draftsRes.error);
+
+  return {
+    thread: thread as EmailThread,
+    // body_html es HTML de terceros: NUNCA sale crudo de la API.
+    messages: (messagesRes.data ?? []).map((m: any) => ({
+      ...m,
+      body_html: m.body_html ? sanitizeEmailHtml(m.body_html) : null,
+    })),
+    drafts: (draftsRes.data ?? []) as ThreadDetail['drafts'],
+  };
+}
+
+// Genera un borrador de respuesta on-demand para un hilo (p. ej. cuando el
+// borrador automático fue rechazado, o el correo nunca tuvo uno). Crea un
+// email_drafts 'pendiente' normal — hereda todo el flujo del dashboard
+// (editar, Ajustar con IA, cuenta emisora, aprobar/programar). NUNCA envía.
+export async function createDraftForThread(
+  threadId: string,
+): Promise<{ draft: EmailDraft; existente: boolean }> {
+  const { data: thread, error } = await db()
+    .from('email_threads')
+    .select('*')
+    .eq('id', threadId)
+    .maybeSingle();
+
+  if (error) throw new MollyError('Error consultando hilo', error);
+  if (!thread) throw new MollyError('Hilo no encontrado');
+
+  // Guard idempotente: si ya hay un borrador activo del hilo, devolver ese.
+  const { data: existing } = await db()
+    .from('email_drafts')
+    .select('*')
+    .eq('thread_id', threadId)
+    .in('status', ['pendiente', 'programado'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) return { draft: existing as EmailDraft, existente: true };
+
+  // Último mensaje entrante = el que se responde
+  const { data: msg } = await db()
+    .from('email_messages')
+    .select('*')
+    .eq('thread_id', threadId)
+    .eq('direction', 'inbound')
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!msg) throw new MollyError('El hilo no tiene mensajes entrantes que responder');
+
+  const [clientContext, recentMessages] = await Promise.all([
+    getClientContext(msg.from_email),
+    getRecentThreadMessages(threadId),
+  ]);
+
+  const draftResult = await generateDraft(
+    msg as EmailMessage,
+    thread.subject,
+    clientContext,
+    recentMessages,
+    thread.account,
+  );
+
+  const { data: draft, error: insertErr } = await db()
+    .from('email_drafts')
+    .insert({
+      thread_id: threadId,
+      message_id: msg.id,
+      to_email: msg.from_email,
+      subject: draftResult.subject,
+      body_text: draftResult.body_text,
+      body_html: draftResult.body_html ?? null,
+      tone: draftResult.tone ?? null,
+      status: 'pendiente',
+    })
+    .select()
+    .single();
+
+  if (insertErr || !draft) throw new MollyError('Error creando borrador', insertErr);
+
+  // Sin notificación Telegram: lo pidió el admin desde el dashboard.
+  console.log(`[molly] Borrador on-demand creado para hilo ${threadId} (draft ${draft.id})`);
+  return { draft: draft as EmailDraft, existente: false };
 }
 
 export async function listPendingDrafts(): Promise<
