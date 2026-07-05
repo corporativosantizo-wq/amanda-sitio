@@ -16,6 +16,10 @@ import { plazosProximos, plazosVencidos } from '@/lib/services/expedientes.servi
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CategoriaTarea } from '@/lib/types';
 
+// Eventos que NO ameritan tarea de preparación: bloques de disponibilidad
+// para booking de citas (recurrentes — generaban tareas basura cada semana)
+const PREP_EXCLUDE_KEYWORDS = ['[booking]', 'disponibilidad'];
+
 // Event types that warrant auto-generated preparation tasks
 const PREP_KEYWORDS: Array<{ keywords: string[]; prefix: string; categoria: CategoriaTarea }> = [
   { keywords: ['consulta', 'consulta nueva'], prefix: 'Preparar expediente:', categoria: CategoriaTarea.SEGUIMIENTO },
@@ -336,6 +340,9 @@ async function autoGenerateTasksFromCalendar(): Promise<number> {
 
     for (const event of timed) {
       const subject = event.subject.toLowerCase();
+
+      // Skip availability/booking blocks
+      if (PREP_EXCLUDE_KEYWORDS.some((k) => subject.includes(k))) continue;
 
       // Find matching prep keyword
       const match = PREP_KEYWORDS.find((p) =>
