@@ -57,6 +57,7 @@ import {
   obtenerCotizacion,
   listarCotizaciones,
   obtenerConfiguracion as obtenerConfigCotizacion,
+  condicionesParaEnvio,
 } from '@/lib/services/cotizaciones.service';
 import { generarPDFCotizacion } from '@/lib/services/pdf-cotizacion';
 
@@ -1909,7 +1910,7 @@ async function handleCrearCotizacionCompleta(
         numeroCotizacion: cotizacion.numero,
         fechaEmision: cotizacionCompleta.fecha_emision,
         anticipoPorcentaje: cotizacionCompleta.anticipo_porcentaje,
-        condiciones: cotizacionCompleta.condiciones ?? undefined,
+        condiciones: condicionesParaEnvio(cliente.idioma, cotizacionCompleta.condiciones),
         configuracion: config,
         logoBase64,
       });
