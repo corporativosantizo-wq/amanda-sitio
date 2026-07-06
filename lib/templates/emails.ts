@@ -740,7 +740,7 @@ export function emailSolicitudPago(params: {
     <p style="color:#475569;font-size:14px;line-height:1.6;">Una vez realizado el pago, le agradecemos enviar el comprobante a este mismo correo para confirmar la recepción y proceder con el cierre del expediente correspondiente.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Si ya realizó el pago, por favor desestime este mensaje.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">Quedamos atentos a cualquier consulta.</p>
-    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong> — Despacho Jurídico<br/><a href="https://amandasantizo.com" style="color:#1e2a5a;text-decoration:none;">amandasantizo.com</a></p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong><br/>Abogada y Notaria<br/><a href="https://amandasantizo.com" style="color:#1e2a5a;text-decoration:none;">amandasantizo.com</a></p>
   `);
 
   return {

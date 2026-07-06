@@ -565,7 +565,7 @@ export function emailSolicitudPago(params: {
     <p style="color:#475569;font-size:14px;line-height:1.6;">Once the payment has been made, we would appreciate it if you could send the receipt to this email so we can confirm it.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">If you have already made this payment, please disregard this message.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">We remain at your disposal for any questions.</p>
-    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Kind regards,<br/><strong>Amanda Santizo</strong> — Law Firm<br/><a href="https://amandasantizo.com" style="color:#1e2a5a;text-decoration:none;">amandasantizo.com</a></p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Kind regards,<br/><strong>Amanda Santizo</strong><br/>Attorney and Notary<br/><a href="https://amandasantizo.com" style="color:#1e2a5a;text-decoration:none;">amandasantizo.com</a></p>
   `);
 
   return {

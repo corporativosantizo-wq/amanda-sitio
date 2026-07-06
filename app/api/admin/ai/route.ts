@@ -356,8 +356,8 @@ NUNCA envíes sin este flujo, aunque Amanda diga "envíalo" o "mándale" — eso
 
 ### Firmas por cuenta:
 Cuando envíes desde **asistente@papeleo.legal**, firma como:
-Lic. Amanda Santizo
-Despacho Jurídico
+Amanda Santizo
+Abogada y Notaria
 Tel. 2335-3613 | amandasantizo.com
 
 Cuando envíes desde **contador@papeleo.legal**, firma como:
@@ -367,8 +367,8 @@ Despacho Jurídico Amanda Santizo
 Tel. 2335-3613
 
 Cuando envíes desde **amanda@papeleo.legal**, firma como:
-Lic. Amanda Santizo
-Despacho Jurídico
+Amanda Santizo
+Abogada y Notaria
 Tel. 2335-3613 | amandasantizo.com
 
 ### Resolución de destinatarios:
