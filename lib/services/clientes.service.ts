@@ -124,6 +124,8 @@ export async function crearCliente(input: ClienteInsert): Promise<Cliente> {
       razon_social_facturacion: input.razon_social_facturacion ?? input.nombre,
       nit_facturacion: input.nit_facturacion ?? input.nit ?? 'CF',
       direccion_facturacion: input.direccion_facturacion ?? input.direccion ?? 'Ciudad',
+      idioma: input.idioma ?? 'es',
+      moneda: input.moneda ?? 'GTQ',
       notas: input.notas ?? null,
       activo: true,
     })
@@ -171,6 +173,8 @@ export async function actualizarCliente(
   if (input.nit_facturacion !== undefined) updates.nit_facturacion = input.nit_facturacion;
   if (input.direccion_facturacion !== undefined) updates.direccion_facturacion = input.direccion_facturacion;
   if (input.grupo_empresarial_id !== undefined) updates.grupo_empresarial_id = input.grupo_empresarial_id;
+  if (input.idioma !== undefined) updates.idioma = input.idioma;
+  if (input.moneda !== undefined) updates.moneda = input.moneda;
   if (input.notas !== undefined) updates.notas = input.notas;
   if (input.activo !== undefined) updates.activo = input.activo;
 
