@@ -27,18 +27,14 @@ import {
   sendMail,
 } from './outlook.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
+// Los correos al CLIENTE se seleccionan ES/EN vía plantillasDeCliente(); los
+// internos y el recordatorio de audiencia judicial quedan siempre en español.
 import {
-  emailConfirmacionCita,
-  emailRecordatorio24h,
-  emailRecordatorio1h,
-  emailCancelacionCita,
-  emailSolicitudConfirmada,
-  emailFirmaConfirmadaMultiple,
-  emailSolicitudPropuestaFecha,
-  emailSolicitudRechazada,
   emailNuevaSolicitudInterno,
   emailRecordatorioAudiencia,
 } from '@/lib/templates/emails';
+import { plantillasDeCliente } from '@/lib/templates/seleccionar';
+import { CONSULTA_INTERNACIONAL_USD } from '@/lib/templates/emails-en';
 
 const db = () => createAdminClient();
 
@@ -243,7 +239,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
       audiencia_materia, audiencia_expediente, audiencia_diligencia, audiencia_juzgado,
       audiencia_destinatarios,
       notas, created_at, updated_at,
-      cliente:clientes(id, codigo, nombre, email),
+      cliente:clientes(id, codigo, nombre, email, idioma),
       participantes:cita_participantes(id, nombre, email)
     `, { count: 'exact' });
 
@@ -265,7 +261,7 @@ export async function listarCitas(params: ListCitasParams = {}): Promise<{
 export async function obtenerCita(id: string): Promise<Cita> {
   const { data, error } = await db()
     .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email), participantes:cita_participantes(id, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma), participantes:cita_participantes(id, nombre, email)')
     .eq('id', id)
     .single();
 
@@ -344,7 +340,22 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   // explícito en input sigue ganando.
   const esModalidadSinCosto =
     input.modalidad === 'entrega_documentos' || input.modalidad === 'firma_documentos';
-  const costo = input.costo ?? (esModalidadSinCosto ? 0 : config.costo);
+  // Cliente internacional (idioma EN): la Consulta Legal cobra USD $150 en vez
+  // del default local Q500. Un costo explícito en input sigue ganando.
+  let clienteEsInternacional = false;
+  if (input.cliente_id) {
+    const { data: cliIdioma } = await db()
+      .from('clientes')
+      .select('idioma')
+      .eq('id', input.cliente_id)
+      .maybeSingle();
+    clienteEsInternacional = cliIdioma?.idioma === 'en';
+  }
+  const costoDefault =
+    clienteEsInternacional && input.tipo === 'consulta_nueva'
+      ? CONSULTA_INTERNACIONAL_USD
+      : config.costo;
+  const costo = input.costo ?? (esModalidadSinCosto ? 0 : costoDefault);
   // Las audiencias son presenciales en el juzgado: NUNCA llevan modalidad (queda
   // null, jamás el default 'virtual'), por lo que tampoco generan reunión de Teams
   // ni el correo de "Cita Confirmada". El resto de tipos conserva el default.
@@ -375,7 +386,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       audiencia_juzgado: input.audiencia_juzgado ?? null,
       audiencia_destinatarios: input.audiencia_destinatarios ?? null,
     })
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
 
   if (error) throw new CitaError('Error al crear cita', error);
@@ -451,7 +462,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   if (clienteEmail && enviaConfirmacion) {
     console.log(`[crearCita] ── Enviando email de confirmación ──`);
     try {
-      const email = emailConfirmacionCita(cita);
+      const email = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita);
       console.log('[crearCita] Template generado: from=', email.from, ', subject=', email.subject, ', html=', email.html.length, 'chars');
       await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
       console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);
@@ -558,7 +569,7 @@ export async function actualizarCita(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
 
   if (error) throw new CitaError('Error al actualizar cita', error);
@@ -593,7 +604,7 @@ export async function cancelarCita(id: string): Promise<Cita> {
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
 
   if (error) throw new CitaError('Error al cancelar cita', error);
@@ -610,7 +621,7 @@ export async function cancelarCita(id: string): Promise<Cita> {
   // Email de cancelación
   if (cita.cliente?.email) {
     try {
-      const email = emailCancelacionCita(cita);
+      const email = plantillasDeCliente(cita.cliente).emailCancelacionCita(cita);
       await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
     } catch {
       console.warn('[Citas] Error al enviar email de cancelación');
@@ -628,7 +639,7 @@ export async function completarCita(id: string): Promise<Cita> {
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
 
   if (error) throw new CitaError('Error al completar cita', error);
@@ -838,7 +849,7 @@ export async function crearSolicitudCita(input: SolicitudInsert): Promise<Cita> 
       comentarios_cliente: input.comentarios_cliente ?? null,
       notas: input.notas ?? null,
     })
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
 
   if (error) throw new CitaError('Error al crear solicitud', error);
@@ -854,7 +865,7 @@ export async function crearSolicitudCita(input: SolicitudInsert): Promise<Cita> 
 export async function listarSolicitudesPendientes(): Promise<Cita[]> {
   const { data, error } = await db()
     .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .eq('estado', 'pendiente')
     .in('modalidad', ['entrega_documentos', 'firma_documentos'])
     .order('created_at', { ascending: true });
@@ -892,7 +903,7 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
     .from('citas')
     .update(updates)
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
   if (error) throw new CitaError('Error al confirmar solicitud', error);
 
@@ -934,7 +945,7 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
     // mencionando a TODAS las partes con quienes va a firmar.
     if (cita.cliente?.email) {
       try {
-        const email = emailFirmaConfirmadaMultiple(cita, cita.cliente.nombre ?? '', firmantes, input.mensaje);
+        const email = plantillasDeCliente(cita.cliente).emailFirmaConfirmadaMultiple(cita, cita.cliente.nombre ?? '', firmantes, input.mensaje);
         await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
         await db().from('citas').update({ email_confirmacion_enviado: true }).eq('id', cita.id);
       } catch (e: any) {
@@ -944,7 +955,8 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
     for (const p of participantes) {
       if (!p.email) continue;
       try {
-        const email = emailFirmaConfirmadaMultiple(cita, p.nombre, firmantes, input.mensaje);
+        // Los participantes reciben el idioma del cliente principal de la cita.
+        const email = plantillasDeCliente(cita.cliente).emailFirmaConfirmadaMultiple(cita, p.nombre, firmantes, input.mensaje);
         await sendMail({ from: email.from, to: p.email, subject: email.subject, htmlBody: email.html });
         await db().from('cita_participantes').update({ confirmacion_enviada: true }).eq('id', p.id);
       } catch (e: any) {
@@ -954,7 +966,7 @@ export async function confirmarSolicitud(id: string, input: AccionFechaInput = {
   } else if (cita.cliente?.email) {
     // Un solo contacto: correo de confirmación estándar.
     try {
-      const email = emailSolicitudConfirmada(cita, input.mensaje);
+      const email = plantillasDeCliente(cita.cliente).emailSolicitudConfirmada(cita, input.mensaje);
       await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
       await db().from('citas').update({ email_confirmacion_enviado: true }).eq('id', cita.id);
     } catch (e: any) {
@@ -982,13 +994,13 @@ export async function proponerFechaSolicitud(id: string, input: AccionFechaInput
     .from('citas')
     .update(updates)
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
   if (error) throw new CitaError('Error al proponer fecha', error);
 
   if (cita.cliente?.email) {
     try {
-      const email = emailSolicitudPropuestaFecha(cita, input.mensaje);
+      const email = plantillasDeCliente(cita.cliente).emailSolicitudPropuestaFecha(cita, input.mensaje);
       await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
     } catch (e: any) {
       console.error('[proponerFechaSolicitud] Error email cliente:', e?.message ?? e);
@@ -1004,7 +1016,7 @@ export async function rechazarSolicitud(id: string, mensaje?: string): Promise<C
     .from('citas')
     .update({ estado: 'cancelada' as EstadoCita, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .single();
   if (error) throw new CitaError('Error al rechazar solicitud', error);
 
@@ -1014,7 +1026,7 @@ export async function rechazarSolicitud(id: string, mensaje?: string): Promise<C
 
   if (cita.cliente?.email) {
     try {
-      const email = emailSolicitudRechazada(cita, mensaje);
+      const email = plantillasDeCliente(cita.cliente).emailSolicitudRechazada(cita, mensaje);
       await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
     } catch (e: any) {
       console.error('[rechazarSolicitud] Error email cliente:', e?.message ?? e);
@@ -1116,7 +1128,7 @@ export async function enviarRecordatorios(): Promise<{
   if (enHorarioOficina) {
     const { data: citas24h } = await db()
       .from('citas')
-      .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc)')
+      .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc, idioma)')
       .eq('fecha', mananaStr)
       .eq('recordatorio_24h_enviado', false)
       // Solo citas confirmadas (las solicitudes pendientes de entrega/firma no
@@ -1164,7 +1176,7 @@ export async function enviarRecordatorios(): Promise<{
 
       if (cita.cliente?.email) {
         try {
-          const email = emailRecordatorio24h(cita);
+          const email = plantillasDeCliente(cita.cliente).emailRecordatorio24h(cita);
           await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
           await db()
             .from('citas')
@@ -1181,7 +1193,7 @@ export async function enviarRecordatorios(): Promise<{
   // Recordatorios 1h: citas de hoy cuya hora_inicio es dentro de ~1 hora
   const { data: citasHoy } = await db()
     .from('citas')
-    .select('*, cliente:clientes(id, codigo, nombre, email)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
     .eq('fecha', hoyStr)
     .eq('recordatorio_1h_enviado', false)
     // Solo citas confirmadas (ver nota en recordatorios 24h).
@@ -1198,7 +1210,7 @@ export async function enviarRecordatorios(): Promise<{
     if (diffMin > 0 && diffMin <= 75) {
       if (cita.cliente?.email) {
         try {
-          const email = emailRecordatorio1h(cita);
+          const email = plantillasDeCliente(cita.cliente).emailRecordatorio1h(cita);
           await sendMail({ from: email.from, to: cita.cliente.email, subject: email.subject, htmlBody: email.html });
           await db()
             .from('citas')
@@ -1237,7 +1249,7 @@ export async function enviarRecordatorios(): Promise<{
 
   const { data: citasFollowup } = await db()
     .from('citas')
-    .select('*, cliente:clientes(id, nombre, email)')
+    .select('*, cliente:clientes(id, nombre, email, idioma)')
     .eq('fecha', hoyStr)
     .in('tipo', ['consulta_nueva', 'seguimiento'])
     // 'pendiente' excluido: una solicitud de entrega/firma sin confirmar no

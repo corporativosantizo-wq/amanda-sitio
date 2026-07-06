@@ -16,11 +16,10 @@ import {
   sendMail,
 } from './outlook.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
-import {
-  emailConfirmacionLlamada,
-  emailRecordatorioLlamadaCliente,
-  emailRecordatorioLlamadaInterno,
-} from '@/lib/templates/emails';
+// Los correos al cliente (confirmación/recordatorio) se seleccionan ES/EN vía
+// plantillas(); el recordatorio interno a Amanda queda siempre en español.
+import { emailRecordatorioLlamadaInterno } from '@/lib/templates/emails';
+import { plantillas } from '@/lib/templates/seleccionar';
 
 const db = () => createAdminClient();
 const TZ = 'America/Guatemala';
@@ -157,8 +156,20 @@ async function crearEventoOutlookLlamada(ll: any): Promise<void> {
   }
 }
 
+// Idioma de comunicaciones de la llamada: el del cliente vinculado (ficha);
+// llamadas sin cliente registrado siempre en español.
+async function idiomaDeLlamada(ll: any): Promise<'es' | 'en'> {
+  if (!ll?.cliente_id) return 'es';
+  const { data } = await db()
+    .from('clientes')
+    .select('idioma')
+    .eq('id', ll.cliente_id)
+    .maybeSingle();
+  return data?.idioma === 'en' ? 'en' : 'es';
+}
+
 async function enviarConfirmacionLlamada(ll: any): Promise<void> {
-  const email = emailConfirmacionLlamada({
+  const email = plantillas(await idiomaDeLlamada(ll)).emailConfirmacionLlamada({
     nombre: ll.nombre_contacto,
     fecha: ll.fecha,
     hora: ll.hora,
@@ -286,7 +297,7 @@ export async function enviarRecordatoriosLlamadas(): Promise<{ llamadas: number 
     try {
       // Cliente
       if (ll.email_contacto) {
-        const e = emailRecordatorioLlamadaCliente({ nombre: ll.nombre_contacto, hora: ll.hora, asunto: ll.asunto });
+        const e = plantillas(await idiomaDeLlamada(ll)).emailRecordatorioLlamadaCliente({ nombre: ll.nombre_contacto, hora: ll.hora, asunto: ll.asunto });
         await sendMail({ from: e.from, to: ll.email_contacto, subject: e.subject, htmlBody: e.html });
       }
       // Amanda (email)

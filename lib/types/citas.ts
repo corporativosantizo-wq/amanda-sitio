@@ -98,7 +98,7 @@ export interface Cita {
   created_at: string;
   updated_at: string;
   // Join
-  cliente?: { id: string; codigo: string; nombre: string; email: string | null } | null;
+  cliente?: { id: string; codigo: string; nombre: string; email: string | null; idioma?: 'es' | 'en' | null } | null;
 }
 
 export interface CitaInsert {
