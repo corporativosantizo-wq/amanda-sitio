@@ -38,7 +38,7 @@ async function main() {
     `Antes salía en Arial sin logo; ahora debe llegar con el header de marca ` +
     `(logo + línea navy/dorada) y el pie de confidencialidad dentro de la tarjeta.\n\n` +
     `Caracteres especiales de control: á é í ó ú ñ & < > "comillas"\n\n` +
-    `Lic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`;
+    `Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`;
 
   const { data: correoTmp, error: insErr } = await db
     .from('correos_programados')
@@ -81,7 +81,7 @@ async function main() {
       `Estimado/a${nombreCliente ? ` ${nombreCliente}` : ''},\n\n` +
       `PRUEBA: le reenvío la cotización ${cot.numero}, que encontrará a continuación.\n\n` +
       `Quedamos a sus órdenes.\n\n` +
-      `Lic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`,
+      `Amanda Santizo\nAbogada y Notaria\nTel. 2335-3613 | amandasantizo.com`,
     from: 'contador@papeleo.legal',
   });
   resultados.push(`✅ PRUEBA 2 enviada (reenvío de ${cot.numero} con cotización completa y mensaje arriba)`);
@@ -126,3 +126,5 @@ main().catch((err) => {
   console.error('\n❌ Error en la prueba:', err.message ?? err);
   process.exit(1);
 });
+
+export {}; // módulo aislado — evita colisiones de scope global entre scripts

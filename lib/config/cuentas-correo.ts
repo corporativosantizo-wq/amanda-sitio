@@ -31,7 +31,7 @@ export const CUENTAS_CORREO: Array<{ value: string; label: string; firma: string
   {
     value: 'amanda@papeleo.legal',
     label: '⭐ Amanda',
-    firma: 'Licenciada Amanda Santizo | Abogada y Notaria',
+    firma: 'Amanda Santizo | Abogada y Notaria',
   },
 ];
 
@@ -48,7 +48,10 @@ export function firmaDeCuenta(cuenta: string): string {
 
 // Firmas anteriores al cambio de julio 2026 que todavía pueden estar horneadas
 // en borradores pendientes generados antes — swapFirma también las reconoce.
-const FIRMAS_LEGACY = ['Lic. Amanda Santizo | Despacho Jurídico'];
+const FIRMAS_LEGACY = [
+  'Lic. Amanda Santizo | Despacho Jurídico',
+  'Licenciada Amanda Santizo | Abogada y Notaria', // pre-unificación firma (jul-2026)
+];
 
 // Reemplaza en `texto` la firma de `cuentaVieja` (o una legacy) por la de
 // `cuentaNueva`. Devuelve null si no encuentra ninguna firma conocida — el

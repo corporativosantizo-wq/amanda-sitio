@@ -479,7 +479,8 @@ export async function generarBorradorInforme(cotizacionId: string): Promise<{
   lineas.push('Quedamos a su disposición para cualquier consulta.');
   lineas.push('');
   lineas.push('Atentamente,');
-  lineas.push('Amanda Santizo — Despacho Jurídico');
+  lineas.push('Amanda Santizo');
+  lineas.push('Abogada y Notaria');
 
   return {
     asunto: `Avance de trámites — Cotización ${numero}`,

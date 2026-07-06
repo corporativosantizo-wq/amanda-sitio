@@ -988,7 +988,7 @@ function EnviarCotizacionModal({ cotizacion, modo, onClose, onSuccess }: {
   const [to, setTo] = useState(cliente.email ?? '');
   const [subject, setSubject] = useState(`Cotización ${cotizacion.numero} — Despacho Jurídico Amanda Santizo`);
   const [mensaje, setMensaje] = useState(
-    `Estimado/a ${cliente.nombre ?? ''},\n\nAdjunto la cotización ${cotizacion.numero}.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLic. Amanda Santizo — Despacho Jurídico`,
+    `Estimado/a ${cliente.nombre ?? ''},\n\nAdjunto la cotización ${cotizacion.numero}.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nAmanda Santizo\nAbogada y Notaria`,
   );
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);

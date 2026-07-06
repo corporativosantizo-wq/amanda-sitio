@@ -1,18 +1,23 @@
 // ============================================================================
 // lib/templates/seguimiento-cotizacion-email.ts
-// HTML email profesional para la plantilla "Seguimiento de cotización"
-// (Reporte de avance). Diseñado para ser email-safe (tablas, inline styles,
-// sin flexbox).
+// HTML email para la plantilla "Seguimiento de cotización" (Reporte de avance).
+// Email-safe (tablas, inline styles, sin flexbox).
 //
-// Diseño de marca unificado con los correos de audiencias: header blanco con
-// el logo embebido inline (CID) + borde navy y línea dorada, recuadros azul
-// claro, acentos navy/dorado (sin teal/verde de chrome). El logo se adjunta
-// como inline attachment en la capa de ENVÍO (ver logoReporteInlineAttachment).
+// Rediseño jul-2026 (aprobado por Amanda): el correo comunica UN estado del
+// trámite que Amanda elige (banner dominante bajo el logo), seguido del
+// mensaje de detalle y — solo en "espera_documentos" — la lista de documentos
+// que el cliente debe entregar. El bloque de "trámites registrados" y su
+// heurística ✓/→ se eliminaron: el cliente que no lee con atención debe
+// entender el punto del trámite de un vistazo.
+//
+// Diseño de marca unificado: header blanco con logo inline (CID) + borde navy
+// y línea dorada. El logo se adjunta en la capa de ENVÍO (sendMail detecta el
+// CID — ver lib/assets/brand-logo.ts).
 // ============================================================================
 
 import { LOGO_AUDIENCIA_BASE64 } from '@/lib/assets/logo-audiencia-base64';
 
-// Paleta del despacho (colores del logo), idéntica a audiencias-emails.ts.
+// Paleta del despacho (colores del logo), idéntica a emails.ts / audiencias.
 const NAVY = '#1e2a5a';
 const GOLD = '#c2a05a';
 const AZUL_CLARO = '#eef2f9'; // recuadros de info
@@ -29,44 +34,74 @@ export function logoReporteInlineAttachment(): {
   return { name: 'logo.png', contentType: 'image/png', contentBytes: LOGO_AUDIENCIA_BASE64, contentId: LOGO_REPORTE_CID, isInline: true };
 }
 
-export type EstadoTramiteEmail = 'pendiente' | 'en_proceso' | 'completado' | 'suspendido';
+// ── Estados del trámite ─────────────────────────────────────────────────────
 
-export interface AvanceEmail {
-  fecha: string;        // YYYY-MM-DD
-  descripcion: string;
-  completado?: boolean; // si true → ✓, si false → →
+export type EstadoSeguimiento =
+  | 'finalizado'
+  | 'en_avance'
+  | 'revision_autoridad'
+  | 'espera_documentos';
+
+interface EstadoInfo {
+  icono: string;
+  label: string;
+  /** Subtítulo del banner: qué significa para el cliente. */
+  sub: string;
+  /** Pista corta para el panel admin. */
+  hint: string;
+  /** Colores del banner (email-safe, inline). */
+  bg: string;
+  border: string;      // valor CSS completo, p.ej. '1px solid #c3cde4'
+  labelColor: string;
+  kickerColor: string;
+  subColor: string;
 }
 
-export interface TramiteEmail {
-  nombre: string;
-  estado: EstadoTramiteEmail;
-  avances: AvanceEmail[];
-}
+export const ESTADO_SEGUIMIENTO_INFO: Record<EstadoSeguimiento, EstadoInfo> = {
+  finalizado: {
+    icono: '✅', label: 'Trámite finalizado',
+    sub: 'Su trámite ha concluido. No se requiere ninguna acción de su parte.',
+    hint: 'Cierre del servicio',
+    bg: NAVY, border: `1px solid ${NAVY}`,
+    labelColor: '#ffffff', kickerColor: GOLD, subColor: '#c9d2ec',
+  },
+  en_avance: {
+    icono: '🔄', label: 'En avance',
+    sub: 'Estamos trabajando en su trámite. No se requiere ninguna acción de su parte.',
+    hint: 'Trabajo en curso',
+    bg: AZUL_CLARO, border: `1px solid ${AZUL_BORDE}`,
+    labelColor: NAVY, kickerColor: '#64748b', subColor: '#475569',
+  },
+  revision_autoridad: {
+    icono: '🏛️', label: 'En revisión de la autoridad',
+    sub: 'El expediente está en manos de la institución correspondiente; el plazo de respuesta depende de ella.',
+    hint: 'Registro, juzgado, etc.',
+    bg: '#ffffff', border: `2px solid ${NAVY}`,
+    labelColor: NAVY, kickerColor: '#64748b', subColor: '#475569',
+  },
+  espera_documentos: {
+    icono: '⏳', label: 'En espera — faltan documentos',
+    sub: 'Necesitamos documentos de su parte para poder continuar. Vea la lista más abajo.',
+    hint: 'Requiere acción del cliente',
+    bg: '#fef3c7', border: '1px solid #fcd34d',
+    labelColor: '#92400e', kickerColor: '#b45309', subColor: '#78350f',
+  },
+};
+
+// ── Datos del correo ────────────────────────────────────────────────────────
 
 export interface SeguimientoCotizacionData {
   numeroCotizacion: string;
   clienteNombre: string;
   asuntoCotizacion: string;
-  fechaReporte: string;     // YYYY-MM-DD
-  detalleAvance: string;    // texto libre del usuario
-  tramites: TramiteEmail[];
+  fechaReporte: string;            // YYYY-MM-DD
+  estado: EstadoSeguimiento;
+  detalleAvance: string;           // mensaje libre de Amanda (protagonista)
+  /** Solo se muestra con estado 'espera_documentos'. Uno por entrada. */
+  documentosFaltantes?: string[];
 }
 
-const ESTADO_LABEL: Record<EstadoTramiteEmail, string> = {
-  pendiente: 'Pendiente',
-  en_proceso: 'En proceso',
-  completado: 'Completado',
-  suspendido: 'Suspendido',
-};
-
-// Badges de estado: navy/dorado/azul claro en vez de teal/verde. "Completado"
-// usa navy sólido (señal fuerte de cierre); "suspendido" mantiene ámbar (alerta).
-const ESTADO_BADGE: Record<EstadoTramiteEmail, { bg: string; color: string; border: string }> = {
-  pendiente:  { bg: '#f1f5f9', color: '#64748b', border: '#cbd5e1' },
-  en_proceso: { bg: AZUL_CLARO, color: NAVY,      border: AZUL_BORDE },
-  completado: { bg: NAVY,       color: '#ffffff', border: NAVY },
-  suspendido: { bg: '#fef3c7',  color: '#92400e', border: '#fcd34d' },
-};
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function escapeHtml(s: string): string {
   return String(s ?? '')
@@ -81,14 +116,6 @@ function nl2br(s: string): string {
   return escapeHtml(s).replace(/\n/g, '<br>');
 }
 
-function formatearFechaCorta(yyyymmdd: string): string {
-  if (!yyyymmdd) return '';
-  const d = new Date(`${yyyymmdd}T12:00:00-06:00`);
-  return d.toLocaleDateString('es-GT', {
-    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala',
-  });
-}
-
 function formatearFechaLarga(yyyymmdd: string): string {
   if (!yyyymmdd) return '';
   const d = new Date(`${yyyymmdd}T12:00:00-06:00`);
@@ -98,90 +125,68 @@ function formatearFechaLarga(yyyymmdd: string): string {
   });
 }
 
-function badgeEstado(estado: EstadoTramiteEmail): string {
-  const c = ESTADO_BADGE[estado];
-  return `<span style="display:inline-block;padding:3px 10px;font-size:11px;font-weight:600;letter-spacing:0.3px;text-transform:uppercase;color:${c.color};background:${c.bg};border:1px solid ${c.border};border-radius:999px;">${ESTADO_LABEL[estado]}</span>`;
+// ── Asunto ──────────────────────────────────────────────────────────────────
+
+/** El asunto lleva el estado para que se entienda desde la bandeja de entrada. */
+export function asuntoSeguimientoCotizacion(estado: EstadoSeguimiento, numero: string): string {
+  const e = ESTADO_SEGUIMIENTO_INFO[estado];
+  return `${e.icono} ${e.label} · Cotización ${numero} — Reporte de avance`;
 }
 
-function renderAvances(avances: AvanceEmail[]): string {
-  if (avances.length === 0) {
-    return `<p style="margin:8px 0 0;color:#94a3b8;font-size:13px;font-style:italic;">Sin avances registrados aún.</p>`;
-  }
-  const ordenados = [...avances].sort((a, b) => a.fecha.localeCompare(b.fecha));
+// ── HTML ────────────────────────────────────────────────────────────────────
+
+function bannerEstado(estado: EstadoSeguimiento): string {
+  const e = ESTADO_SEGUIMIENTO_INFO[estado];
   return `
-    <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:10px;">
-      ${ordenados.map(a => {
-        const completado = a.completado !== false;
-        // ✓ completado → navy sólido; → en curso → azul claro con navy. Sin teal.
-        const marker = completado ? '✓' : '→';
-        const markerColor = completado ? '#ffffff' : NAVY;
-        const markerBg = completado ? NAVY : AZUL_CLARO;
-        const textColor = completado ? '#334155' : '#1e293b';
-        const weight = completado ? '400' : '600';
-        return `
-          <tr>
-            <td style="padding:4px 0;width:28px;vertical-align:top;">
-              <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;font-size:12px;font-weight:700;color:${markerColor};background:${markerBg};border-radius:50%;">${marker}</span>
-            </td>
-            <td style="padding:4px 0 4px 4px;vertical-align:top;">
-              <span style="font-size:12px;color:#64748b;font-weight:600;">${escapeHtml(formatearFechaCorta(a.fecha))}</span>
-              <span style="font-size:13px;color:${textColor};font-weight:${weight};margin-left:6px;">— ${escapeHtml(a.descripcion)}</span>
-            </td>
-          </tr>
-        `;
-      }).join('')}
-    </table>
-  `;
+        <tr>
+          <td style="padding:18px 28px 0;">
+            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:${e.bg};border:${e.border};border-radius:12px;">
+              <tr>
+                <td style="padding:20px 12px 20px 22px;width:46px;vertical-align:middle;font-size:34px;line-height:1;">${e.icono}</td>
+                <td style="padding:20px 22px 20px 6px;vertical-align:middle;">
+                  <p style="margin:0 0 3px;font-size:10px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:${e.kickerColor};">Estado de su trámite</p>
+                  <p style="margin:0;font-size:21px;font-weight:800;line-height:1.25;color:${e.labelColor};">${e.label}</p>
+                  <p style="margin:5px 0 0;font-size:13px;line-height:1.5;color:${e.subColor};">${e.sub}</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>`;
 }
 
-function renderTramite(t: TramiteEmail): string {
+function docsFaltantes(documentos: string[]): string {
+  const items = documentos
+    .map(d => d.trim())
+    .filter(Boolean)
+    .map((d, i) => `
+              <tr>
+                <td style="padding:5px 10px 5px 0;width:24px;vertical-align:top;">
+                  <span style="display:inline-block;width:21px;height:21px;line-height:21px;text-align:center;border-radius:50%;background:#92400e;color:#ffffff;font-size:11px;font-weight:700;">${i + 1}</span>
+                </td>
+                <td style="padding:5px 0;vertical-align:top;font-size:14px;font-weight:600;color:#1f2937;line-height:1.45;">${escapeHtml(d)}</td>
+              </tr>`)
+    .join('');
+  if (!items) return '';
   return `
-    <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-bottom:16px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
-      <tr>
-        <td style="padding:14px 18px;background:${AZUL_CLARO};border-bottom:1px solid ${AZUL_BORDE};">
-          <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-            <tr>
-              <td style="vertical-align:middle;">
-                <span style="font-size:14px;font-weight:600;color:${NAVY};">${escapeHtml(t.nombre)}</span>
-              </td>
-              <td style="vertical-align:middle;text-align:right;white-space:nowrap;">
-                ${badgeEstado(t.estado)}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:10px 18px 14px;">
-          ${renderAvances(t.avances)}
-        </td>
-      </tr>
-    </table>
-  `;
-}
-
-export function asuntoSeguimientoCotizacion(numero: string, clienteNombre: string): string {
-  return `Reporte de avance — Cotización ${numero} — ${clienteNombre}`;
+        <tr>
+          <td style="padding:20px 32px 0;">
+            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;">
+              <tr><td style="padding:16px 18px;">
+                <p style="margin:0 0 10px;font-size:13px;font-weight:800;color:#92400e;letter-spacing:0.3px;">📋 Documentos que necesitamos de usted</p>
+                <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">${items}
+                </table>
+                <p style="margin:12px 0 0;font-size:12px;color:#92400e;">Puede enviarlos respondiendo a este correo o entregarlos en nuestra oficina.</p>
+              </td></tr>
+            </table>
+          </td>
+        </tr>`;
 }
 
 export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData): string {
   const fechaLarga = formatearFechaLarga(data.fechaReporte);
-  const tramitesHtml = data.tramites.length > 0
-    ? data.tramites.map(renderTramite).join('')
-    : `<p style="margin:0;color:#94a3b8;font-size:13px;font-style:italic;">Esta cotización aún no tiene trámites registrados.</p>`;
-
-  const comentariosHtml = data.detalleAvance.trim()
-    ? `
-      <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:24px;background:${AZUL_CLARO};border-left:4px solid ${NAVY};border-radius:6px;">
-        <tr>
-          <td style="padding:14px 18px;">
-            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:${NAVY};text-transform:uppercase;letter-spacing:0.5px;">Comentarios adicionales</p>
-            <div style="font-size:14px;color:#0f172a;line-height:1.6;">${nl2br(data.detalleAvance)}</div>
-          </td>
-        </tr>
-      </table>
-    `
-    : '';
+  const esEspera = data.estado === 'espera_documentos';
+  const docsHtml = esEspera ? docsFaltantes(data.documentosFaltantes ?? []) : '';
+  const detalle = data.detalleAvance.trim();
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -203,67 +208,32 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
           </td>
         </tr>
 
-        <!-- DATOS DEL CASO -->
-        <tr>
-          <td style="padding:28px 32px 8px;">
-            <p style="margin:0;color:${NAVY};font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Reporte de avance</p>
-            <p style="margin:14px 0 16px;color:#334155;font-size:15px;line-height:1.6;">Estimado/a <strong style="color:#0f172a;">${escapeHtml(data.clienteNombre)}</strong>, le informamos sobre el avance del trámite vinculado a la cotización indicada a continuación.</p>
+        <!-- BANNER DE ESTADO (dominante) -->
+        ${bannerEstado(data.estado)}
 
-            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:10px;">
-              <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
-                  <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-                    <tr>
-                      <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Cotización</td>
-                      <td style="font-size:14px;color:${NAVY};font-weight:700;font-family:'Courier New',monospace;">${escapeHtml(data.numeroCotizacion)}</td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
-                  <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-                    <tr>
-                      <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Cliente</td>
-                      <td style="font-size:14px;color:#0f172a;font-weight:600;">${escapeHtml(data.clienteNombre)}</td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:14px 18px;border-bottom:1px solid ${AZUL_BORDE};">
-                  <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-                    <tr>
-                      <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Servicio</td>
-                      <td style="font-size:14px;color:#0f172a;">${escapeHtml(data.asuntoCotizacion || 'Servicios profesionales')}</td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:14px 18px;">
-                  <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-                    <tr>
-                      <td style="font-size:11px;color:#64748b;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;width:38%;">Fecha del reporte</td>
-                      <td style="font-size:14px;color:#0f172a;text-transform:capitalize;">${escapeHtml(fechaLarga)}</td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
+        <!-- REFERENCIA COMPACTA -->
+        <tr>
+          <td style="padding:18px 32px 0;">
+            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:8px;">
+              <tr><td style="padding:10px 14px;font-size:12.5px;color:#475569;line-height:1.5;">
+                Cotización <span style="color:${NAVY};font-weight:700;font-family:'Courier New',monospace;font-size:13px;">${escapeHtml(data.numeroCotizacion)}</span>
+                &nbsp;·&nbsp; ${escapeHtml(data.asuntoCotizacion || 'Servicios profesionales')}
+                &nbsp;·&nbsp; <span style="text-transform:capitalize;">${escapeHtml(fechaLarga)}</span>
+              </td></tr>
             </table>
           </td>
         </tr>
 
-        <!-- TRÁMITES -->
+        <!-- DETALLE DEL AVANCE (mensaje de Amanda, protagonista) -->
         <tr>
-          <td style="padding:24px 32px 8px;">
-            <h2 style="margin:0 0 14px;font-size:13px;font-weight:700;color:${NAVY};letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid ${GOLD};padding-bottom:8px;">Estado de los trámites</h2>
-            ${tramitesHtml}
+          <td style="padding:22px 32px 0;">
+            <h2 style="margin:0 0 12px;font-size:12px;font-weight:700;color:${NAVY};letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid ${GOLD};padding-bottom:7px;">Detalle del avance</h2>
+            <p style="margin:0;font-size:15px;line-height:1.7;color:#0f172a;">${detalle ? nl2br(detalle) : `<span style="color:#94a3b8;font-style:italic;">Estimado/a ${escapeHtml(data.clienteNombre)}, le informamos sobre el avance de su trámite.</span>`}</p>
           </td>
         </tr>
 
-        <!-- COMENTARIOS -->
-        ${comentariosHtml ? `<tr><td style="padding:0 32px 8px;">${comentariosHtml}</td></tr>` : ''}
+        <!-- DOCUMENTOS FALTANTES (solo estado "espera_documentos") -->
+        ${docsHtml}
 
         <!-- CIERRE -->
         <tr>
@@ -275,8 +245,8 @@ export function generarHtmlSeguimientoCotizacion(data: SeguimientoCotizacionData
         <!-- FIRMA + FOOTER -->
         <tr>
           <td style="padding:24px 32px 28px;border-top:1px solid #e2e8f0;background:#f9fafb;">
-            <p style="margin:0;font-size:14px;font-weight:700;color:${NAVY};">Lcda. Amanda Santizo</p>
-            <p style="margin:2px 0 0;font-size:12px;color:#64748b;">Colegiado No. 19565 · Abogada y Notaria</p>
+            <p style="margin:0;font-size:14px;font-weight:700;color:${NAVY};">Amanda Santizo</p>
+            <p style="margin:2px 0 0;font-size:12px;color:#64748b;">Abogada y Notaria</p>
             <table cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
               <tr>
                 <td style="padding-right:14px;font-size:12px;color:#475569;">📞 2335-3613</td>

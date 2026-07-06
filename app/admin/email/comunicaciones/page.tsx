@@ -16,7 +16,8 @@ import type { CampoExtra, CampoExtraLookup, LookupResult } from '@/lib/types/pla
 import {
   generarHtmlSeguimientoCotizacion,
   asuntoSeguimientoCotizacion,
-  type EstadoTramiteEmail,
+  ESTADO_SEGUIMIENTO_INFO,
+  type EstadoSeguimiento,
 } from '@/lib/templates/seguimiento-cotizacion-email';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -176,17 +177,17 @@ function NuevoCorreoTab() {
   const [camposExtra, setCamposExtra] = useState<Record<string, string>>({});
   const [cuenta, setCuenta] = useState('amanda@papeleo.legal');
 
-  // Seguimiento de cotización — datos para generar el HTML
+  // Seguimiento de cotización — datos para generar el HTML. El endpoint aún
+  // devuelve trámites/avances pero el correo rediseñado ya no los usa: el
+  // estado lo elige Amanda (banner) y el detalle es su mensaje.
   const [seguimientoData, setSeguimientoData] = useState<{
     cotizacion: {
       id: string; numero: string; fecha_emision: string; asunto: string;
       cliente: { id: string; nombre: string; email: string | null; nit: string | null } | null;
     };
-    tramites: Array<{
-      id: string; nombre: string; estado: EstadoTramiteEmail;
-      avances: Array<{ id: string; fecha: string; descripcion: string }>;
-    }>;
   } | null>(null);
+  const [seguimientoEstado, setSeguimientoEstado] = useState<EstadoSeguimiento>('en_avance');
+  const [seguimientoDocs, setSeguimientoDocs] = useState(''); // un documento por línea
 
   // Seguimiento a proveedor — proveedor seleccionado + sus gestiones
   const [provSelId, setProvSelId] = useState('');
@@ -253,6 +254,8 @@ function NuevoCorreoTab() {
   const seleccionarPlantilla = (id: string | null) => {
     setPlantillaId(id);
     setSeguimientoData(null);
+    setSeguimientoEstado('en_avance');
+    setSeguimientoDocs('');
     // Limpia estado de seguimiento a proveedor al cambiar de plantilla.
     setProvSelId('');
     setGestionesProv([]);
@@ -568,8 +571,8 @@ function NuevoCorreoTab() {
 
   // Apply extra fields to content
   const aplicarCampos = useCallback(() => {
-    // Caso especial: seguimiento-cotizacion → generar HTML profesional con
-    // trámites/avances en lugar de hacer string replacement sobre el template.
+    // Caso especial: seguimiento-cotizacion → generar el HTML rediseñado con
+    // el estado que eligió Amanda + su detalle (+ documentos si es espera).
     if (esSeguimientoCotizacion && seguimientoData) {
       const cot = seguimientoData.cotizacion;
       const nombreCliente = cot.cliente?.nombre || clienteNombre || 'Cliente';
@@ -582,25 +585,14 @@ function NuevoCorreoTab() {
         clienteNombre: nombreCliente,
         asuntoCotizacion: asuntoCot,
         fechaReporte: new Date().toISOString().slice(0, 10),
+        estado: seguimientoEstado,
         detalleAvance: detalle,
-        tramites: seguimientoData.tramites.map((t, idx, arr) => ({
-          nombre: t.nombre,
-          estado: t.estado,
-          avances: t.avances.map((a, ai) => ({
-            fecha: a.fecha,
-            descripcion: a.descripcion,
-            // Heurística: si el trámite está completado, todos los avances son ✓;
-            // si está pendiente/suspendido todos son →; si en_proceso, el último
-            // (por fecha ascendente) es → y los demás ✓.
-            completado: t.estado === 'completado' ? true
-              : t.estado === 'en_proceso'
-                ? ai !== t.avances.length - 1
-                : false,
-          })),
-        })),
+        documentosFaltantes: seguimientoEstado === 'espera_documentos'
+          ? seguimientoDocs.split('\n').map(d => d.trim()).filter(Boolean)
+          : undefined,
       });
 
-      setAsunto(asuntoSeguimientoCotizacion(numeroCot, nombreCliente));
+      setAsunto(asuntoSeguimientoCotizacion(seguimientoEstado, numeroCot));
       setCuerpo(html);
       return;
     }
@@ -662,7 +654,7 @@ function NuevoCorreoTab() {
 
     setAsunto(a);
     setCuerpo(cuerpoFinal);
-  }, [asunto, cuerpo, camposExtra, camposExtraCompletos, esSeguimientoCotizacion, seguimientoData, clienteNombre]);
+  }, [asunto, cuerpo, camposExtra, camposExtraCompletos, esSeguimientoCotizacion, seguimientoData, seguimientoEstado, seguimientoDocs, clienteNombre]);
 
   // Upload attachments.
   // Recibe un array de File (snapshot ya tomado en el onChange/onDrop) — NO el
@@ -784,6 +776,8 @@ function NuevoCorreoTab() {
         setCamposExtra({});
         setAdjuntos([]);
         setSeguimientoData(null);
+        setSeguimientoEstado('en_avance');
+        setSeguimientoDocs('');
         setProvSelId('');
         setGestionesProv([]);
         setGestionesSel(new Set());
@@ -1015,6 +1009,54 @@ function NuevoCorreoTab() {
           {plantilla && camposExtraCompletos.length > 0 && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
               <p className="text-xs font-medium text-blue-700">Campos de la plantilla</p>
+
+              {/* Seguimiento de cotización: estado del trámite (banner del correo) */}
+              {esSeguimientoCotizacion && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-blue-600 font-medium">Estado del trámite</label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {(Object.keys(ESTADO_SEGUIMIENTO_INFO) as EstadoSeguimiento[]).map((key) => {
+                        const info = ESTADO_SEGUIMIENTO_INFO[key];
+                        const activo = seguimientoEstado === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setSeguimientoEstado(key)}
+                            aria-pressed={activo}
+                            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 text-left text-sm font-medium transition-all ${
+                              activo
+                                ? 'border-[#1e2a5a] bg-white text-slate-900 shadow-sm'
+                                : 'border-slate-200 bg-white/60 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            <span className="text-lg leading-none">{info.icono}</span>
+                            <span>
+                              {info.label}
+                              <span className="block text-[11px] font-normal text-slate-400">{info.hint}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {seguimientoEstado === 'espera_documentos' && (
+                    <div className="border-l-[3px] border-amber-400 pl-3">
+                      <label className="text-xs text-blue-600 font-medium">Documentos faltantes (uno por línea)</label>
+                      <textarea
+                        value={seguimientoDocs}
+                        onChange={e => setSeguimientoDocs(e.target.value)}
+                        rows={4}
+                        placeholder={'Fotocopia legalizada del DPI\nRecibo de servicios de la sede social'}
+                        className="w-full mt-1 px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/20 bg-white"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">Se muestran al cliente como lista numerada destacada.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {camposExtraCompletos.map((campo: CampoExtra) => (
                   <div key={campo.key}>
