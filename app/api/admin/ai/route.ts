@@ -50,6 +50,8 @@ import {
   emailAvisoAudiencia,
   emailWrapper,
 } from '@/lib/templates/emails';
+// Selección ES/EN por idioma del cliente (comunicaciones internacionales)
+import { plantillas, plantillasDeCliente } from '@/lib/templates/seleccionar';
 import {
   crearCotizacion,
   obtenerCotizacion,
@@ -927,6 +929,9 @@ async function handleEnviarEmail(
   let destinatarioEmail: string;
   let destinatarioNombre: string;
   let clienteNit = 'CF';
+  // Idioma de comunicaciones: EN solo si el cliente está marcado internacional;
+  // email_directo (sin ficha) siempre en español.
+  let idiomaDestinatario: 'es' | 'en' = 'es';
 
   if (emailDirecto?.trim()) {
     // Direct email — no DB lookup needed
@@ -939,7 +944,7 @@ async function handleEnviarEmail(
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
 
     if (isUUID) {
-      const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
+      const { data, error } = await db.from('clientes').select('id, nombre, email, nit, idioma').eq('id', clienteId).single();
       if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
       cliente = data;
     } else {
@@ -956,23 +961,31 @@ async function handleEnviarEmail(
     destinatarioEmail = cliente.email;
     destinatarioNombre = cliente.nombre;
     clienteNit = cliente.nit ?? 'CF';
+    if (cliente.idioma === 'en') {
+      idiomaDestinatario = 'en';
+    } else if (cliente.id && cliente.idioma === undefined) {
+      // buscarContacto no trae idioma — resolverlo de la ficha
+      const { data: cliIdioma } = await db.from('clientes').select('idioma').eq('id', cliente.id).maybeSingle();
+      if (cliIdioma?.idioma === 'en') idiomaDestinatario = 'en';
+    }
   } else {
     throw new Error('Se requiere cliente_id o email_directo para enviar un email.');
   }
 
-  // 2. Build email from template
+  // 2. Build email from template (juego ES o EN según la ficha del cliente)
+  const T = plantillas(idiomaDestinatario);
   let from: MailboxAlias;
   let subject: string;
   let html: string;
 
   switch (tipoEmail) {
     case 'documentos_disponibles': {
-      const t = emailDocumentosDisponibles({ clienteNombre: destinatarioNombre });
+      const t = T.emailDocumentosDisponibles({ clienteNombre: destinatarioNombre });
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
     case 'actualizacion_expediente': {
-      const t = emailActualizacionExpediente({
+      const t = T.emailActualizacionExpediente({
         clienteNombre: destinatarioNombre,
         expediente: datos?.expediente ?? 'N/A',
         novedad: datos?.novedad ?? 'Sin detalle',
@@ -981,12 +994,12 @@ async function handleEnviarEmail(
       break;
     }
     case 'bienvenida_cliente': {
-      const t = emailBienvenidaCliente({ clienteNombre: destinatarioNombre });
+      const t = T.emailBienvenidaCliente({ clienteNombre: destinatarioNombre });
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
     case 'solicitud_documentos': {
-      const t = emailSolicitudDocumentos({
+      const t = T.emailSolicitudDocumentos({
         clienteNombre: destinatarioNombre,
         documentos: datos?.documentos ?? ['Documentos pendientes'],
         plazo: datos?.plazo,
@@ -995,7 +1008,7 @@ async function handleEnviarEmail(
       break;
     }
     case 'aviso_audiencia': {
-      const t = emailAvisoAudiencia({
+      const t = T.emailAvisoAudiencia({
         clienteNombre: destinatarioNombre,
         fecha: datos?.fecha ?? new Date().toISOString().split('T')[0],
         hora: datos?.hora ?? '09:00',
@@ -1012,11 +1025,11 @@ async function handleEnviarEmail(
       if (!datos?.cita_id) throw new Error('Se requiere cita_id para confirmación de cita');
       const { data: cita, error } = await db
         .from('citas')
-        .select('*, cliente:clientes(id, nombre, email)')
+        .select('*, cliente:clientes(id, nombre, email, idioma)')
         .eq('id', datos.cita_id)
         .single();
       if (error || !cita) throw new Error(`Cita no encontrada: ${datos.cita_id}`);
-      const t = emailConfirmacionCita(cita);
+      const t = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita);
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
@@ -1024,16 +1037,16 @@ async function handleEnviarEmail(
       if (!datos?.cita_id) throw new Error('Se requiere cita_id para recordatorio de cita');
       const { data: cita, error } = await db
         .from('citas')
-        .select('*, cliente:clientes(id, nombre, email)')
+        .select('*, cliente:clientes(id, nombre, email, idioma)')
         .eq('id', datos.cita_id)
         .single();
       if (error || !cita) throw new Error(`Cita no encontrada: ${datos.cita_id}`);
-      const t = emailRecordatorio24h(cita);
+      const t = plantillasDeCliente(cita.cliente).emailRecordatorio24h(cita);
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
     case 'solicitud_pago': {
-      const t = emailSolicitudPago({
+      const t = T.emailSolicitudPago({
         clienteNombre: destinatarioNombre,
         concepto: datos?.concepto ?? 'Servicios legales',
         monto: datos?.monto ?? 0,
@@ -1043,7 +1056,7 @@ async function handleEnviarEmail(
       break;
     }
     case 'comprobante_pago': {
-      const t = emailPagoRecibido({
+      const t = T.emailPagoRecibido({
         clienteNombre: destinatarioNombre,
         concepto: datos?.concepto ?? 'Servicios legales',
         monto: datos?.monto ?? 0,
@@ -1053,7 +1066,7 @@ async function handleEnviarEmail(
       break;
     }
     case 'cotizacion': {
-      const t = emailCotizacion({
+      const t = T.emailCotizacion({
         clienteNombre: destinatarioNombre,
         servicios: datos?.servicios ?? [],
         vigencia: datos?.vigencia,
@@ -1062,7 +1075,7 @@ async function handleEnviarEmail(
       break;
     }
     case 'estado_cuenta': {
-      const t = emailEstadoCuenta({
+      const t = T.emailEstadoCuenta({
         clienteNombre: destinatarioNombre,
         movimientos: datos?.movimientos ?? [],
         saldo: datos?.saldo ?? 0,
@@ -1216,13 +1229,17 @@ async function handleConfirmarPago(
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
 
   if (isUUID) {
-    const { data, error } = await db.from('clientes').select('id, nombre, email').eq('id', clienteId).single();
+    const { data, error } = await db.from('clientes').select('id, nombre, email, idioma').eq('id', clienteId).single();
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
     const contactos = await buscarContacto(db, clienteId, 1);
     if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
     cliente = contactos[0];
+    if (cliente.id) {
+      const { data: cliIdioma } = await db.from('clientes').select('idioma').eq('id', cliente.id).maybeSingle();
+      cliente.idioma = cliIdioma?.idioma ?? 'es';
+    }
   }
 
   // 2. Register + confirm payment in one step
@@ -1240,7 +1257,7 @@ async function handleConfirmarPago(
   // 3. Send comprobante email from contador@
   if (cliente.email) {
     try {
-      const t = emailPagoRecibido({
+      const t = plantillasDeCliente(cliente).emailPagoRecibido({
         clienteNombre: cliente.nombre,
         concepto,
         monto,
@@ -1790,7 +1807,7 @@ async function handleCrearCotizacionCompleta(
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteId);
 
   if (isUUID) {
-    const { data, error } = await db.from('clientes').select('id, nombre, email, nit').eq('id', clienteId).single();
+    const { data, error } = await db.from('clientes').select('id, nombre, email, nit, idioma').eq('id', clienteId).single();
     if (error || !data) throw new Error(`Cliente no encontrado con ID: ${clienteId}`);
     cliente = data;
   } else {
@@ -1798,7 +1815,12 @@ async function handleCrearCotizacionCompleta(
     if (!contactos.length) throw new Error(`Contacto no encontrado: "${clienteId}"`);
     cliente = contactos[0];
     cliente.nit = await fetchContactoNit(db, cliente);
+    if (cliente.id) {
+      const { data: cliIdioma } = await db.from('clientes').select('idioma').eq('id', cliente.id).maybeSingle();
+      cliente.idioma = cliIdioma?.idioma ?? 'es';
+    }
   }
+  const esClienteEn = cliente.idioma === 'en';
 
   // 2. Create cotizacion in DB (reuses existing service: numero, IVA, anticipo, conditions)
   const cotizacionItems = items.map((item, idx) => ({
@@ -1876,7 +1898,7 @@ async function handleCrearCotizacionCompleta(
         logoBase64 = fs.readFileSync(logoPath).toString('base64');
       } catch { /* fallback to text */ }
 
-      const emailTemplate = emailCotizacion({
+      const emailTemplate = plantillasDeCliente(cliente).emailCotizacion({
         clienteNombre: cliente.nombre,
         servicios: serviciosEmail,
         subtotal: cotizacionCompleta.subtotal,
@@ -1894,17 +1916,25 @@ async function handleCrearCotizacionCompleta(
 
       const pdfBase64 = pdfBuffer.toString('base64');
 
+      // Cliente internacional (EN): el correo va en inglés y SIN el PDF adjunto
+      // (el PDF de cotización es la versión ES con número de colegiado — regla
+      // de Amanda: nunca exponer el colegiado en comunicaciones EN). El PDF
+      // queda igual en Storage para uso interno.
       await sendMail({
         from: emailTemplate.from,
         to: cliente.email,
-        subject: `Cotización de Servicios No. ${cotizacion.numero} — Amanda Santizo Despacho Jurídico`,
+        subject: esClienteEn
+          ? `Quote No. ${cotizacion.numero} — Amanda Santizo Law Firm`
+          : `Cotización de Servicios No. ${cotizacion.numero} — Amanda Santizo Despacho Jurídico`,
         htmlBody: emailTemplate.html,
         cc: 'amanda@papeleo.legal',
-        attachments: [{
-          name: `${cotizacion.numero}.pdf`,
-          contentType: 'application/pdf',
-          contentBytes: pdfBase64,
-        }],
+        ...(esClienteEn ? {} : {
+          attachments: [{
+            name: `${cotizacion.numero}.pdf`,
+            contentType: 'application/pdf',
+            contentBytes: pdfBase64,
+          }],
+        }),
       });
 
       // Mark as enviada

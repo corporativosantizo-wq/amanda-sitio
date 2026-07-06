@@ -17,6 +17,7 @@ import { EstadoCotizacion } from '@/lib/types';
 import { calcularIVASobreSubtotal, calcularAnticipo } from '@/lib/utils';
 import { sendMail } from '@/lib/services/outlook.service';
 import { emailCotizacion } from '@/lib/templates/emails';
+import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { crearCobroDesdeCotizacion } from '@/lib/services/cobros.service';
 
 const db = () => createAdminClient();
@@ -144,7 +145,7 @@ export async function obtenerCotizacion(id: string): Promise<CotizacionConClient
     .from('cotizaciones')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc, telefono, direccion),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc, telefono, direccion, idioma),
       items:cotizacion_items (*)
     `)
     .eq('id', id)
@@ -417,7 +418,9 @@ export async function enviarCotizacion(id: string, ccManual?: string[]): Promise
     monto: item.total ?? item.cantidad * item.precio_unitario,
   }));
 
-  const template = emailCotizacion({
+  // ES/EN según la ficha del cliente (los montos vienen tal cual de la
+  // cotización que Amanda editó — EN solo cambia idioma y formato USD).
+  const template = plantillasDeCliente(cliente).emailCotizacion({
     clienteNombre: cliente.nombre,
     servicios: items,
     subtotal: actual.subtotal,

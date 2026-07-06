@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { registrarRecordatorio } from '@/lib/services/cobros.service';
 import { sendMail } from '@/lib/services/outlook.service';
-import { emailRecordatorioCobro } from '@/lib/templates/emails';
+import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 
 export async function GET(req: NextRequest) {
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       .from('cobros')
       .select(`
         *,
-        cliente:clientes!cliente_id (id, nombre, email)
+        cliente:clientes!cliente_id (id, nombre, email, idioma)
       `)
       .in('estado', ['pendiente', 'parcial', 'vencido'])
       .gt('saldo_pendiente', 0);
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       if (!tipo) continue;
 
       try {
-        const template = emailRecordatorioCobro({
+        const template = plantillasDeCliente(cobro.cliente).emailRecordatorioCobro({
           clienteNombre: cobro.cliente.nombre,
           concepto: cobro.concepto,
           monto: cobro.monto,

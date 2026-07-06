@@ -219,7 +219,7 @@ export async function obtenerTareasProgramadasPendientes() {
     .from('tareas')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, nombre, email)
+      cliente:clientes!cliente_id (id, nombre, email, idioma)
     `)
     .eq('estado', 'pendiente')
     .eq('asignado_a', 'asistente')

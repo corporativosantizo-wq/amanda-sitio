@@ -440,7 +440,7 @@ export interface Cobro {
 }
 
 export interface CobroConCliente extends Cobro {
-  cliente: { id: string; nombre: string; email: string | null };
+  cliente: { id: string; nombre: string; email: string | null; idioma?: 'es' | 'en' | null };
 }
 
 export interface CobroInsert {
