@@ -69,6 +69,8 @@ interface ClienteDetalle {
   nit_facturacion: string;
   direccion_facturacion: string;
   grupo_empresarial_id: string | null;
+  idioma: 'es' | 'en';
+  moneda: 'GTQ' | 'USD';
   notas: string | null;
   activo: boolean;
   created_at: string;
@@ -179,6 +181,7 @@ export default function ClienteDetallePage() {
   const [headerError, setHeaderError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [emailsCc, setEmailsCc] = useState<string[]>([]);
+  const [comunicacionesEn, setComunicacionesEn] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -207,6 +210,7 @@ export default function ClienteDetallePage() {
       direccion_facturacion: c.direccion_facturacion ?? '',
     });
     setEmailsCc(c.emails_cc ?? []);
+    setComunicacionesEn(c.idioma === 'en');
 
     // Initialize representante edit state from current data
     const repDireccion = (c.representantes ?? []).find(r => CARGOS_DIRECCION.includes(r.cargo));
@@ -277,12 +281,14 @@ export default function ClienteDetallePage() {
         razon_social_facturacion: form.razon_social_facturacion.trim() || form.nombre.trim(),
         nit_facturacion: form.nit_facturacion.trim() || form.nit.trim() || 'CF',
         direccion_facturacion: form.direccion_facturacion.trim() || 'Ciudad',
+        idioma: comunicacionesEn ? 'en' : 'es',
+        moneda: comunicacionesEn ? 'USD' : 'GTQ',
         representantes,
       },
       onSuccess: () => { setEditing(false); refetch(); },
       onError: (err) => setSaveError(err),
     });
-  }, [form, emailsCc, id, mutate, refetch, c?.tipo, editCargoDireccion, editRepDireccionNombre, editRepDireccionEmail, editRepDireccionId, editCargoGestion, editRepGestionNombre, editRepGestionEmail, editRepGestionId]);
+  }, [form, emailsCc, comunicacionesEn, id, mutate, refetch, c?.tipo, editCargoDireccion, editRepDireccionNombre, editRepDireccionEmail, editRepDireccionId, editCargoGestion, editRepGestionNombre, editRepGestionEmail, editRepGestionId]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }));
@@ -378,6 +384,12 @@ export default function ClienteDetallePage() {
                   <span><span className="text-slate-400">NIT:</span> <span className="font-mono">{c.nit}</span></span>
                   <span>·</span>
                   <span>{c.tipo === 'empresa' ? 'Empresa' : 'Individual'}</span>
+                  {c.idioma === 'en' && (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-semibold px-2 py-0.5 rounded-md">🌐 EN</span>
+                    </>
+                  )}
                 </div>
 
                 {/* Contact info row — inline editable */}
@@ -511,6 +523,7 @@ export default function ClienteDetallePage() {
       {tab === 'datos' && (
         <TabDatos c={c} editing={editing} form={form} set={set}
           emailsCc={emailsCc} setEmailsCc={setEmailsCc}
+          comunicacionesEn={comunicacionesEn} setComunicacionesEn={setComunicacionesEn}
           onStartEdit={startEdit} onCancel={cancelEdit} onSave={saveEdit}
           saving={saving} saveError={saveError} clienteId={id}
           editCargoDireccion={editCargoDireccion} setEditCargoDireccion={setEditCargoDireccion}
@@ -821,7 +834,7 @@ interface RepSugerencia {
   empresas: { id: string; codigo: string; nombre: string; cargo: CargoRepresentante }[];
 }
 
-function TabDatos({ c, editing, form, set, emailsCc, setEmailsCc, onStartEdit, onCancel, onSave, saving, saveError, clienteId,
+function TabDatos({ c, editing, form, set, emailsCc, setEmailsCc, comunicacionesEn, setComunicacionesEn, onStartEdit, onCancel, onSave, saving, saveError, clienteId,
   editCargoDireccion, setEditCargoDireccion,
   editRepDireccionNombre, setEditRepDireccionNombre,
   editRepDireccionEmail, setEditRepDireccionEmail,
@@ -837,6 +850,8 @@ function TabDatos({ c, editing, form, set, emailsCc, setEmailsCc, onStartEdit, o
   set: (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   emailsCc: string[];
   setEmailsCc: (v: string[]) => void;
+  comunicacionesEn: boolean;
+  setComunicacionesEn: (v: boolean) => void;
   onStartEdit: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -970,6 +985,23 @@ function TabDatos({ c, editing, form, set, emailsCc, setEmailsCc, onStartEdit, o
               )}
             </div>
             <Field label="Dirección" value={c.direccion} editValue={form.direccion} editing={editing} onChange={set('direccion')} />
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Comunicaciones <span className="text-slate-400 font-normal">(idioma de correos automáticos y moneda)</span>
+              </label>
+              {editing ? (
+                <label className="flex items-center gap-2 py-1 cursor-pointer select-none">
+                  <input type="checkbox" checked={comunicacionesEn}
+                    onChange={(e) => setComunicacionesEn(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]/30" />
+                  <span className="text-sm text-slate-700">🌐 Cliente internacional — comunicaciones en inglés (USD)</span>
+                </label>
+              ) : c.idioma === 'en' ? (
+                <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-semibold px-2 py-1 rounded-md">🌐 English (USD)</span>
+              ) : (
+                <p className="text-sm text-slate-500 py-1">Español (Q)</p>
+              )}
+            </div>
           </div>
         </Section>
 

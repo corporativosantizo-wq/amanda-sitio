@@ -31,6 +31,10 @@ export interface Cliente {
 
   grupo_empresarial_id: string | null;
 
+  // Comunicaciones internacionales: default 'es'/'GTQ' en DB
+  idioma: 'es' | 'en';
+  moneda: 'GTQ' | 'USD';
+
   datos_sensibles_encrypted: Record<string, unknown> | null;
   notas: string | null;
 
@@ -55,6 +59,8 @@ export interface ClienteInsert {
   nit_facturacion?: string | null;
   direccion_facturacion?: string | null;
   grupo_empresarial_id?: string | null;
+  idioma?: 'es' | 'en';
+  moneda?: 'GTQ' | 'USD';
   notas?: string | null;
   activo?: boolean;
 }

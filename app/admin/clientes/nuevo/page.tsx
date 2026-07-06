@@ -39,6 +39,7 @@ export default function NuevoClientePage() {
   const [dirFacturacion, setDirFacturacion] = useState('');
   const [notas, setNotas] = useState('');
   const [mismosDatos, setMismosDatos] = useState(true);
+  const [comunicacionesEn, setComunicacionesEn] = useState(false);
 
   // Representante de direccion
   const [cargoDireccion, setCargoDireccion] = useState<CargoRepresentante>('administrador_unico');
@@ -154,6 +155,8 @@ export default function NuevoClientePage() {
       razon_social_facturacion: mismosDatos ? nombre.trim() : (razonSocial.trim() || nombre.trim()),
       nit_facturacion: mismosDatos ? (nit.trim() || 'CF') : (nitFacturacion.trim() || nit.trim() || 'CF'),
       direccion_facturacion: mismosDatos ? (direccion.trim() || 'Ciudad') : (dirFacturacion.trim() || 'Ciudad'),
+      idioma: comunicacionesEn ? 'en' : 'es',
+      moneda: comunicacionesEn ? 'USD' : 'GTQ',
       notas: notas.trim() || null,
       representantes,
     };
@@ -163,7 +166,7 @@ export default function NuevoClientePage() {
       onSuccess: (data: any) => router.push(`/admin/clientes/${data.id}`),
       onError: (err) => alert(`Error: ${err}`),
     });
-  }, [tipo, nombre, nit, dpi, email, emailsCc, telefono, direccion, razonSocial, nitFacturacion, dirFacturacion, notas, mismosDatos, cargoDireccion, repDireccionNombre, repDireccionEmail, repDireccionId, cargoGestion, repGestionNombre, repGestionEmail, repGestionId, mutate, router]);
+  }, [tipo, nombre, nit, dpi, email, emailsCc, telefono, direccion, razonSocial, nitFacturacion, dirFacturacion, notas, mismosDatos, comunicacionesEn, cargoDireccion, repDireccionNombre, repDireccionEmail, repDireccionId, cargoGestion, repGestionNombre, repGestionEmail, repGestionId, mutate, router]);
 
   const INPUT = 'w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0891B2]/20 focus:border-[#0891B2]';
 
@@ -235,6 +238,16 @@ export default function NuevoClientePage() {
             Emails CC <span className="text-xs text-slate-400 font-normal">(se agregan automáticamente en copia al enviar correos)</span>
           </label>
           <EmailChips value={emailsCc} onChange={setEmailsCc} placeholder="copia@email.com" />
+        </div>
+
+        {/* Comunicaciones en inglés */}
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={comunicacionesEn}
+              onChange={(e) => setComunicacionesEn(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-[#0891B2] focus:ring-[#0891B2]/30" />
+            <span className="text-sm font-medium text-slate-700">🌐 Cliente internacional — comunicaciones en inglés (USD)</span>
+          </label>
         </div>
 
         {/* Dirección */}
