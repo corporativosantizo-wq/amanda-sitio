@@ -16,7 +16,6 @@ import type {
 import { EstadoCotizacion } from '@/lib/types';
 import { calcularIVASobreSubtotal, calcularAnticipo } from '@/lib/utils';
 import { sendMail } from '@/lib/services/outlook.service';
-import { emailCotizacion } from '@/lib/templates/emails';
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { crearCobroDesdeCotizacion } from '@/lib/services/cobros.service';
 
@@ -412,29 +411,7 @@ export async function enviarCotizacion(id: string, ccManual?: string[]): Promise
   // Obtener configuración para datos bancarios en el template
   const config = await obtenerConfiguracion();
 
-  // Generar email HTML
-  const items = (actual.items ?? []).map((item: any) => ({
-    descripcion: item.descripcion,
-    monto: item.total ?? item.cantidad * item.precio_unitario,
-  }));
-
-  // ES/EN según la ficha del cliente (los montos vienen tal cual de la
-  // cotización que Amanda editó — EN solo cambia idioma y formato USD).
-  const template = plantillasDeCliente(cliente).emailCotizacion({
-    clienteNombre: cliente.nombre,
-    servicios: items,
-    subtotal: actual.subtotal,
-    iva: actual.iva_monto,
-    total: actual.total,
-    anticipo: actual.anticipo_monto ?? 0,
-    anticipoPorcentaje: actual.anticipo_porcentaje ?? 60,
-    numeroCotizacion: actual.numero,
-    fechaEmision: actual.fecha_emision,
-    condiciones: condicionesParaEnvio((cliente as any).idioma, actual.condiciones),
-    notas_cliente: (actual as any).notas_cliente ?? undefined,
-    configuracion: config,
-    tokenRespuesta: actual.token_respuesta ?? undefined,
-  });
+  const template = construirTemplateCotizacion(actual, config);
 
   // CC: SOLO lo que Amanda eligió/escribió explícitamente en el modal de envío
   // (heredados marcados + tipeados). NUNCA se agrega cliente.emails_cc de forma
@@ -546,7 +523,51 @@ export async function rechazarCotizacion(id: string): Promise<Cotizacion> {
 }
 
 /**
+ * Construye el template de correo de una cotización (ES/EN según el cliente),
+ * con la cotización completa: servicios (cantidad real), totales, condiciones,
+ * botones de respuesta y datos bancarios. `mensajePersonal` (reenvíos)
+ * sustituye el saludo estándar arriba de la tabla.
+ * Compartido por enviar / reenviar / envío masivo para que el cliente reciba
+ * siempre el mismo documento con marca.
+ */
+function construirTemplateCotizacion(
+  cot: CotizacionConCliente,
+  config: Record<string, any>,
+  mensajePersonal?: string,
+) {
+  const cliente = cot.cliente as any;
+
+  const items = (cot.items ?? []).map((item: any) => ({
+    descripcion: item.descripcion,
+    cantidad: item.cantidad,
+    monto: item.total ?? item.cantidad * item.precio_unitario,
+  }));
+
+  // ES/EN según la ficha del cliente (los montos vienen tal cual de la
+  // cotización que Amanda editó — EN solo cambia idioma y formato USD).
+  return plantillasDeCliente(cliente).emailCotizacion({
+    clienteNombre: cliente?.nombre ?? '',
+    servicios: items,
+    subtotal: cot.subtotal,
+    iva: cot.iva_monto,
+    total: cot.total,
+    anticipo: cot.anticipo_monto ?? 0,
+    anticipoPorcentaje: cot.anticipo_porcentaje ?? 60,
+    numeroCotizacion: cot.numero,
+    fechaEmision: cot.fecha_emision,
+    condiciones: condicionesParaEnvio(cliente?.idioma, cot.condiciones),
+    notas_cliente: (cot as any).notas_cliente ?? undefined,
+    configuracion: config,
+    tokenRespuesta: cot.token_respuesta ?? undefined,
+    vigenciaDias: config.validez_cotizacion_dias ?? 30,
+    mensajePersonal,
+  });
+}
+
+/**
  * Reenvía una cotización por email con mensaje personalizado.
+ * El correo lleva la cotización COMPLETA (misma plantilla de marca que el
+ * envío original) con el mensaje de Amanda como introducción.
  * No cambia el estado de la cotización.
  */
 export async function reenviarCotizacion(id: string, params: {
@@ -556,12 +577,9 @@ export async function reenviarCotizacion(id: string, params: {
   from?: string;
   cc?: string[];
 }): Promise<void> {
-  await obtenerCotizacion(id); // valida que la cotización exista
-
-  const htmlBody = params.mensaje
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
-    .replace(/$/, '</div>');
+  const actual = await obtenerCotizacion(id);
+  const config = await obtenerConfiguracion();
+  const template = construirTemplateCotizacion(actual, config, params.mensaje);
 
   // CC: SOLO lo explícito que Amanda eligió/escribió en el modal de reenvío.
   // NUNCA cliente.emails_cc automático. Si viene vacío, va solo al principal.
@@ -572,7 +590,7 @@ export async function reenviarCotizacion(id: string, params: {
     from: (params.from || 'amanda@papeleo.legal') as any,
     to: params.to,
     subject: params.subject,
-    htmlBody,
+    htmlBody: template.html,
     ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
   });
 
@@ -581,6 +599,36 @@ export async function reenviarCotizacion(id: string, params: {
     .from('cotizaciones')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', id);
+}
+
+/**
+ * Programa el reenvío de una cotización para una fecha futura. Genera AHORA el
+ * HTML completo (cotización + mensaje personal, con marca) y lo deja como
+ * correo programado — el cron de comunicaciones lo envía tal cual (detecta
+ * HTML completo y no lo re-envuelve).
+ */
+export async function programarReenvioCotizacion(id: string, params: {
+  to: string;
+  subject: string;
+  mensaje: string;
+  from?: string;
+  programadoPara: string; // ISO
+}): Promise<void> {
+  const actual = await obtenerCotizacion(id);
+  const config = await obtenerConfiguracion();
+  const template = construirTemplateCotizacion(actual, config, params.mensaje);
+
+  const { crearCorreo } = await import('@/lib/services/comunicaciones.service');
+  await crearCorreo({
+    cliente_id: actual.cliente_id,
+    destinatario_email: params.to,
+    destinatario_nombre: (actual.cliente as any)?.nombre ?? null,
+    cuenta_envio: params.from || 'amanda@papeleo.legal',
+    asunto: params.subject,
+    cuerpo: template.html,
+    estado: 'programado',
+    programado_para: params.programadoPara,
+  });
 }
 
 /**
@@ -632,6 +680,8 @@ export async function enviarCotizacionMasivo(params: {
   const enviadas: string[] = [];
   const errores: Array<{ id: string; numero: string; error: string }> = [];
 
+  const config = await obtenerConfiguracion();
+
   for (const id of ids) {
     try {
       const cot = await obtenerCotizacion(id);
@@ -642,21 +692,21 @@ export async function enviarCotizacionMasivo(params: {
         continue;
       }
 
-      // Personalizar mensaje
+      // Personalizar mensaje ("cliente" como fallback evita el doble saludo
+      // "Estimado/a Estimado/a" cuando la ficha no tiene nombre)
       const subject = subjectTemplate
         .replace(/\{numero\}/g, cot.numero)
         .replace(/\{cliente\}/g, cliente.nombre ?? '')
         .replace(/\{total\}/g, cot.total?.toLocaleString('es-GT', { minimumFractionDigits: 2 }) ?? '0');
 
       const mensajePersonalizado = mensajeTemplate
-        .replace(/\{nombre\}/g, cliente.nombre ?? 'Estimado/a')
+        .replace(/\{nombre\}/g, cliente.nombre ?? 'cliente')
         .replace(/\{numero\}/g, cot.numero)
         .replace(/\{total\}/g, cot.total?.toLocaleString('es-GT', { minimumFractionDigits: 2 }) ?? '0');
 
-      const htmlBody = mensajePersonalizado
-        .replace(/\n/g, '<br>')
-        .replace(/^/, '<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">')
-        .replace(/$/, '</div>');
+      // Cotización completa con marca; el mensaje personalizado va como
+      // introducción arriba de la tabla de servicios.
+      const template = construirTemplateCotizacion(cot, config, mensajePersonalizado);
 
       // Lote = el sistema actúa solo, sin nadie para elegir los CC → va SOLO al
       // destinatario principal, sin copias (regla de confidencialidad). El CC
@@ -665,7 +715,7 @@ export async function enviarCotizacionMasivo(params: {
         from: from as any,
         to: cliente.email,
         subject,
-        htmlBody,
+        htmlBody: template.html,
       });
 
       // Actualizar estado a enviada si es borrador

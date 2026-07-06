@@ -14,15 +14,16 @@ import {
   programarEnvio,
   cancelarEnvioProgramado,
   reenviarCotizacion,
+  programarReenvioCotizacion,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio' | 'reenviar';
+type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio' | 'reenviar' | 'programar_reenvio';
 
-const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar'];
+const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar', 'programar_reenvio'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const __adminGuard = await requireAdmin();
@@ -94,6 +95,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           cc: Array.isArray(body.cc) ? body.cc : [],
         });
         resultado = { enviado: true };
+        break;
+      }
+
+      case 'programar_reenvio': {
+        if (!body.to || !body.subject || !body.mensaje || !body.programado_para) {
+          return NextResponse.json(
+            { error: 'Se requieren campos: to, subject, mensaje, programado_para' },
+            { status: 400 }
+          );
+        }
+        if (isNaN(Date.parse(body.programado_para)) || new Date(body.programado_para) <= new Date()) {
+          return NextResponse.json(
+            { error: 'Se requiere una fecha futura válida en formato ISO' },
+            { status: 400 }
+          );
+        }
+        await programarReenvioCotizacion(id, {
+          to: body.to,
+          subject: body.subject,
+          mensaje: body.mensaje,
+          from: body.from,
+          programadoPara: body.programado_para,
+        });
+        resultado = { programado: true };
         break;
       }
     }

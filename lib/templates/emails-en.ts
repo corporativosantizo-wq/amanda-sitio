@@ -712,12 +712,13 @@ export function emailRecordatorioCobro(params: {
 
 export function emailCotizacion(params: {
   clienteNombre: string;
-  servicios: { descripcion: string; monto: number }[];
+  servicios: { descripcion: string; monto: number; cantidad?: number }[];
   subtotal?: number;
   iva?: number;
   total?: number;
   anticipo?: number;
   vigencia?: string;
+  vigenciaDias?: number;
   numeroCotizacion?: string;
   fechaEmision?: string;
   anticipoPorcentaje?: number;
@@ -726,6 +727,9 @@ export function emailCotizacion(params: {
   logoBase64?: string;
   configuracion?: Record<string, any>;
   tokenRespuesta?: string;
+  // Resends: Amanda's personal note replaces the standard greeting and goes
+  // above the services table (the full quote travels below it).
+  mensajePersonal?: string;
 }): EmailTemplate {
   // NOTA (borrador): el tratamiento fiscal (IVA) para clientes internacionales
   // lo define Amanda; se mantiene la misma aritmética que la versión ES.
@@ -745,7 +749,7 @@ export function emailCotizacion(params: {
         `<tr style="background:${i % 2 === 0 ? '#F8FAFC' : '#ffffff'};">
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#64748B;text-align:center;width:36px;">${i + 1}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;">${s.descripcion}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;text-align:right;width:50px;">1</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;text-align:right;width:50px;">${s.cantidad ?? 1}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#0F172A;text-align:right;width:120px;">${fmtUSD(s.monto)}</td>
         </tr>`
     )
@@ -773,11 +777,17 @@ export function emailCotizacion(params: {
     </table>`;
   }
 
+  // Validity badge mirrors the real config value (validez_cotizacion_dias).
+  const vigenciaDias = params.vigenciaDias ?? 30;
+  const introHtml = (params.mensajePersonal ?? '').trim()
+    ? `<p style="color:#334155;font-size:14px;line-height:1.6;white-space:pre-line;">${escEmail(params.mensajePersonal!.trim())}</p>`
+    : `<p style="color:#334155;font-size:14px;line-height:1.6;">Dear ${escEmail(params.clienteNombre)}, please find below the quote you requested.</p>`;
+
   const html = wrapEN(`
     ${headerInfo}
     <h2 style="margin:0 0 8px;color:#0F172A;font-size:20px;font-weight:700;">Quote for Legal Services</h2>
-    <p style="color:#334155;font-size:14px;line-height:1.6;">Dear ${escEmail(params.clienteNombre)}, please find below the quote you requested.</p>
-    <p style="margin:16px 0;"><span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">Valid for 30 days</span></p>
+    ${introHtml}
+    <p style="margin:16px 0;"><span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">Valid for ${vigenciaDias} days</span></p>
     <table width="100%" style="margin:16px 0;border-collapse:collapse;">
       <thead>
         <tr style="background:#F8FAFC;">

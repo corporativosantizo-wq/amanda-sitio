@@ -8,6 +8,7 @@ import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { obtenerPieConfidencialidad } from '@/lib/services/comunicaciones.service';
+import { emailTextoPlano } from '@/lib/templates/emails';
 import { handleApiError } from '@/lib/api-error';
 
 const db = () => createAdminClient();
@@ -74,11 +75,9 @@ export async function POST(req: NextRequest) {
           .replace(/\{nombre_cliente\}/g, item.clienteNombre || 'Estimado/a')
           .replace(/\{nombre_documento\}/g, item.filename.replace(/\.[^.]+$/, ''));
 
-        const htmlBody =
-          '<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;">' +
-          cuerpoText.replace(/\n/g, '<br>') +
-          '</div>' +
-          (pie ? `<div style="margin-top:24px;font-size:11px;color:#94a3b8;">${pie}</div>` : '');
+        // Wrapper de marca (logo + navy/dorado) — mismo camino que el Centro
+        // de Comunicaciones; el pie de confidencialidad va dentro del wrapper.
+        const htmlBody = emailTextoPlano(cuerpoText, pie);
 
         const ccList = item.cc
           ? item.cc.split(',').map((e: string) => e.trim()).filter(Boolean)

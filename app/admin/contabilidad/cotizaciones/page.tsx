@@ -541,7 +541,7 @@ function EnvioMasivoModal({ cotizaciones, onClose, onSent, onError }: {
 }) {
   const [from, setFrom] = useState('amanda@papeleo.legal');
   const [mensaje, setMensaje] = useState(
-    `Estimado/a {nombre},\n\nAdjunto encontrará la cotización {numero} por un monto de Q{total} correspondiente a los servicios profesionales solicitados.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
+    `Estimado/a {nombre},\n\nA continuación encontrará la cotización {numero} por un monto de Q{total} correspondiente a los servicios profesionales solicitados.\n\nQuedamos a sus órdenes para cualquier consulta.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
   );
   const [sending, setSending] = useState(false);
   const [progreso, setProgreso] = useState<string | null>(null);
@@ -743,7 +743,7 @@ function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
   onSent: () => void;
   onScheduled: (msg: string) => void;
 }) {
-  const clienteNombre = cotizacion.cliente?.nombre ?? 'Estimado/a';
+  const clienteNombre = cotizacion.cliente?.nombre ?? '';
   const clienteEmail = cotizacion.cliente?.email ?? '';
 
   const [to, setTo] = useState(clienteEmail);
@@ -751,8 +751,10 @@ function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
   const [subject, setSubject] = useState(
     `Cotización ${cotizacion.numero} — Despacho Jurídico Amanda Santizo`
   );
+  // El mensaje va como introducción del correo; la cotización completa
+  // (servicios, totales, condiciones) viaja debajo, generada por el backend.
   const [mensaje, setMensaje] = useState(
-    `Estimado/a ${clienteNombre},\n\nLe reenvío la cotización ${cotizacion.numero} por un monto de ${Q(cotizacion.total)}.\n\nQuedamos a sus órdenes.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
+    `Estimado/a${clienteNombre ? ` ${clienteNombre}` : ''},\n\nLe reenvío la cotización ${cotizacion.numero} por un monto de ${Q(cotizacion.total)}, que encontrará a continuación.\n\nQuedamos a sus órdenes.\n\nLic. Amanda Santizo\nDespacho Jurídico\nTel. 2335-3613 | amandasantizo.com`
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -782,16 +784,15 @@ function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
     setSending(true);
     setError('');
     const programadoPara = new Date(`${programarFecha}T${programarHora}:00`).toISOString();
-    await mutate('/api/admin/comunicaciones', {
+    // programar_reenvio genera YA el HTML completo (cotización + mensaje, con
+    // marca) y lo deja como correo programado — igual que el reenvío inmediato.
+    await mutate(`/api/admin/contabilidad/cotizaciones/${cotizacion.id}/acciones`, {
       body: {
-        accion: 'programar',
-        cliente_id: cotizacion.cliente?.id || null,
-        destinatario_email: to,
-        destinatario_nombre: clienteNombre,
-        cuenta_envio: from,
-        asunto: subject,
-        cuerpo: mensaje,
-        adjuntos: [],
+        accion: 'programar_reenvio',
+        to,
+        subject,
+        mensaje,
+        from,
         programado_para: programadoPara,
       },
       onSuccess: () => {
@@ -811,7 +812,7 @@ function ReenviarModal({ cotizacion, onClose, onSent, onScheduled }: {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-bold text-slate-900 mb-1">Reenviar cotización</h2>
         <p className="text-sm text-slate-500 mb-4">
-          {cotizacion.numero} · {clienteNombre} · {Q(cotizacion.total)}
+          {cotizacion.numero} · {clienteNombre || 'Sin nombre'} · {Q(cotizacion.total)}
         </p>
 
         <div className="space-y-3">

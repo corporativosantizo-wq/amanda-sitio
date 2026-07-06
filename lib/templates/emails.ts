@@ -98,6 +98,19 @@ export function escEmail(s: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+// Correo de marca a partir de TEXTO PLANO (Centro de Comunicaciones, env\u00edo
+// masivo de documentos y cualquier aviso redactado a mano). Escapa el texto,
+// convierte saltos de l\u00ednea y lo mete en el wrapper de marca. El pie de
+// confidencialidad (HTML corto configurado por cuenta) va dentro del wrapper,
+// arriba del footer, para que no quede colgando fuera de la tarjeta blanca.
+export function emailTextoPlano(texto: string, pie?: string): string {
+  const cuerpo = `<div style="color:#334155;font-size:14px;line-height:1.6;white-space:normal;">${escEmail(texto).replace(/\n/g, '<br>')}</div>`;
+  const pieHtml = (pie ?? '').trim()
+    ? `<div style="margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#94a3b8;line-height:1.5;">${pie}</div>`
+    : '';
+  return emailWrapper(cuerpo + pieHtml);
+}
+
 // Bot\u00f3n de marca: navy con borde inferior dorado (sin gradiente teal).
 function botonMarca(label: string, href: string): string {
   return `
@@ -803,12 +816,13 @@ function emailCotizacionWrapper(content: string, _logoBase64?: string): string {
 
 export function emailCotizacion(params: {
   clienteNombre: string;
-  servicios: { descripcion: string; monto: number }[];
+  servicios: { descripcion: string; monto: number; cantidad?: number }[];
   subtotal?: number;
   iva?: number;
   total?: number;
   anticipo?: number;
   vigencia?: string;
+  vigenciaDias?: number;
   numeroCotizacion?: string;
   fechaEmision?: string;
   anticipoPorcentaje?: number;
@@ -817,6 +831,9 @@ export function emailCotizacion(params: {
   logoBase64?: string;
   configuracion?: Record<string, any>;
   tokenRespuesta?: string;
+  // Reenvíos: texto escrito por Amanda que sustituye el saludo estándar y va
+  // arriba de la tabla de servicios (la cotización completa viaja debajo).
+  mensajePersonal?: string;
 }): EmailTemplate {
   const subtotalCalc = params.subtotal ?? params.servicios.reduce((sum, s) => sum + s.monto, 0);
   const ivaCalc = params.iva ?? subtotalCalc * 0.12;
@@ -834,8 +851,9 @@ export function emailCotizacion(params: {
     headerInfo = `<p style="margin:0 0 16px;text-align:right;">${numHtml}${fechaHtml}</p>`;
   }
 
-  // Validity badge
-  const badgeHtml = `<p style="margin:16px 0;"><span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">V\u00e1lida por 30 d\u00edas</span></p>`;
+  // Validity badge \u2014 usa la vigencia real de configuraci\u00f3n (validez_cotizacion_dias).
+  const vigenciaDias = params.vigenciaDias ?? 30;
+  const badgeHtml = `<p style="margin:16px 0;"><span style="display:inline-block;background:#eef2f9;color:#1e2a5a;padding:4px 14px;border-radius:4px;font-size:12px;font-weight:600;">V\u00e1lida por ${vigenciaDias} d\u00edas</span></p>`;
 
   // Services table — 4 columns
   const filasServicios = params.servicios
@@ -844,7 +862,7 @@ export function emailCotizacion(params: {
         `<tr style="background:${i % 2 === 0 ? '#F8FAFC' : '#ffffff'};">
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#64748B;text-align:center;width:36px;">${i + 1}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;">${s.descripcion}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;text-align:right;width:50px;">1</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;text-align:right;width:50px;">${s.cantidad ?? 1}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#0F172A;text-align:right;width:110px;">${fmtQ(s.monto)}</td>
         </tr>`
     )
@@ -892,10 +910,16 @@ export function emailCotizacion(params: {
       </tr>
     </table>`;
 
+  // Intro: en reenv\u00edos, el mensaje personal de Amanda reemplaza el saludo
+  // est\u00e1ndar (evita el doble "Estimado/a ...").
+  const introHtml = (params.mensajePersonal ?? '').trim()
+    ? `<p style="color:#334155;font-size:14px;line-height:1.6;white-space:pre-line;">${escEmail(params.mensajePersonal!.trim())}</p>`
+    : `<p style="color:#334155;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, adjuntamos la cotizaci\u00f3n solicitada.</p>`;
+
   const html = emailCotizacionWrapper(`
     ${headerInfo}
     <h2 style="margin:0 0 8px;color:#0F172A;font-size:20px;font-weight:700;">Cotizaci\u00f3n de Servicios</h2>
-    <p style="color:#334155;font-size:14px;line-height:1.6;">Estimado/a ${params.clienteNombre}, adjuntamos la cotizaci\u00f3n solicitada.</p>
+    ${introHtml}
     ${badgeHtml}
     <table width="100%" style="margin:16px 0;border-collapse:collapse;">
       <thead>

@@ -133,12 +133,12 @@ const DEMOS: Record<string, { label: string; es: () => EmailTemplate; en?: () =>
     label: 'Cotización de servicios',
     es: () => ES.emailCotizacion({ clienteNombre: 'Juan Pérez', numeroCotizacion: 'COT-0099', fechaEmision: '2026-07-05', servicios: [
       { descripcion: 'Constitución de sociedad anónima', monto: 12000 },
-      { descripcion: 'Inscripción en Registro Mercantil', monto: 3500 },
-    ], anticipo: 9300, anticipoPorcentaje: 60, condiciones: 'Anticipo del 60% para iniciar.\nSaldo contra entrega.', tokenRespuesta: 'demo-token' }),
+      { descripcion: 'Inscripción de nombramientos en Registro Mercantil', monto: 3500, cantidad: 2 },
+    ], anticipo: 9300, anticipoPorcentaje: 60, vigenciaDias: 15, condiciones: 'Anticipo del 60% para iniciar.\nSaldo contra entrega.', tokenRespuesta: 'demo-token' }),
     en: () => EN.emailCotizacion({ clienteNombre: 'John Smith', numeroCotizacion: 'COT-0099', fechaEmision: '2026-07-05', servicios: [
       { descripcion: 'Incorporation of a Guatemalan corporation (S.A.)', monto: 1600 },
-      { descripcion: 'Commercial Registry filing', monto: 450 },
-    ], anticipo: 1230, anticipoPorcentaje: 60, condiciones: '60% retainer to begin.\nBalance due upon completion.', tokenRespuesta: 'demo-token' }),
+      { descripcion: 'Commercial Registry filings', monto: 450, cantidad: 2 },
+    ], anticipo: 1230, anticipoPorcentaje: 60, vigenciaDias: 15, condiciones: '60% retainer to begin.\nBalance due upon completion.', tokenRespuesta: 'demo-token' }),
   },
   documentos_disponibles: {
     label: 'Documentos disponibles en portal',
