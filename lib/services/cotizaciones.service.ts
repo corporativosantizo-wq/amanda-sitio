@@ -17,6 +17,7 @@ import { EstadoCotizacion } from '@/lib/types';
 import { calcularIVASobreSubtotal, calcularAnticipo } from '@/lib/utils';
 import { sendMail } from '@/lib/services/outlook.service';
 import { emailCotizacion } from '@/lib/templates/emails';
+import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { crearCobroDesdeCotizacion } from '@/lib/services/cobros.service';
 
 const db = () => createAdminClient();
@@ -144,7 +145,7 @@ export async function obtenerCotizacion(id: string): Promise<CotizacionConClient
     .from('cotizaciones')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc, telefono, direccion),
+      cliente:clientes!cliente_id (id, codigo, nombre, nit, email, emails_cc, telefono, direccion, idioma),
       items:cotizacion_items (*)
     `)
     .eq('id', id)
@@ -417,7 +418,9 @@ export async function enviarCotizacion(id: string, ccManual?: string[]): Promise
     monto: item.total ?? item.cantidad * item.precio_unitario,
   }));
 
-  const template = emailCotizacion({
+  // ES/EN según la ficha del cliente (los montos vienen tal cual de la
+  // cotización que Amanda editó — EN solo cambia idioma y formato USD).
+  const template = plantillasDeCliente(cliente).emailCotizacion({
     clienteNombre: cliente.nombre,
     servicios: items,
     subtotal: actual.subtotal,
@@ -427,7 +430,7 @@ export async function enviarCotizacion(id: string, ccManual?: string[]): Promise
     anticipoPorcentaje: actual.anticipo_porcentaje ?? 60,
     numeroCotizacion: actual.numero,
     fechaEmision: actual.fecha_emision,
-    condiciones: actual.condiciones ?? undefined,
+    condiciones: condicionesParaEnvio((cliente as any).idioma, actual.condiciones),
     notas_cliente: (actual as any).notas_cliente ?? undefined,
     configuracion: config,
     tokenRespuesta: actual.token_respuesta ?? undefined,
@@ -820,15 +823,15 @@ export async function obtenerConfiguracion() {
 }
 
 function generarCondicionesDefault(_config: Record<string, unknown>): string {
-  return `TÉRMINOS Y CONDICIONES GENERALES
-
-I. ALCANCE DE LOS SERVICIOS. La presente cotización comprende exclusivamente los servicios profesionales descritos en el detalle anterior. Cualquier gestión, trámite o servicio adicional no contemplado expresamente deberá ser cotizado por separado.
+  // El título del bloque lo pone la plantilla ("Términos y Condiciones
+  // Generales") — no repetirlo aquí como primera línea.
+  return `I. ALCANCE DE LOS SERVICIOS. La presente cotización comprende exclusivamente los servicios profesionales descritos en el detalle anterior. Cualquier gestión, trámite o servicio adicional no contemplado expresamente deberá ser cotizado por separado.
 
 II. HONORARIOS Y GASTOS. Los honorarios profesionales indicados no incluyen gastos de registro, timbres fiscales, timbres notariales, tasas judiciales, aranceles, publicaciones, ni cualquier otro desembolso ante entidades públicas o privadas, salvo que se indique expresamente en el desglose de la cotización.
 
 III. FORMA DE PAGO. El monto total de los honorarios profesionales deberá cancelarse previo al inicio de las gestiones, salvo acuerdo en contrario por escrito. En caso de servicios que incluyan gastos ante terceros, estos deberán cubrirse por anticipado. El incumplimiento en los pagos faculta al Despacho a suspender las gestiones hasta regularizar el saldo.
 
-IV. CONSULTAS Y ASESORÍA. La cotización incluye dos (2) consultas de seguimiento o aclaración de dudas por vía virtual (Microsoft Teams). Consultas adicionales tendrán un costo de Q100.00 cada una. No se incluye asesoría legal ilimitada ni consultas sobre materias ajenas al servicio contratado.
+IV. CONSULTAS Y ASESORÍA. La cotización incluye dos (2) consultas de seguimiento o aclaración de dudas por vía virtual (Microsoft Teams). Las consultas adicionales estarán sujetas a un costo adicional. No se incluye asesoría legal ilimitada ni consultas sobre materias ajenas al servicio contratado.
 
 V. VIGENCIA. La presente cotización tiene una vigencia de treinta (30) días calendario contados a partir de su fecha de emisión. Transcurrido dicho plazo, los montos podrán ser actualizados.
 
@@ -837,6 +840,43 @@ VI. CONFIDENCIALIDAD. Toda la información proporcionada por el cliente será tr
 VII. PLAZO DE EJECUCIÓN. Los plazos de ejecución dependerán de la naturaleza del trámite y de la respuesta oportuna de las entidades correspondientes. El Despacho no se responsabiliza por retrasos atribuibles a terceros, entidades públicas o al propio cliente.
 
 VIII. ACEPTACIÓN. La aceptación de la presente cotización y/o el pago correspondiente constituye la conformidad del cliente con los presentes términos y condiciones.`;
+}
+
+// Términos y condiciones generales en INGLÉS (traducción aprobada por Amanda,
+// jul-2026). Mismo contenido legal que el default ES; cláusula VI ancla el
+// secreto profesional a la ley guatemalteca. Sin número de colegiado.
+const CONDICIONES_EN_DEFAULT = `I. SCOPE OF SERVICES. This quote covers exclusively the professional services described in the itemization above. Any additional procedure, filing, or service not expressly contemplated herein shall be quoted separately.
+
+II. FEES AND EXPENSES. The professional fees indicated do not include registration costs, fiscal stamps, notarial stamps, court fees, tariffs, publications, or any other disbursement payable to public or private entities, unless expressly stated in the itemization of this quote.
+
+III. PAYMENT. The total amount of professional fees shall be paid prior to the commencement of work, unless otherwise agreed in writing. For services involving third-party expenses, such expenses must be covered in advance. Failure to make timely payments entitles the Firm to suspend all work until the outstanding balance is settled.
+
+IV. CONSULTATIONS AND ADVICE. This quote includes two (2) follow-up or clarification consultations held virtually (Microsoft Teams). Additional consultations will be subject to a separate fee. Unlimited legal advice and consultations on matters unrelated to the contracted service are not included.
+
+V. VALIDITY. This quote is valid for thirty (30) calendar days from its date of issuance. After that period, the amounts may be updated.
+
+VI. CONFIDENTIALITY. All information provided by the client will be treated with strict confidentiality, in accordance with the professional secrecy obligations of attorneys and notaries under Guatemalan law.
+
+VII. TIMEFRAME. Completion times depend on the nature of each procedure and on the timely response of the corresponding authorities. The Firm is not responsible for delays attributable to third parties, public entities, or the client.
+
+VIII. ACCEPTANCE. Acceptance of this quote and/or the corresponding payment constitutes the client's agreement to these terms and conditions.`;
+
+// Condiciones a usar al ENVIAR una cotización según idioma del cliente:
+// - Cliente ES: el texto guardado, tal cual (sin cambio de comportamiento).
+// - Cliente EN: si el texto guardado es el default ES (nuevo o viejo, detectado
+//   por su primera cláusula/título) o está vacío → default EN aprobado.
+//   Si Amanda escribió condiciones personalizadas → se respetan tal cual.
+export function condicionesParaEnvio(
+  idioma: string | null | undefined,
+  condiciones?: string | null,
+): string | undefined {
+  const c = (condiciones ?? '').trim();
+  if (idioma !== 'en') return c || undefined;
+  const esDefaultEs =
+    !c ||
+    c.startsWith('TÉRMINOS Y CONDICIONES GENERALES') ||
+    c.startsWith('I. ALCANCE DE LOS SERVICIOS');
+  return esDefaultEs ? CONDICIONES_EN_DEFAULT : c;
 }
 
 // --- Estadísticas ---

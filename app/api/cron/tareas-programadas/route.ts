@@ -12,14 +12,8 @@ import {
 } from '@/lib/services/tareas.service';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
-import {
-  emailSolicitudPago,
-  emailDocumentosDisponibles,
-  emailAvisoAudiencia,
-  emailSolicitudDocumentos,
-  emailRecordatorio24h,
-  emailWrapper,
-} from '@/lib/templates/emails';
+import { emailWrapper } from '@/lib/templates/emails';
+import { plantillas } from '@/lib/templates/seleccionar';
 
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 import { sendScheduledDrafts, purgeOldFilteredEmails } from '@/lib/services/molly.service';
@@ -47,6 +41,9 @@ export async function GET(req: NextRequest) {
         const db = createAdminClient();
         let destinatarioEmail: string | null = null;
         let destinatarioNombre = accion.nombre_destinatario ?? 'Cliente';
+        // Idioma de comunicaciones: EN solo si el destinatario es un cliente
+        // marcado internacional; email_directo sin ficha siempre en español.
+        let idiomaDest: 'es' | 'en' = 'es';
 
         if (accion.email_directo) {
           destinatarioEmail = accion.email_directo;
@@ -54,16 +51,18 @@ export async function GET(req: NextRequest) {
         } else if (accion.cliente_id) {
           const { data: cliente } = await db
             .from('clientes')
-            .select('id, nombre, email')
+            .select('id, nombre, email, idioma')
             .eq('id', accion.cliente_id)
             .single();
           if (cliente?.email) {
             destinatarioEmail = cliente.email;
             destinatarioNombre = cliente.nombre;
+            if (cliente.idioma === 'en') idiomaDest = 'en';
           }
         } else if (tarea.cliente?.email) {
           destinatarioEmail = tarea.cliente.email;
           destinatarioNombre = tarea.cliente.nombre;
+          if (tarea.cliente.idioma === 'en') idiomaDest = 'en';
         }
 
         // Fallback: buscar email en datos.destinatario
@@ -75,12 +74,13 @@ export async function GET(req: NextRequest) {
         if (!destinatarioEmail && tarea.cliente_id && !accion.cliente_id) {
           const { data: cliFallback } = await db
             .from('clientes')
-            .select('id, nombre, email')
+            .select('id, nombre, email, idioma')
             .eq('id', tarea.cliente_id)
             .single();
           if (cliFallback?.email) {
             destinatarioEmail = cliFallback.email;
             destinatarioNombre = cliFallback.nombre;
+            if (cliFallback.idioma === 'en') idiomaDest = 'en';
           }
         }
 
@@ -91,7 +91,8 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        // Build email from template
+        // Build email from template (ES/EN según ficha del cliente)
+        const TT = plantillas(idiomaDest);
         let from: MailboxAlias;
         let subject: string;
         let html: string;
@@ -99,7 +100,7 @@ export async function GET(req: NextRequest) {
 
         switch (accion.template) {
           case 'solicitud_pago': {
-            const t = emailSolicitudPago({
+            const t = TT.emailSolicitudPago({
               clienteNombre: destinatarioNombre,
               concepto: datos.concepto ?? 'Servicios legales',
               monto: datos.monto ?? 0,
@@ -109,12 +110,12 @@ export async function GET(req: NextRequest) {
             break;
           }
           case 'documentos_disponibles': {
-            const t = emailDocumentosDisponibles({ clienteNombre: destinatarioNombre });
+            const t = TT.emailDocumentosDisponibles({ clienteNombre: destinatarioNombre });
             from = t.from; subject = t.subject; html = t.html;
             break;
           }
           case 'aviso_audiencia': {
-            const t = emailAvisoAudiencia({
+            const t = TT.emailAvisoAudiencia({
               clienteNombre: destinatarioNombre,
               fecha: datos.fecha ?? new Date().toISOString().split('T')[0],
               hora: datos.hora ?? '09:00',
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
             break;
           }
           case 'solicitud_documentos': {
-            const t = emailSolicitudDocumentos({
+            const t = TT.emailSolicitudDocumentos({
               clienteNombre: destinatarioNombre,
               documentos: datos.documentos ?? ['Documentos pendientes'],
               plazo: datos.plazo,

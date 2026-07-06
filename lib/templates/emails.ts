@@ -867,7 +867,7 @@ export function emailCotizacion(params: {
     <table width="100%" style="margin:20px 0;" cellpadding="0" cellspacing="0">
       <tr>
         <td style="background:#eef2f9;border-left:3px solid #1e2a5a;padding:16px 18px;border-radius:0 6px 6px 0;">
-          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#1e2a5a;text-transform:uppercase;letter-spacing:0.5px;">Condiciones de pago</p>
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#1e2a5a;text-transform:uppercase;letter-spacing:0.5px;">Términos y Condiciones Generales</p>
           ${condContent}
         </td>
       </tr>

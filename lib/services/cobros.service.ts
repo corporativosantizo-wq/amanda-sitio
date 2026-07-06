@@ -7,10 +7,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Cobro, CobroConCliente, CobroInsert, RecordatorioCobro } from '@/lib/types';
 import { sendMail } from '@/lib/services/outlook.service';
-import {
-  emailSolicitudPago,
-  emailPagoRecibido,
-} from '@/lib/templates/emails';
+// Los correos al cliente se seleccionan ES/EN vía plantillasDeCliente().
+import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { notificarPagoParaFactura } from '@/lib/services/factura-re.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 
@@ -80,7 +78,7 @@ export async function obtenerCobro(id: string): Promise<CobroConCliente> {
     .from('cobros')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, nombre, email)
+      cliente:clientes!cliente_id (id, nombre, email, idioma)
     `)
     .eq('id', id)
     .single();
@@ -264,7 +262,7 @@ export async function enviarSolicitudPago(
   const tipo = tipoPorEnvioPrevio(enviosPrevios ?? 0);
 
   const numeroCotizacion = (cobro as any).cotizacion?.numero ?? undefined;
-  const template = emailSolicitudPago({
+  const template = plantillasDeCliente(cobro.cliente).emailSolicitudPago({
     clienteNombre: cobro.cliente.nombre,
     concepto: cobro.concepto,
     monto: cobro.saldo_pendiente,
@@ -300,7 +298,7 @@ export async function enviarComprobantePago(cobro_id: string, montoPagado: numbe
   const cobro = await obtenerCobro(cobro_id);
   if (!cobro.cliente?.email) return;
 
-  const template = emailPagoRecibido({
+  const template = plantillasDeCliente(cobro.cliente).emailPagoRecibido({
     clienteNombre: cobro.cliente.nombre,
     concepto: cobro.concepto,
     monto: montoPagado,
