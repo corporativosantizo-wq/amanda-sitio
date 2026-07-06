@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
+import { emailTextoPlano } from '@/lib/templates/emails';
 import type { CampoExtra, PlantillaCorreo } from '@/lib/types/plantillas-correo';
 
 const db = () => createAdminClient();
@@ -221,13 +222,11 @@ export async function enviarCorreoAhora(id: string): Promise<void> {
                  cuerpoTrim.startsWith('<html') ||
                  /^<(div|table|p|span|h[1-6]|section|article)\b/i.test(cuerpoTrim);
 
+  // Texto plano (todas las plantillas de BD y el correo libre) → wrapper de
+  // marca (logo + navy/dorado) con el pie de confidencialidad dentro.
   const htmlBody = esHtml
     ? correo.cuerpo
-    : correo.cuerpo
-        .replace(/\n/g, '<br>')
-        .replace(/^/, '<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;">')
-        .replace(/$/, '</div>')
-      + (pie ? `<div style="margin-top:24px;font-size:11px;color:#94a3b8;">${pie}</div>` : '');
+    : emailTextoPlano(correo.cuerpo, pie);
 
   const ccList = correo.cc_emails
     ? correo.cc_emails.split(',').map((e: string) => e.trim()).filter(Boolean)
