@@ -196,7 +196,9 @@ function oficinaSeccionHTML(cita: any): string {
     </table>`;
 }
 
-export function emailConfirmacionCita(cita: any): EmailTemplate {
+// _configuracion: aceptado por simetría con la versión EN (datos Mercury vía
+// plantillasDeCliente); la versión ES usa CUENTAS_BANCARIAS y no lo necesita.
+export function emailConfirmacionCita(cita: any, _configuracion?: Record<string, any> | null): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
   const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
@@ -715,6 +717,8 @@ export function emailSolicitudPago(params: {
   monto: number;
   fechaLimite?: string;
   numeroCotizacion?: string;
+  // Aceptado por simetría con la versión EN (datos Mercury); ES no lo usa.
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const montoFmt = `Q${params.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
   const subjectRef = params.numeroCotizacion
@@ -829,7 +833,7 @@ export function emailCotizacion(params: {
   condiciones?: string;
   notas_cliente?: string;
   logoBase64?: string;
-  configuracion?: Record<string, any>;
+  configuracion?: Record<string, any> | null;
   tokenRespuesta?: string;
   // Reenvíos: texto escrito por Amanda que sustituye el saludo estándar y va
   // arriba de la tabla de servicios (la cotización completa viaja debajo).
@@ -999,6 +1003,8 @@ export function emailEstadoCuenta(params: {
   clienteNombre: string;
   movimientos: { fecha: string; concepto: string; cargo: number; abono: number }[];
   saldo: number;
+  // Aceptado por simetría con la versión EN (datos Mercury); ES no lo usa.
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const saldoFmt = `Q${params.saldo.toLocaleString('es-GT')}`;
 
@@ -1292,6 +1298,8 @@ export function emailRecordatorioCobro(params: {
   fechaVencimiento?: string;
   tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
   numeroCobro: number;
+  // Aceptado por simetría con la versión EN (datos Mercury); ES no lo usa.
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const montoFmt = `Q${params.saldoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
   const vencimiento = params.fechaVencimiento ? formatearFechaGT(params.fechaVencimiento) : 'por confirmar';

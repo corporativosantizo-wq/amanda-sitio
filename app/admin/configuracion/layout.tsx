@@ -7,6 +7,7 @@ const TABS = [
   { href: '/admin/configuracion/usuarios', label: 'Usuarios' },
   { href: '/admin/configuracion/mensajes-telegram', label: 'Mensajes Telegram' },
   { href: '/admin/configuracion/notificaciones-email', label: 'Notificaciones Email' },
+  { href: '/admin/configuracion/datos-bancarios', label: 'Datos bancarios' },
 ];
 
 export default function ConfiguracionLayout({ children }: { children: React.ReactNode }) {

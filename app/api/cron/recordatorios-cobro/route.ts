@@ -9,6 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { registrarRecordatorio } from '@/lib/services/cobros.service';
 import { sendMail } from '@/lib/services/outlook.service';
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 
 export async function GET(req: NextRequest) {
@@ -78,6 +79,7 @@ export async function GET(req: NextRequest) {
           fechaVencimiento: cobro.fecha_vencimiento ?? undefined,
           tipo,
           numeroCobro: cobro.numero_cobro,
+          configuracion: await obtenerConfiguracionDespacho(),
         });
 
         await sendMail({
