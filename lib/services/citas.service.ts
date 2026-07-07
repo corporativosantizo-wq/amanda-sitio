@@ -34,6 +34,7 @@ import {
   emailRecordatorioAudiencia,
 } from '@/lib/templates/emails';
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 import { CONSULTA_INTERNACIONAL_USD } from '@/lib/templates/emails-en';
 
 const db = () => createAdminClient();
@@ -462,7 +463,10 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   if (clienteEmail && enviaConfirmacion) {
     console.log(`[crearCita] ── Enviando email de confirmación ──`);
     try {
-      const email = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita);
+      // Config del despacho (datos Mercury para el recuadro de pago EN).
+      // obtenerConfiguracionDespacho() nunca lanza: si falla, el correo sale
+      // igual con el bloque "coming soon".
+      const email = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita, await obtenerConfiguracionDespacho());
       console.log('[crearCita] Template generado: from=', email.from, ', subject=', email.subject, ', html=', email.html.length, 'chars');
       await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
       console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);

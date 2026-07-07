@@ -6,10 +6,18 @@
 import { clerkClient, clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-// Rutas que SÍ requieren autenticación con Clerk
+// Rutas que SÍ requieren autenticación con Clerk.
+// /api/pagos/checkout (pago de cita con Stripe): hoy ningún flujo de cliente
+// lo usa — estaba desplegado sin auth y cualquiera con la URL podía crear
+// sesiones de pago reales (además cobra en USD, BUG-003). Sesión Clerk
+// obligatoria + rol admin en el route handler, hasta que la Fase 5 defina el
+// flujo de pago real para clientes. NO incluir /api/pagos/webhook (Stripe
+// necesita alcanzarlo sin sesión; valida su propia firma) ni
+// /api/pagos/checkout-producto (tienda pública, precio server-side).
 const isProtectedRoute = createRouteMatcher([
   '/admin(.*)',
   '/api/admin(.*)',
+  '/api/pagos/checkout',
 ]);
 
 // Endpoints machine-to-machine con su propia auth (x-cron-secret)

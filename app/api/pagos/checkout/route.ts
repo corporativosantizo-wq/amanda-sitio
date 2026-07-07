@@ -1,13 +1,28 @@
 // ============================================================================
 // POST /api/pagos/checkout
-// Crea una Stripe Checkout Session para pago de cita ($75 USD consulta nueva)
+// Crea una Stripe Checkout Session para pago de cita (cobra cita.costo).
+//
+// ⚠️ SOLO ADMIN por ahora: ningún flujo de cliente usa este endpoint todavía
+// (los botones de pago en correos EN están deshabilitados). Estaba desplegado
+// sin auth. Cuando la Fase 5 habilite el pago online para clientes, habrá que
+// diseñar su auth propia (p. ej. token firmado como cotizacion/respuesta).
+//
+// ⚠️ BUG-003 PENDIENTE (no tocar sin decisión de Amanda): cobra currency 'usd'
+// sobre cita.costo, que para clientes locales está en quetzales → una cita de
+// Q500 se cobraría como $500 USD. La moneda se corrige en un paso aparte.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { obtenerCita, CitaError } from '@/lib/services/citas.service';
+import { requireAdmin } from '@/lib/auth/api-auth';
 
 export async function POST(req: NextRequest) {
+  // Defensa en profundidad: el middleware (proxy.ts) ya exige sesión Clerk,
+  // aquí además se exige rol admin activo (usuarios_admin).
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) {
     return NextResponse.json(

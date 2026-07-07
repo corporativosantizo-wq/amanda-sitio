@@ -52,6 +52,7 @@ import {
 } from '@/lib/templates/emails';
 // Selección ES/EN por idioma del cliente (comunicaciones internacionales)
 import { plantillas, plantillasDeCliente } from '@/lib/templates/seleccionar';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 import {
   crearCotizacion,
   obtenerCotizacion,
@@ -1030,7 +1031,7 @@ async function handleEnviarEmail(
         .eq('id', datos.cita_id)
         .single();
       if (error || !cita) throw new Error(`Cita no encontrada: ${datos.cita_id}`);
-      const t = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita);
+      const t = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita, await obtenerConfiguracionDespacho());
       from = t.from; subject = t.subject; html = t.html;
       break;
     }
@@ -1052,6 +1053,7 @@ async function handleEnviarEmail(
         concepto: datos?.concepto ?? 'Servicios legales',
         monto: datos?.monto ?? 0,
         fechaLimite: datos?.fecha_limite,
+        configuracion: await obtenerConfiguracionDespacho(),
       });
       from = t.from; subject = t.subject; html = t.html;
       break;
@@ -1071,6 +1073,7 @@ async function handleEnviarEmail(
         clienteNombre: destinatarioNombre,
         servicios: datos?.servicios ?? [],
         vigencia: datos?.vigencia,
+        configuracion: await obtenerConfiguracionDespacho(),
       });
       from = t.from; subject = t.subject; html = t.html;
       break;
@@ -1080,6 +1083,7 @@ async function handleEnviarEmail(
         clienteNombre: destinatarioNombre,
         movimientos: datos?.movimientos ?? [],
         saldo: datos?.saldo ?? 0,
+        configuracion: await obtenerConfiguracionDespacho(),
       });
       from = t.from; subject = t.subject; html = t.html;
       break;

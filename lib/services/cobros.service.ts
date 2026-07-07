@@ -9,6 +9,7 @@ import type { Cobro, CobroConCliente, CobroInsert, RecordatorioCobro } from '@/l
 import { sendMail } from '@/lib/services/outlook.service';
 // Los correos al cliente se seleccionan ES/EN vía plantillasDeCliente().
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 import { notificarPagoParaFactura } from '@/lib/services/factura-re.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 
@@ -268,6 +269,7 @@ export async function enviarSolicitudPago(
     monto: cobro.saldo_pendiente,
     fechaLimite: cobro.fecha_vencimiento ?? undefined,
     numeroCotizacion,
+    configuracion: await obtenerConfiguracionDespacho(),
   });
 
   await sendMail({

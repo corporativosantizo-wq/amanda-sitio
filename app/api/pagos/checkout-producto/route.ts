@@ -1,6 +1,10 @@
 // ============================================================================
 // POST /api/pagos/checkout-producto
 // Crea una Stripe Checkout Session para compra de producto de la tienda
+//
+// PÚBLICO a propósito (revisado jul-2026): la tienda es un flujo anónimo
+// legítimo y el precio siempre sale de la tabla products (status=active) en el
+// servidor — el request solo aporta el product_id, no puede manipular montos.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';

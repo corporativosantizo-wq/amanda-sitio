@@ -14,6 +14,7 @@ import { sendMail } from '@/lib/services/outlook.service';
 import type { MailboxAlias } from '@/lib/services/outlook.service';
 import { emailWrapper } from '@/lib/templates/emails';
 import { plantillas } from '@/lib/templates/seleccionar';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 
 import { requireCronAuth } from '@/lib/auth/cron-auth';
 import { sendScheduledDrafts, purgeOldFilteredEmails } from '@/lib/services/molly.service';
@@ -105,6 +106,7 @@ export async function GET(req: NextRequest) {
               concepto: datos.concepto ?? 'Servicios legales',
               monto: datos.monto ?? 0,
               fechaLimite: datos.fecha_limite,
+              configuracion: await obtenerConfiguracionDespacho(),
             });
             from = t.from; subject = t.subject; html = t.html;
             break;

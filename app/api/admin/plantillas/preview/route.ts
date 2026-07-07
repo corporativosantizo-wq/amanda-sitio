@@ -12,6 +12,7 @@ import * as ES from '@/lib/templates/emails';
 import * as EN from '@/lib/templates/emails-en';
 import type { EmailTemplate } from '@/lib/templates/emails';
 import { LOGO_AUDIENCIA_BASE64 } from '@/lib/assets/logo-audiencia-base64';
+import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,12 +47,15 @@ const firmaDemo = (lang: Lang) => citaDemo(lang, {
   documentos_entrega: lang === 'en' ? 'Power of attorney (2 originals)' : 'Poder especial (2 originales)',
 });
 
-// key → { label, es(), en() } — en() ausente = aún sin versión EN (fallback ES)
-const DEMOS: Record<string, { label: string; es: () => EmailTemplate; en?: () => EmailTemplate }> = {
+// key → { label, es(), en() } — en() ausente = aún sin versión EN (fallback ES).
+// Los builders reciben la configuración REAL del despacho (cfg) para que el
+// recuadro de pago Mercury se previsualice tal cual lo verá el cliente.
+type Builder = (cfg?: Record<string, any> | null) => EmailTemplate;
+const DEMOS: Record<string, { label: string; es: Builder; en?: Builder }> = {
   confirmacion_cita: {
     label: 'Confirmación de cita (Consulta Legal, con recuadro de pago)',
     es: () => ES.emailConfirmacionCita(citaDemo('es')),
-    en: () => EN.emailConfirmacionCita(citaDemo('en')),
+    en: (cfg) => EN.emailConfirmacionCita(citaDemo('en'), cfg),
   },
   confirmacion_cita_firma: {
     label: 'Confirmación de cita (firma de documentos, sin pago)',
@@ -106,7 +110,7 @@ const DEMOS: Record<string, { label: string; es: () => EmailTemplate; en?: () =>
   solicitud_pago: {
     label: 'Recordatorio de pago pendiente',
     es: () => ES.emailSolicitudPago({ clienteNombre: 'Juan Pérez', concepto: 'Honorarios — constitución de sociedad', monto: 8500, numeroCotizacion: 'COT-0042' }),
-    en: () => EN.emailSolicitudPago({ clienteNombre: 'John Smith', concepto: 'Legal fees — company incorporation', monto: 1200, numeroCotizacion: 'COT-0042' }),
+    en: (cfg) => EN.emailSolicitudPago({ clienteNombre: 'John Smith', concepto: 'Legal fees — company incorporation', monto: 1200, numeroCotizacion: 'COT-0042', configuracion: cfg }),
   },
   pago_recibido: {
     label: 'Pago recibido',
@@ -119,15 +123,15 @@ const DEMOS: Record<string, { label: string; es: () => EmailTemplate; en?: () =>
       { fecha: '2026-06-01', concepto: 'Honorarios fase 1', cargo: 5000, abono: 0 },
       { fecha: '2026-06-15', concepto: 'Pago recibido', cargo: 0, abono: 3000 },
     ], saldo: 2000 }),
-    en: () => EN.emailEstadoCuenta({ clienteNombre: 'John Smith', movimientos: [
+    en: (cfg) => EN.emailEstadoCuenta({ clienteNombre: 'John Smith', movimientos: [
       { fecha: '2026-06-01', concepto: 'Legal fees — phase 1', cargo: 700, abono: 0 },
       { fecha: '2026-06-15', concepto: 'Payment received', cargo: 0, abono: 400 },
-    ], saldo: 300 }),
+    ], saldo: 300, configuracion: cfg }),
   },
   recordatorio_cobro: {
     label: 'Recordatorio de cobro (2º aviso)',
     es: () => ES.emailRecordatorioCobro({ clienteNombre: 'Juan Pérez', concepto: 'Honorarios fase 2', monto: 4000, saldoPendiente: 4000, fechaVencimiento: '2026-07-10', tipo: 'segundo_aviso', numeroCobro: 87 }),
-    en: () => EN.emailRecordatorioCobro({ clienteNombre: 'John Smith', concepto: 'Legal fees — phase 2', monto: 550, saldoPendiente: 550, fechaVencimiento: '2026-07-10', tipo: 'segundo_aviso', numeroCobro: 87 }),
+    en: (cfg) => EN.emailRecordatorioCobro({ clienteNombre: 'John Smith', concepto: 'Legal fees — phase 2', monto: 550, saldoPendiente: 550, fechaVencimiento: '2026-07-10', tipo: 'segundo_aviso', numeroCobro: 87, configuracion: cfg }),
   },
   cotizacion: {
     label: 'Cotización de servicios',
@@ -135,10 +139,10 @@ const DEMOS: Record<string, { label: string; es: () => EmailTemplate; en?: () =>
       { descripcion: 'Constitución de sociedad anónima', monto: 12000 },
       { descripcion: 'Inscripción de nombramientos en Registro Mercantil', monto: 3500, cantidad: 2 },
     ], anticipo: 9300, anticipoPorcentaje: 60, vigenciaDias: 15, condiciones: 'Anticipo del 60% para iniciar.\nSaldo contra entrega.', tokenRespuesta: 'demo-token' }),
-    en: () => EN.emailCotizacion({ clienteNombre: 'John Smith', numeroCotizacion: 'COT-0099', fechaEmision: '2026-07-05', servicios: [
+    en: (cfg) => EN.emailCotizacion({ clienteNombre: 'John Smith', numeroCotizacion: 'COT-0099', fechaEmision: '2026-07-05', servicios: [
       { descripcion: 'Incorporation of a Guatemalan corporation (S.A.)', monto: 1600 },
       { descripcion: 'Commercial Registry filings', monto: 450, cantidad: 2 },
-    ], anticipo: 1230, anticipoPorcentaje: 60, vigenciaDias: 15, condiciones: '60% retainer to begin.\nBalance due upon completion.', tokenRespuesta: 'demo-token' }),
+    ], anticipo: 1230, anticipoPorcentaje: 60, vigenciaDias: 15, condiciones: '60% retainer to begin.\nBalance due upon completion.', tokenRespuesta: 'demo-token', configuracion: cfg }),
   },
   documentos_disponibles: {
     label: 'Documentos disponibles en portal',
@@ -219,7 +223,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `"${tpl}" no tiene versión ${lang} (fallback: ES)` }, { status: 404 });
   }
 
-  const t = builder();
+  // Config real del despacho (datos Mercury) — nunca lanza; null = "coming soon".
+  const t = builder(await obtenerConfiguracionDespacho());
   // El logo va por CID en correos reales; en navegador lo sustituimos inline.
   const html = t.html.replace(/cid:[A-Za-z0-9_-]+/g, LOGO_DATA_URI);
 

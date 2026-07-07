@@ -10,8 +10,10 @@
 //   - Facturas NO tienen versión EN (las emite el SAT).
 //   - Montos en USD ($). Único precio definido: consulta internacional USD $150
 //     (CONSULTA_INTERNACIONAL_USD — Fase 2 lo asignará a cita.costo).
-//   - Bloque de pago EN: Credit card (Stripe) y Bank transfer (Mercury Bank),
-//     ambos DESHABILITADOS hasta que existan las cuentas.
+//   - Bloque de pago EN: Bank transfer (Mercury Bank) muestra los datos de
+//     legal.configuracion si están completos (los ingresa Amanda en
+//     /admin/configuracion/datos-bancarios); si faltan, "coming soon".
+//     Credit card (Stripe) sigue DESHABILITADA (moneda del checkout pendiente).
 //   - Todas las plantillas EN llevan aviso de confidencialidad en inglés.
 //   - REGLA DE AMANDA: NUNCA incluir el número de colegiado en plantillas ni
 //     firmas en inglés (aplica también a futuras fases: Molly EN, PDFs EN).
@@ -81,18 +83,40 @@ function wrapEN(content: string): string {
   return emailWrapper(content + confidentialityHTML);
 }
 
-// ── Payment options block (EN) — both methods DISABLED for now ──────────────
-// Los "botones" son spans grises sin href a propósito: Stripe y Mercury Bank
-// aún no están habilitados. Fase 5 los convierte en links reales.
+// ── Payment options block (EN) ───────────────────────────────────────────────
+// Transferencia (Mercury Bank): si legal.configuracion tiene los 4 datos core
+// (beneficiario, cuenta, routing, SWIFT — los ingresa Amanda en
+// /admin/configuracion/datos-bancarios), se muestra el recuadro con los datos
+// visibles, espejo del recuadro de Banco Industrial en las plantillas ES.
+// Si falta alguno, se mantiene el "coming soon" original intacto.
+// Tarjeta (Stripe) sigue deshabilitada hasta resolver la moneda del checkout
+// (BUG-003) — Fase 5 la convierte en link real.
 
-function paymentOptionsEN(): string {
+function datosMercury(config?: Record<string, any> | null) {
+  const v = (x: unknown) => (typeof x === 'string' ? x.trim() : '');
+  const d = {
+    beneficiario: v(config?.mercury_beneficiario),
+    numeroCuenta: v(config?.mercury_numero_cuenta),
+    routing: v(config?.mercury_routing),
+    swift: v(config?.mercury_swift),
+    bancoNombre: v(config?.mercury_banco_nombre),
+    bancoDireccion: v(config?.mercury_banco_direccion),
+  };
+  const completo = !!(d.beneficiario && d.numeroCuenta && d.routing && d.swift);
+  return completo ? d : null;
+}
+
+function paymentOptionsEN(config?: Record<string, any> | null): string {
   const disabledBtn = (label: string) => `
       <td style="padding:0 6px;">
         <span style="display:inline-block;background:#e5e7eb;color:#9ca3af;padding:12px 24px;border-radius:8px;font-weight:600;font-size:13px;cursor:not-allowed;">
           ${label}
         </span>
       </td>`;
-  return `
+
+  const mercury = datosMercury(config);
+  if (!mercury) {
+    return `
     <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:${NAVY};text-transform:uppercase;letter-spacing:0.5px;">Payment options</p>
@@ -101,6 +125,28 @@ function paymentOptionsEN(): string {
           ${disabledBtn('🏦 Bank transfer (Mercury Bank) — coming soon')}
         </tr></table>
         <p style="margin:10px 0 0;font-size:12px;color:#64748b;">Online payment is coming soon. For now, payment instructions will be provided separately by our accounting team (<strong>contador@papeleo.legal</strong>).</p>
+      </td></tr>
+    </table>`;
+  }
+
+  const fila = (label: string, valor: string) => `
+          <p style="margin:4px 0;font-size:13px;color:#334155;"><strong>${label}:</strong> ${escEmail(valor)}</p>`;
+
+  return `
+    <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:8px;padding:16px;">
+      <tr><td>
+        <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:${NAVY};text-transform:uppercase;letter-spacing:0.5px;">Payment options</p>
+        <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:${NAVY};">🏦 Bank transfer — Mercury Bank (USD)</p>
+        ${fila('Beneficiary', mercury.beneficiario)}
+        ${fila('Account number', mercury.numeroCuenta)}
+        ${fila('Routing number (ACH/domestic wire)', mercury.routing)}
+        ${fila('SWIFT/BIC (international wire)', mercury.swift)}
+        ${mercury.bancoNombre ? fila('Receiving bank', mercury.bancoNombre) : ''}
+        ${mercury.bancoDireccion ? fila('Bank address', mercury.bancoDireccion) : ''}
+        <p style="margin:10px 0 0;font-size:12px;color:#64748b;">Once the transfer is made, please send your payment receipt to <strong>contador@papeleo.legal</strong>.</p>
+        <table cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr>
+          ${disabledBtn('💳 Credit card (Stripe) — coming soon')}
+        </tr></table>
       </td></tr>
     </table>`;
 }
@@ -186,7 +232,7 @@ function accionSolicitud(cita: any): 'signing' | 'delivery' {
 
 // ── Appointment templates (EN) ──────────────────────────────────────────────
 
-export function emailConfirmacionCita(cita: any): EmailTemplate {
+export function emailConfirmacionCita(cita: any, configuracion?: Record<string, any> | null): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Legal Consultation' : 'Case Follow-up';
   const fechaFmt = formatDateEN(cita.fecha);
   const horaFmt = `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
@@ -220,7 +266,7 @@ export function emailConfirmacionCita(cita: any): EmailTemplate {
         <p style="margin:0 0 4px;font-size:13px;color:#78350f;">Payment is due prior to the consultation.</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN()}`;
+    ${paymentOptionsEN(configuracion)}`;
   }
 
   const saludo = clienteNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Dear <strong>${escEmail(clienteNombre)}</strong>,</p>` : '';
@@ -545,6 +591,7 @@ export function emailSolicitudPago(params: {
   monto: number;
   fechaLimite?: string;
   numeroCotizacion?: string;
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const montoFmt = fmtUSD(params.monto);
   const subjectRef = params.numeroCotizacion
@@ -561,7 +608,7 @@ export function emailSolicitudPago(params: {
         <p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> ${montoFmt}</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN()}
+    ${paymentOptionsEN(params.configuracion)}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Once the payment has been made, we would appreciate it if you could send the receipt to this email so we can confirm it.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">If you have already made this payment, please disregard this message.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">We remain at your disposal for any questions.</p>
@@ -607,6 +654,7 @@ export function emailEstadoCuenta(params: {
   clienteNombre: string;
   movimientos: { fecha: string; concepto: string; cargo: number; abono: number }[];
   saldo: number;
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const saldoFmt = fmtUSD(params.saldo);
 
@@ -641,7 +689,7 @@ export function emailEstadoCuenta(params: {
         <p style="margin:0;font-size:16px;font-weight:700;">Balance due: ${saldoFmt}</p>
       </td></tr>
     </table>
-    ${params.saldo > 0 ? paymentOptionsEN() : ''}
+    ${params.saldo > 0 ? paymentOptionsEN(params.configuracion) : ''}
   `);
 
   return {
@@ -659,6 +707,7 @@ export function emailRecordatorioCobro(params: {
   fechaVencimiento?: string;
   tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
   numeroCobro: number;
+  configuracion?: Record<string, any> | null;
 }): EmailTemplate {
   const montoFmt = fmtUSD(params.saldoPendiente);
   const vencimiento = params.fechaVencimiento ? formatDateEN(params.fechaVencimiento) : 'to be confirmed';
@@ -698,7 +747,7 @@ export function emailRecordatorioCobro(params: {
         <p style="margin:8px 0;font-size:14px;"><strong>Due date:</strong> ${vencimiento}</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN()}
+    ${paymentOptionsEN(params.configuracion)}
     <p style="color:#475569;font-size:14px;line-height:1.6;">${tono}</p>
     <p style="color:#64748b;font-size:13px;margin-top:16px;">Please send your payment receipt to this email.</p>
   `);
@@ -725,7 +774,7 @@ export function emailCotizacion(params: {
   condiciones?: string;
   notas_cliente?: string;
   logoBase64?: string;
-  configuracion?: Record<string, any>;
+  configuracion?: Record<string, any> | null;
   tokenRespuesta?: string;
   // Resends: Amanda's personal note replaces the standard greeting and goes
   // above the services table (the full quote travels below it).
@@ -848,7 +897,7 @@ export function emailCotizacion(params: {
       </td></tr>
     </table>` : ''}
     ${conditionsHtml}
-    ${paymentOptionsEN()}
+    ${paymentOptionsEN(params.configuracion)}
   `);
 
   return {
