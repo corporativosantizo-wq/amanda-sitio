@@ -123,6 +123,15 @@ export async function checkAndProcessEmails(): Promise<{
     console.log(`[molly] ${retried} emails atascados re-clasificados`);
   }
 
+  // Segunda oportunidad: clasificados que requieren respuesta y quedaron sin
+  // borrador (incidente jul-2026 — flag no persistido, ciclos muertos por
+  // timeout, errores tragados). Ver retryMissingDrafts.
+  const recuperados = await retryMissingDrafts();
+  if (recuperados > 0) {
+    console.log(`[molly] ${recuperados} borradores recuperados (segunda oportunidad)`);
+    draftsCreated += recuperados;
+  }
+
   return { processed, drafts: draftsCreated, errors };
 }
 
@@ -172,6 +181,7 @@ export async function retryPendingClassifications(): Promise<number> {
           clasificacion: classification.tipo,
           confidence_score: classification.confianza,
           resumen: classification.resumen,
+          requiere_respuesta: classification.requiere_respuesta ?? null,
         })
         .eq('id', msg.id);
 
@@ -202,7 +212,7 @@ export async function retryPendingClassifications(): Promise<number> {
             account,
           );
 
-          const { data: draft } = await db()
+          const { data: draft, error: insertErr } = await db()
             .from('email_drafts')
             .insert({
               thread_id: msg.thread_id,
@@ -217,17 +227,30 @@ export async function retryPendingClassifications(): Promise<number> {
             .select()
             .single();
 
-          if (draft) {
-            const thread = { id: msg.thread_id, subject: msg.subject, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
-            const notification = buildEmailNotification(thread, msg as unknown as EmailMessage, classification, draft as EmailDraft);
-            await sendTelegramMessage(notification.text, {
-              parse_mode: 'HTML',
-              reply_markup: notification.reply_markup,
-            });
-          }
+          // Antes se ignoraba el error del insert: borrador perdido en
+          // silencio (incidente jul-2026). Ahora falla fuerte → alerta abajo.
+          if (insertErr || !draft) throw new MollyError('Error insertando borrador', insertErr);
+
+          const thread = { id: msg.thread_id, subject: msg.subject, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
+          const notification = buildEmailNotification(thread, msg as unknown as EmailMessage, classification, draft as EmailDraft);
+          await sendTelegramMessage(notification.text, {
+            parse_mode: 'HTML',
+            reply_markup: notification.reply_markup,
+          });
         } catch (draftErr: any) {
           console.error(`[molly-retry] Error generando borrador para ${fromEmail}:`, draftErr.message);
+          // Espejo de processOneEmail: si el borrador falla, avisar igual —
+          // este camino antes era completamente silencioso.
+          const thread = { id: msg.thread_id, subject: msg.subject, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
+          const alert = buildUrgentAlert(thread, msg as unknown as EmailMessage, classification);
+          await sendTelegramMessage(alert.text, { parse_mode: 'HTML' });
         }
+      } else if (classification.urgencia >= 2) {
+        // Urgente pero sin borrador — el camino del retry no alertaba nunca
+        // (incidente jul-2026: David/Carolina rescatados sin ningún aviso).
+        const thread = { id: msg.thread_id, subject: msg.subject, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
+        const alert = buildUrgentAlert(thread, msg as unknown as EmailMessage, classification);
+        await sendTelegramMessage(alert.text, { parse_mode: 'HTML' });
       }
 
       console.log(`[molly-retry] ✓ Clasificado: ${classification.tipo} | ${msg.subject?.substring(0, 40)}`);
@@ -238,6 +261,143 @@ export async function retryPendingClassifications(): Promise<number> {
   }
 
   return retried;
+}
+
+// ── Second chance: classified emails that never got their draft ────────────
+
+/**
+ * Recoge mensajes entrantes ya clasificados con requiere_respuesta=true que
+ * no tienen ningún borrador asociado y les genera uno (con notificación
+ * Telegram normal, botones incluidos). Cubre los huecos del incidente
+ * jul-2026: flag no determinista corregido a posteriori (backfill), ciclos
+ * muertos por timeout justo después de clasificar, y errores de generación
+ * que antes se tragaban.
+ *
+ * Límites a propósito: ventana de 7 días (no revivir correos viejos) y máximo
+ * 2 por ciclo — cada generación toma ~10-25s y check-email tiene maxDuration
+ * 60s; el cron corre cada 2 min, así que un backlog se drena solo.
+ */
+export async function retryMissingDrafts(): Promise<number> {
+  const desde = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: candidatos, error } = await db()
+    .from('email_messages')
+    .select('id, thread_id, from_email, from_name, subject, body_text, clasificacion, resumen, confidence_score, email_threads!inner(id, subject, account, clasificacion, urgencia)')
+    .eq('direction', 'inbound')
+    .eq('requiere_respuesta', true)
+    .gte('created_at', desde)
+    .order('received_at', { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error('[molly-recover] Error buscando mensajes sin borrador:', error.message);
+    return 0;
+  }
+  if (!candidatos?.length) return 0;
+
+  // Excluir los que ya tienen borrador (cualquier status: pendiente, enviado,
+  // rechazado... — un rechazo fue una decisión, no un hueco a recuperar).
+  const { data: drafts, error: draftsErr } = await db()
+    .from('email_drafts')
+    .select('message_id')
+    .in('message_id', candidatos.map((c: any) => c.id));
+
+  if (draftsErr) {
+    console.error('[molly-recover] Error consultando borradores existentes:', draftsErr.message);
+    return 0;
+  }
+
+  const conBorrador = new Set((drafts ?? []).map((d: any) => d.message_id));
+  const pendientes = candidatos
+    .filter((c: any) => !conBorrador.has(c.id) && !isFilterable(c.clasificacion ?? ''))
+    .slice(0, 2);
+
+  if (!pendientes.length) return 0;
+
+  console.log(`[molly-recover] ${pendientes.length} mensaje(s) clasificado(s) sin borrador — generando`);
+
+  let recuperados = 0;
+
+  for (const msg of pendientes) {
+    const thread = (msg as any).email_threads;
+    try {
+      const [clientContext, recentMessages] = await Promise.all([
+        getClientContext(msg.from_email),
+        getRecentThreadMessages(msg.thread_id),
+      ]);
+
+      const draftResult = await generateDraft(
+        msg as unknown as EmailMessage,
+        thread?.subject ?? msg.subject ?? '',
+        clientContext,
+        recentMessages,
+        thread?.account,
+      );
+
+      const { data: draft, error: insertErr } = await db()
+        .from('email_drafts')
+        .insert({
+          thread_id: msg.thread_id,
+          message_id: msg.id,
+          to_email: msg.from_email,
+          subject: draftResult.subject,
+          body_text: draftResult.body_text,
+          body_html: draftResult.body_html ?? null,
+          tone: draftResult.tone ?? null,
+          status: 'pendiente',
+        })
+        .select()
+        .single();
+
+      if (insertErr || !draft) throw new MollyError('Error insertando borrador recuperado', insertErr);
+
+      const clasificacionStub = {
+        tipo: (msg.clasificacion ?? thread?.clasificacion ?? 'administrativo') as MollyClassification['tipo'],
+        urgencia: thread?.urgencia ?? 1,
+        resumen: msg.resumen ?? '',
+        cliente_probable: null,
+        requiere_respuesta: true,
+        confianza: msg.confidence_score ?? 0,
+        scheduling_intent: false,
+        suggested_date: null,
+        suggested_time: null,
+        event_type: null,
+      } as MollyClassification;
+
+      const notification = buildEmailNotification(
+        thread as EmailThread,
+        msg as unknown as EmailMessage,
+        clasificacionStub,
+        draft as EmailDraft,
+      );
+      await sendTelegramMessage(notification.text, {
+        parse_mode: 'HTML',
+        reply_markup: notification.reply_markup,
+      });
+
+      console.log(`[molly-recover] ✓ Borrador recuperado para ${msg.from_email} | ${(msg.subject ?? '').substring(0, 40)}`);
+      recuperados++;
+    } catch (err: any) {
+      console.error(`[molly-recover] ✗ Error recuperando borrador de ${msg.from_email}:`, err.message);
+      // Avisar igual: mejor una alerta sin borrador que silencio total.
+      try {
+        const alert = buildUrgentAlert(
+          thread as EmailThread,
+          msg as unknown as EmailMessage,
+          {
+            tipo: (msg.clasificacion ?? 'administrativo'),
+            urgencia: thread?.urgencia ?? 1,
+            resumen: `(No se pudo generar el borrador: ${err.message ?? 'error desconocido'}) ${msg.resumen ?? ''}`,
+          } as MollyClassification,
+        );
+        await sendTelegramMessage(alert.text, { parse_mode: 'HTML' });
+      } catch (tgErr: any) {
+        console.error('[molly-recover] Tampoco se pudo enviar la alerta:', tgErr.message);
+      }
+    }
+  }
+
+  return recuperados;
 }
 
 // ── Process a single email ─────────────────────────────────────────────────
@@ -328,6 +488,10 @@ async function processOneEmail(
       clasificacion: classification.tipo,
       confidence_score: classification.confianza,
       resumen: classification.resumen,
+      // Persistido: sin esto la decisión de generar borrador vivía solo en
+      // memoria y un correo saltado no tenía segunda oportunidad (incidente
+      // jul-2026, borradores muertos por requiere_respuesta no determinista).
+      requiere_respuesta: classification.requiere_respuesta ?? null,
     })
     .eq('id', emailMsg.id);
 
@@ -421,7 +585,7 @@ async function processOneEmail(
 
       const draftResult = await generateDraft(emailMsg as EmailMessage, thread.subject, clientContext, recentMessages, account);
 
-      const { data: draft } = await db()
+      const { data: draft, error: insertErr } = await db()
         .from('email_drafts')
         .insert({
           thread_id: thread.id,
@@ -436,16 +600,18 @@ async function processOneEmail(
         .select()
         .single();
 
-      if (draft) {
-        // Notify via Telegram
-        const updatedThread = { ...thread, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
-        const notification = buildEmailNotification(updatedThread, emailMsg as EmailMessage, classification, draft as EmailDraft);
-        await sendTelegramMessage(notification.text, {
-          parse_mode: 'HTML',
-          reply_markup: notification.reply_markup,
-        });
-        draftCreated = true;
-      }
+      // Antes se ignoraba el error del insert: borrador perdido en silencio
+      // (incidente jul-2026). Ahora falla fuerte → catch → alerta Telegram.
+      if (insertErr || !draft) throw new MollyError('Error insertando borrador', insertErr);
+
+      // Notify via Telegram
+      const updatedThread = { ...thread, clasificacion: classification.tipo, urgencia: classification.urgencia } as EmailThread;
+      const notification = buildEmailNotification(updatedThread, emailMsg as EmailMessage, classification, draft as EmailDraft);
+      await sendTelegramMessage(notification.text, {
+        parse_mode: 'HTML',
+        reply_markup: notification.reply_markup,
+      });
+      draftCreated = true;
     } catch (err: any) {
       console.error('[molly] Error generando borrador:', err.message);
       // Still send alert even if draft generation fails
