@@ -111,6 +111,7 @@ Reglas de tipo:
 Reglas de respuesta:
 - requiere_respuesta = false para: spam, publicidad, notificacion_sistema, emails donde Amanda es CC
 - requiere_respuesta = true para: preguntas directas, solicitudes, citas, asuntos legales
+- ANTE LA DUDA con un "Contacto conocido" (cliente real del despacho): requiere_respuesta = true. Es preferible un borrador de más que un cliente sin respuesta. Las respuestas de clientes en conversaciones activas ("Re: ...") normalmente requieren respuesta; solo marca false si el mensaje claramente cierra el tema (un simple "gracias", "recibido", "confirmado") sin pregunta ni pendiente.
 
 Reglas de filtrado (CRÍTICAS — leer con cuidado):
 - Si se indica "Contacto conocido: ..." → NUNCA clasificar como spam, publicidad ni notificacion_sistema. Estos son contactos reales del despacho.

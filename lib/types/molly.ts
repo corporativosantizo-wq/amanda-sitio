@@ -77,6 +77,9 @@ export interface EmailMessage {
   clasificacion: string | null;
   confidence_score: number | null;
   resumen: string | null;
+  // Flag del clasificador persistido (segunda oportunidad de borradores).
+  // NULL = clasificado antes de jul-2026.
+  requiere_respuesta: boolean | null;
   attachments: AttachmentMeta[];
   received_at: string;
   created_at: string;
