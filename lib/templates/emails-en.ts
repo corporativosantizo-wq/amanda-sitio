@@ -614,6 +614,8 @@ export function emailSolicitudPago(params: {
   fechaLimite?: string;
   numeroCotizacion?: string;
   configuracion?: Record<string, any> | null;
+  // Fase B: link /pagar/cobro?token= — botón "Pay by card" real.
+  payUrl?: string;
 }): EmailTemplate {
   const montoFmt = fmtUSD(params.monto);
   const subjectRef = params.numeroCotizacion
@@ -630,7 +632,7 @@ export function emailSolicitudPago(params: {
         <p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> ${montoFmt}</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN(params.configuracion)}
+    ${paymentOptionsEN(params.configuracion, params.payUrl)}
     <p style="color:#475569;font-size:14px;line-height:1.6;">Once the payment has been made, we would appreciate it if you could send the receipt to this email so we can confirm it.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">If you have already made this payment, please disregard this message.</p>
     <p style="color:#475569;font-size:14px;line-height:1.6;">We remain at your disposal for any questions.</p>
@@ -730,6 +732,8 @@ export function emailRecordatorioCobro(params: {
   tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
   numeroCobro: number;
   configuracion?: Record<string, any> | null;
+  // Fase B: link /pagar/cobro?token= — botón "Pay by card" real.
+  payUrl?: string;
 }): EmailTemplate {
   const montoFmt = fmtUSD(params.saldoPendiente);
   const vencimiento = params.fechaVencimiento ? formatDateEN(params.fechaVencimiento) : 'to be confirmed';
@@ -769,7 +773,7 @@ export function emailRecordatorioCobro(params: {
         <p style="margin:8px 0;font-size:14px;"><strong>Due date:</strong> ${vencimiento}</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN(params.configuracion)}
+    ${paymentOptionsEN(params.configuracion, params.payUrl)}
     <p style="color:#475569;font-size:14px;line-height:1.6;">${tono}</p>
     <p style="color:#64748b;font-size:13px;margin-top:16px;">Please send your payment receipt to this email.</p>
   `);

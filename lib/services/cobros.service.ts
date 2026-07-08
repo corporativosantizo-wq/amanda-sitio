@@ -3,6 +3,7 @@
 // CRUD y lógica de negocio para Cobros (cuentas por cobrar)
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { pgrstQuote } from '@/lib/utils/postgrest';
 import type { Cobro, CobroConCliente, CobroInsert, RecordatorioCobro } from '@/lib/types';
@@ -79,7 +80,7 @@ export async function obtenerCobro(id: string): Promise<CobroConCliente> {
     .from('cobros')
     .select(`
       *,
-      cliente:clientes!cliente_id (id, nombre, email, idioma)
+      cliente:clientes!cliente_id (id, nombre, email, idioma, moneda)
     `)
     .eq('id', id)
     .single();
@@ -88,9 +89,57 @@ export async function obtenerCobro(id: string): Promise<CobroConCliente> {
   return data as unknown as CobroConCliente;
 }
 
+// ── Token de pago con tarjeta (Fase B, correos EN) ──────────────────────────
+
+/**
+ * Devuelve (generándolo si falta) el token del botón "Pay by card" de un
+ * cobro, SOLO si es elegible: cliente idioma='en' y moneda='USD', cobro en
+ * USD, con saldo y en estado cobrable (capa 2 del blindaje — un cliente
+ * local jamás obtiene token). Devuelve null si no aplica o si falla el
+ * guardado: el correo simplemente sale sin botón, nunca se bloquea el envío.
+ */
+export async function asegurarTokenPagoCobro(
+  cobro: { id: string; moneda?: string | null; saldo_pendiente?: number | null; estado: string; token_pago?: string | null; cliente?: { idioma?: string | null; moneda?: string | null } | null },
+): Promise<string | null> {
+  const elegible =
+    cobro.cliente?.idioma === 'en' &&
+    cobro.cliente?.moneda === 'USD' &&
+    cobro.moneda === 'USD' &&
+    Number(cobro.saldo_pendiente ?? 0) > 0 &&
+    !['pagado', 'cancelado'].includes(cobro.estado);
+
+  if (!elegible) return null;
+  if (cobro.token_pago) return cobro.token_pago;
+
+  const token = randomUUID();
+  const { error } = await db()
+    .from('cobros')
+    .update({ token_pago: token, updated_at: new Date().toISOString() })
+    .eq('id', cobro.id);
+
+  if (error) {
+    console.error('[Cobros] No se pudo guardar token_pago:', error.message);
+    return null;
+  }
+  return token;
+}
+
 export async function crearCobro(input: CobroInsert): Promise<Cobro> {
   if (!input.concepto?.trim()) throw new CobroError('El concepto es obligatorio');
   if (!input.monto || input.monto <= 0) throw new CobroError('El monto debe ser mayor a 0');
+
+  // El cobro hereda la moneda del cliente (decisión Fase B, jul-2026): un
+  // cliente internacional (USD) genera cobros en USD — es lo que habilita el
+  // pago con tarjeta y lo que los correos EN ya asumían al formatear $.
+  let moneda = 'GTQ';
+  if (input.cliente_id) {
+    const { data: cli } = await db()
+      .from('clientes')
+      .select('moneda')
+      .eq('id', input.cliente_id)
+      .maybeSingle();
+    if (cli?.moneda === 'USD') moneda = 'USD';
+  }
 
   const payload = {
     cliente_id: input.cliente_id,
@@ -99,6 +148,7 @@ export async function crearCobro(input: CobroInsert): Promise<Cobro> {
     concepto: input.concepto.trim(),
     descripcion: input.descripcion ?? null,
     monto: input.monto,
+    moneda,
     dias_credito: input.dias_credito ?? 15,
     estado: 'pendiente',
     notas: input.notas ?? null,
@@ -152,16 +202,31 @@ export async function registrarPagoCobro(params: {
   referencia_bancaria?: string;
   fecha_pago?: string;
   notas?: string;
+  // Idempotencia del webhook de Stripe (UNIQUE parcial en legal.pagos).
+  stripe_session_id?: string;
+  // SOLO para el webhook: si el cobro ya está pagado pero Stripe cobró de
+  // verdad (doble pago con dos sesiones abiertas), el dinero real SE REGISTRA
+  // igual — el sobrepago queda visible y Amanda decide el reembolso.
+  permitirPagado?: boolean;
 }): Promise<{ pago: any; cobro: Cobro }> {
   // Get cobro to find client
   const cobro = await obtenerCobro(params.cobro_id);
-  if (cobro.estado === 'pagado') throw new CobroError('Este cobro ya está pagado');
+  if (cobro.estado === 'pagado' && !params.permitirPagado) throw new CobroError('Este cobro ya está pagado');
   if (cobro.estado === 'cancelado') throw new CobroError('Este cobro está cancelado');
+
+  // FIX bug preexistente (jul-2026): el insert no generaba `numero`
+  // (NOT NULL en legal.pagos) → esta función fallaba SIEMPRE con 23502,
+  // desde el panel y desde Molly. Mismo RPC que usa registrarPago().
+  const { data: numData, error: numError } = await db()
+    // @ts-ignore
+    .schema('public').rpc('next_sequence', { p_tipo: 'PAG' });
+  if (numError) throw new CobroError('Error al generar número de pago', numError);
 
   // Create pago linked to cobro
   const { data: pago, error: pagoErr } = await db()
     .from('pagos')
     .insert({
+      numero: numData as string,
       cobro_id: params.cobro_id,
       cliente_id: cobro.cliente_id,
       fecha_pago: params.fecha_pago ?? new Date().toISOString().split('T')[0],
@@ -171,6 +236,7 @@ export async function registrarPagoCobro(params: {
       metodo: params.metodo,
       referencia_bancaria: params.referencia_bancaria ?? null,
       notas: params.notas ?? null,
+      stripe_session_id: params.stripe_session_id ?? null,
       confirmado_at: new Date().toISOString(),
     })
     .select()
@@ -181,8 +247,21 @@ export async function registrarPagoCobro(params: {
     throw new CobroError(`Error al registrar pago: ${pagoErr.message ?? 'desconocido'}`, pagoErr);
   }
 
-  // Trigger will auto-update cobro monto_pagado and estado.
-  // Refetch cobro to get updated data.
+  // FIX bug preexistente (jul-2026): el comentario original decía que un
+  // trigger actualizaba monto_pagado/estado del cobro — ese trigger NUNCA
+  // existió, así que registrar un pago dejaba el saldo intacto. Se actualiza
+  // explícitamente aquí (saldo_pendiente es columna generada monto-pagado).
+  const montoPagadoNuevo = Number(cobro.monto_pagado ?? 0) + Number(params.monto);
+  const estadoNuevo = montoPagadoNuevo >= Number(cobro.monto) ? 'pagado' : 'parcial';
+  const { error: updErr } = await db()
+    .from('cobros')
+    .update({ monto_pagado: montoPagadoNuevo, estado: estadoNuevo, updated_at: new Date().toISOString() })
+    .eq('id', params.cobro_id);
+  if (updErr) {
+    console.error('[Cobros] ERROR actualizando saldo del cobro tras el pago:', updErr.message);
+    throw new CobroError(`Pago ${pago.numero ?? pago.id} registrado pero el cobro no se pudo actualizar: ${updErr.message}`, updErr);
+  }
+
   const cobroActualizado = await obtenerCobro(params.cobro_id);
 
   // Notificar a Amanda por Telegram para que apruebe solicitud de factura
@@ -192,15 +271,19 @@ export async function registrarPagoCobro(params: {
     console.error('[Cobros] Error notificando pago para factura:', err.message);
   }
 
-  // Telegram notification
-  const Q = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
+  // Telegram notification — formato según la moneda del cobro (USD para
+  // clientes internacionales, Q para locales).
+  const fmt = (n: number) => cobroActualizado.moneda === 'USD'
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD`
+    : `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
   try {
     await sendTelegramMessage(
       `💰 <b>Pago recibido</b>\n\n` +
       `<b>Cobro:</b> #${cobroActualizado.numero_cobro}\n` +
       `<b>Cliente:</b> ${cobroActualizado.cliente?.nombre ?? 'N/A'}\n` +
-      `<b>Monto pagado:</b> ${Q(params.monto)}\n` +
-      `<b>Saldo pendiente:</b> ${Q(cobroActualizado.saldo_pendiente)}\n` +
+      `<b>Método:</b> ${params.metodo}\n` +
+      `<b>Monto pagado:</b> ${fmt(params.monto)}\n` +
+      `<b>Saldo pendiente:</b> ${fmt(cobroActualizado.saldo_pendiente)}\n` +
       `<b>Estado:</b> ${cobroActualizado.estado.toUpperCase()}`
     );
   } catch (e: any) {
@@ -263,6 +346,9 @@ export async function enviarSolicitudPago(
   const tipo = tipoPorEnvioPrevio(enviosPrevios ?? 0);
 
   const numeroCotizacion = (cobro as any).cotizacion?.numero ?? undefined;
+  // Fase B: botón "Pay by card" solo si el cobro es elegible (cliente EN/USD,
+  // cobro USD, saldo > 0). Cliente local: token null → sin botón.
+  const tokenPago = await asegurarTokenPagoCobro(cobro as any);
   const template = plantillasDeCliente(cobro.cliente).emailSolicitudPago({
     clienteNombre: cobro.cliente.nombre,
     concepto: cobro.concepto,
@@ -270,6 +356,7 @@ export async function enviarSolicitudPago(
     fechaLimite: cobro.fecha_vencimiento ?? undefined,
     numeroCotizacion,
     configuracion: await obtenerConfiguracionDespacho(),
+    payUrl: tokenPago ? `https://amandasantizo.com/pagar/cobro?token=${encodeURIComponent(tokenPago)}` : undefined,
   });
 
   await sendMail({

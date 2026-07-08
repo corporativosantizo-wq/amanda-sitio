@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { registrarRecordatorio } from '@/lib/services/cobros.service';
+import { registrarRecordatorio, asegurarTokenPagoCobro } from '@/lib/services/cobros.service';
 import { sendMail } from '@/lib/services/outlook.service';
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       .from('cobros')
       .select(`
         *,
-        cliente:clientes!cliente_id (id, nombre, email, idioma)
+        cliente:clientes!cliente_id (id, nombre, email, idioma, moneda)
       `)
       .in('estado', ['pendiente', 'parcial', 'vencido'])
       .gt('saldo_pendiente', 0);
@@ -71,6 +71,9 @@ export async function GET(req: NextRequest) {
       if (!tipo) continue;
 
       try {
+        // Fase B: botón "Pay by card" solo para cobros elegibles (cliente
+        // EN/USD + cobro USD + saldo). Cliente local: sin token, sin botón.
+        const tokenPago = await asegurarTokenPagoCobro(cobro);
         const template = plantillasDeCliente(cobro.cliente).emailRecordatorioCobro({
           clienteNombre: cobro.cliente.nombre,
           concepto: cobro.concepto,
@@ -80,6 +83,7 @@ export async function GET(req: NextRequest) {
           tipo,
           numeroCobro: cobro.numero_cobro,
           configuracion: await obtenerConfiguracionDespacho(),
+          payUrl: tokenPago ? `https://amandasantizo.com/pagar/cobro?token=${encodeURIComponent(tokenPago)}` : undefined,
         });
 
         await sendMail({
