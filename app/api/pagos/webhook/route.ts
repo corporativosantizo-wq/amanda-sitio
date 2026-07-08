@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
-import { actualizarCita } from '@/lib/services/citas.service';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 
 // La tabla orders (y products) están en PUBLIC — no usar createAdminClient,
@@ -60,14 +60,66 @@ export async function POST(req: NextRequest) {
     const citaId = session.metadata?.cita_id;
     const productId = session.metadata?.product_id;
 
-    // ── Pago de cita ──────────────────────────────────────────────────
-    // (Se rediseña en Fase A — consulta internacional. Sin cambios aquí.)
+    // ── Pago de cita (Fase A: consulta internacional $150 USD) ───────
     if (citaId) {
+      const montoCitaFmt = `$${((session.amount_total ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${(session.currency ?? 'usd').toUpperCase()}`;
       try {
-        await actualizarCita(citaId, { estado: 'confirmada' });
-        console.log('[Stripe] Cita', citaId, 'confirmada por pago');
-      } catch (err) {
-        console.error('[Stripe] Error al confirmar cita', citaId + ':', err);
+        // Update directo (schema legal): marcar pagada + confirmada, SIN pasar
+        // por actualizarCita — su re-sync de Outlook no aplica aquí y podría
+        // pisar el evento. Idempotente: si ya está pagada (evento reenviado
+        // por Stripe), no se re-marca ni se re-avisa.
+        const adminDb = createAdminClient();
+        const { data: citaRow, error: getErr } = await adminDb
+          .from('citas')
+          .select('id, titulo, fecha, pago_recibido_at, cliente:clientes(nombre)')
+          .eq('id', citaId)
+          .maybeSingle();
+
+        if (getErr) throw new Error(`consultando cita: ${getErr.message}`);
+        if (!citaRow) throw new Error('cita no encontrada');
+
+        if (citaRow.pago_recibido_at) {
+          console.log('[Stripe] Cita', citaId, 'ya estaba marcada pagada — evento duplicado, OK');
+        } else {
+          const { error: updErr } = await adminDb
+            .from('citas')
+            .update({
+              estado: 'confirmada',
+              pago_recibido_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', citaId);
+
+          if (updErr) throw new Error(`marcando cita pagada: ${updErr.message}`);
+
+          console.log('[Stripe] Cita', citaId, 'PAGADA y confirmada —', montoCitaFmt);
+
+          // Aviso best-effort: la cita ya quedó marcada.
+          try {
+            const nombreCliente = (citaRow as any).cliente?.nombre ?? 'Cliente';
+            await sendTelegramMessage(
+              `💳 <b>Consulta internacional PAGADA</b>\n\n` +
+              `<b>Cliente:</b> ${escapeHtml(nombreCliente)}\n` +
+              `<b>Monto:</b> ${montoCitaFmt}\n` +
+              `<b>Cita:</b> ${escapeHtml(citaRow.titulo ?? '')} — ${citaRow.fecha}`,
+              { parse_mode: 'HTML' },
+            );
+          } catch (tgErr: any) {
+            console.error('[Stripe] Cita pagada pero falló el aviso Telegram:', tgErr?.message);
+          }
+        }
+      } catch (err: any) {
+        console.error('[Stripe] ERROR marcando cita pagada', citaId + ':', err?.message ?? err);
+        try {
+          await sendTelegramMessage(
+            `🚨 <b>Pago de consulta SIN registrar</b>\n\n` +
+            `Stripe cobró ${montoCitaFmt} pero la cita <code>${escapeHtml(citaId)}</code> no se pudo marcar pagada: ${escapeHtml(err?.message ?? 'error desconocido')}.\n` +
+            `Stripe va a reintentar el evento automáticamente.`,
+            { parse_mode: 'HTML' },
+          );
+        } catch { /* el 500 de abajo ya provoca el reintento */ }
+        // 500 → Stripe reintenta la entrega (backoff, hasta ~3 días).
+        return NextResponse.json({ error: 'Error registrando el pago de la cita' }, { status: 500 });
       }
     }
 
