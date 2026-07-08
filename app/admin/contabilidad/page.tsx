@@ -228,23 +228,29 @@ export default function ContabilidadPage() {
         mutate={mutate}
       />
 
-      {/* Table */}
-      <div className="bg-white border rounded-xl overflow-hidden">
+      {/* Table.
+          Fix bug visual (jul-2026): la tabla (12 columnas) superaba el ancho
+          de pantalla y el contenedor con overflow-hidden RECORTABA la columna
+          Acciones sin dar scroll. Ahora: overflow-x-auto (nada queda
+          inalcanzable), paddings compactos (px-3), y Acciones fija a la
+          derecha (sticky) con fondo sólido — los botones se ven SIEMPRE,
+          aunque haya scroll horizontal. */}
+      <div className="bg-white border rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wider">
-              <th className="px-4 py-3 w-8"></th>
-              <th className="px-4 py-3">#</th>
-              <th className="px-4 py-3">Cliente</th>
-              <th className="px-4 py-3">Concepto</th>
-              <th className="px-4 py-3 text-right">Monto</th>
-              <th className="px-4 py-3 text-right">Pagado</th>
-              <th className="px-4 py-3 text-right">Saldo</th>
-              <th className="px-4 py-3">Estado</th>
-              <th className="px-4 py-3">Vencimiento</th>
-              <th className="px-4 py-3 text-right">Días</th>
-              <th className="px-4 py-3">Recordatorios</th>
-              <th className="px-4 py-3">Acciones</th>
+              <th className="px-3 py-3 w-8"></th>
+              <th className="px-3 py-3">#</th>
+              <th className="px-3 py-3">Cliente</th>
+              <th className="px-3 py-3">Concepto</th>
+              <th className="px-3 py-3 text-right">Monto</th>
+              <th className="px-3 py-3 text-right">Pagado</th>
+              <th className="px-3 py-3 text-right">Saldo</th>
+              <th className="px-3 py-3">Estado</th>
+              <th className="px-3 py-3">Vencimiento</th>
+              <th className="px-3 py-3 text-right">Días</th>
+              <th className="px-3 py-3">Recordatorios</th>
+              <th className="px-3 py-3 sticky right-0 bg-gray-50 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -263,38 +269,38 @@ export default function ContabilidadPage() {
                 return (
                   <tr
                     key={c.id}
-                    className={`hover:bg-gray-50 cursor-pointer ${esVencido ? 'bg-red-50/40' : esCotSinCobro ? 'bg-orange-50/40' : ''}`}
+                    className={`group hover:bg-gray-50 cursor-pointer ${esVencido ? 'bg-red-50/40' : esCotSinCobro ? 'bg-orange-50/40' : ''}`}
                     onClick={() => !esCotSinCobro && setShowDetalle(c.id)}
                   >
-                    <td className="px-4 py-3 text-center">{vis.icon}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                    <td className="px-3 py-3 text-center">{vis.icon}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
                       {esCotSinCobro ? c.numero_cotizacion : `COB-${String(c.numero_cobro).padStart(3, '0')}`}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{c.cliente?.nombre ?? '—'}</td>
-                    <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">{c.concepto}</td>
-                    <td className="px-4 py-3 text-right font-medium">{Q(c.monto)}</td>
-                    <td className="px-4 py-3 text-right text-green-600">{c.monto_pagado > 0 ? Q(c.monto_pagado) : '—'}</td>
-                    <td className="px-4 py-3 text-right font-semibold">{Q(c.saldo_pendiente)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 font-medium text-gray-900 max-w-[160px] truncate">{c.cliente?.nombre ?? '—'}</td>
+                    <td className="px-3 py-3 text-gray-600 max-w-[180px] truncate">{c.concepto}</td>
+                    <td className="px-3 py-3 text-right font-medium whitespace-nowrap">{Q(c.monto)}</td>
+                    <td className="px-3 py-3 text-right text-green-600 whitespace-nowrap">{c.monto_pagado > 0 ? Q(c.monto_pagado) : '—'}</td>
+                    <td className="px-3 py-3 text-right font-semibold whitespace-nowrap">{Q(c.saldo_pendiente)}</td>
+                    <td className="px-3 py-3">
                       {esCotSinCobro ? (
-                        <span className="px-2 py-1 text-[10px] font-semibold rounded-full bg-orange-100 text-orange-700">
+                        <span className="px-2 py-1 text-[10px] font-semibold rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">
                           SIN COBRO
                         </span>
                       ) : (
-                        <span className={`px-2 py-1 text-[10px] font-semibold rounded-full ${ESTADO_BADGE[c.estado] ?? 'bg-gray-100'}`}>
+                        <span className={`px-2 py-1 text-[10px] font-semibold rounded-full whitespace-nowrap ${ESTADO_BADGE[c.estado] ?? 'bg-gray-100'}`}>
                           {c.estado.toUpperCase()}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">
                       {c.fecha_vencimiento
                         ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
                         : '—'}
                     </td>
-                    <td className={`px-4 py-3 text-right text-xs font-mono ${esVencido ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
+                    <td className={`px-3 py-3 text-right text-xs font-mono ${esVencido ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
                       {esCotSinCobro ? '—' : c.estado === 'pagado' || c.estado === 'cancelado' ? '—' : dias > 0 ? `+${dias}` : dias === 0 ? 'Hoy' : `${dias}`}
                     </td>
-                    <td className="px-4 py-3 text-xs">
+                    <td className="px-3 py-3 text-xs whitespace-nowrap">
                       {esCotSinCobro ? (
                         <span className="text-gray-300">—</span>
                       ) : (() => {
@@ -309,7 +315,14 @@ export default function ContabilidadPage() {
                         )
                       })()}
                     </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    {/* Sticky: SIEMPRE visible aunque la tabla scrollee. Fondo
+                        sólido (no hereda el tinte /40 translúcido de la fila —
+                        se aproxima con el tono sólido equivalente) para que las
+                        columnas que pasan por debajo no se transparenten. */}
+                    <td
+                      className={`px-3 py-3 sticky right-0 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)] group-hover:bg-gray-50 ${esVencido ? 'bg-red-50' : esCotSinCobro ? 'bg-orange-50' : 'bg-white'}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex items-center gap-1">
                         {esCotSinCobro ? (
                           <Link
