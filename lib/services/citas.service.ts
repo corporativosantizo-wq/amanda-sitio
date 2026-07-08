@@ -3,6 +3,7 @@
 // Lógica de negocio para el sistema de citas
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   Cita,
@@ -344,19 +345,30 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   // Cliente internacional (idioma EN): la Consulta Legal cobra USD $150 en vez
   // del default local Q500. Un costo explícito en input sigue ganando.
   let clienteEsInternacional = false;
+  let clienteMonedaUSD = false;
   if (input.cliente_id) {
     const { data: cliIdioma } = await db()
       .from('clientes')
-      .select('idioma')
+      .select('idioma, moneda')
       .eq('id', input.cliente_id)
       .maybeSingle();
     clienteEsInternacional = cliIdioma?.idioma === 'en';
+    clienteMonedaUSD = cliIdioma?.moneda === 'USD';
   }
   const costoDefault =
     clienteEsInternacional && input.tipo === 'consulta_nueva'
       ? CONSULTA_INTERNACIONAL_USD
       : config.costo;
   const costo = input.costo ?? (esModalidadSinCosto ? 0 : costoDefault);
+
+  // Fase A pagos: token del link "Pay by card" (correo EN) SOLO para la
+  // consulta internacional — cliente idioma EN y moneda USD, con costo.
+  // Un cliente local jamás recibe token (capa 2 del blindaje); el route
+  // /pagar/cita revalida todo en servidor al momento del clic (capa 3).
+  const tokenPago =
+    clienteEsInternacional && clienteMonedaUSD && input.tipo === 'consulta_nueva' && costo > 0
+      ? randomUUID()
+      : null;
   // Las audiencias son presenciales en el juzgado: NUNCA llevan modalidad (queda
   // null, jamás el default 'virtual'), por lo que tampoco generan reunión de Teams
   // ni el correo de "Cita Confirmada". El resto de tipos conserva el default.
@@ -375,6 +387,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       hora_fin: input.hora_fin,
       duracion_minutos: input.duracion_minutos,
       costo,
+      token_pago: tokenPago,
       categoria_outlook: config.categoria_outlook,
       modalidad,
       documentos_entrega: input.documentos_entrega ?? null,

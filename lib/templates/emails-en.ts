@@ -106,7 +106,11 @@ function datosMercury(config?: Record<string, any> | null) {
   return completo ? d : null;
 }
 
-function paymentOptionsEN(config?: Record<string, any> | null): string {
+// payUrl (Fase A): link de pago con tarjeta — /pagar/cita?token=... — que crea
+// la sesión de Stripe AL CLIC (los links directos de Stripe expiran en 24 h).
+// Solo la confirmación de consulta internacional lo pasa; el resto de
+// plantillas mantiene la tarjeta deshabilitada hasta su propia fase.
+function paymentOptionsEN(config?: Record<string, any> | null, payUrl?: string): string {
   const disabledBtn = (label: string) => `
       <td style="padding:0 6px;">
         <span style="display:inline-block;background:#e5e7eb;color:#9ca3af;padding:12px 24px;border-radius:8px;font-weight:600;font-size:13px;cursor:not-allowed;">
@@ -114,17 +118,31 @@ function paymentOptionsEN(config?: Record<string, any> | null): string {
         </span>
       </td>`;
 
+  const cardSection = payUrl
+    ? `
+        <table cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr><td>
+          <a href="${payUrl}" style="display:inline-block;background:${NAVY};color:#ffffff;padding:12px 28px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:700;font-size:14px;">
+            💳 Pay by card (credit/debit)
+          </a>
+          <p style="margin:6px 0 0;font-size:11px;color:#94a3b8;">Secure checkout powered by Stripe. The amount is charged in USD.</p>
+        </td></tr></table>`
+    : `
+        <table cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr>
+          ${disabledBtn('💳 Credit card (Stripe) — coming soon')}
+        </tr></table>`;
+
   const mercury = datosMercury(config);
   if (!mercury) {
     return `
     <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border:1px solid ${AZUL_BORDE};border-radius:8px;padding:16px;">
       <tr><td>
         <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:${NAVY};text-transform:uppercase;letter-spacing:0.5px;">Payment options</p>
-        <table cellpadding="0" cellspacing="0"><tr>
-          ${disabledBtn('💳 Credit card (Stripe) — coming soon')}
+        ${payUrl ? cardSection : ''}
+        <table cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr>
+          ${payUrl ? '' : disabledBtn('💳 Credit card (Stripe) — coming soon')}
           ${disabledBtn('🏦 Bank transfer (Mercury Bank) — coming soon')}
         </tr></table>
-        <p style="margin:10px 0 0;font-size:12px;color:#64748b;">Online payment is coming soon. For now, payment instructions will be provided separately by our accounting team (<strong>contador@papeleo.legal</strong>).</p>
+        ${payUrl ? '' : `<p style="margin:10px 0 0;font-size:12px;color:#64748b;">Online payment is coming soon. For now, payment instructions will be provided separately by our accounting team (<strong>contador@papeleo.legal</strong>).</p>`}
       </td></tr>
     </table>`;
   }
@@ -144,9 +162,7 @@ function paymentOptionsEN(config?: Record<string, any> | null): string {
         ${mercury.bancoNombre ? fila('Receiving bank', mercury.bancoNombre) : ''}
         ${mercury.bancoDireccion ? fila('Bank address', mercury.bancoDireccion) : ''}
         <p style="margin:10px 0 0;font-size:12px;color:#64748b;">Once the transfer is made, please send your payment receipt to <strong>contador@papeleo.legal</strong>.</p>
-        <table cellpadding="0" cellspacing="0" style="margin-top:12px;"><tr>
-          ${disabledBtn('💳 Credit card (Stripe) — coming soon')}
-        </tr></table>
+        ${cardSection}
       </td></tr>
     </table>`;
 }
@@ -257,6 +273,12 @@ export function emailConfirmacionCita(cita: any, configuracion?: Record<string, 
 
   // Payment box: only Legal Consultation with a fee (mirror de la regla ES).
   // Para clientes internacionales, Fase 2 asigna cita.costo = 150 (USD).
+  // Fase A: si la cita tiene token_pago (solo se genera para cliente EN/USD
+  // en crearCita), el bloque lleva el botón real "Pay by card" → /pagar/cita,
+  // que crea la sesión de Stripe al clic y revalida todo en servidor.
+  const payUrl = cita.token_pago
+    ? `https://amandasantizo.com/pagar/cita?token=${encodeURIComponent(cita.token_pago)}`
+    : undefined;
   let paymentSection = '';
   if (cita.tipo === 'consulta_nueva' && cita.costo > 0) {
     paymentSection = `
@@ -266,7 +288,7 @@ export function emailConfirmacionCita(cita: any, configuracion?: Record<string, 
         <p style="margin:0 0 4px;font-size:13px;color:#78350f;">Payment is due prior to the consultation.</p>
       </td></tr>
     </table>
-    ${paymentOptionsEN(configuracion)}`;
+    ${paymentOptionsEN(configuracion, payUrl)}`;
   }
 
   const saludo = clienteNombre ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Dear <strong>${escEmail(clienteNombre)}</strong>,</p>` : '';
