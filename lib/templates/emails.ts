@@ -717,8 +717,10 @@ export function emailSolicitudPago(params: {
   monto: number;
   fechaLimite?: string;
   numeroCotizacion?: string;
-  // Aceptado por simetría con la versión EN (datos Mercury); ES no lo usa.
+  // Aceptados por simetría con la versión EN (datos Mercury / botón de
+  // tarjeta); ES no los usa — los clientes locales pagan por transferencia.
   configuracion?: Record<string, any> | null;
+  payUrl?: string;
 }): EmailTemplate {
   const montoFmt = `Q${params.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
   const subjectRef = params.numeroCotizacion
@@ -1298,8 +1300,10 @@ export function emailRecordatorioCobro(params: {
   fechaVencimiento?: string;
   tipo: 'primer_aviso' | 'segundo_aviso' | 'tercer_aviso' | 'urgente';
   numeroCobro: number;
-  // Aceptado por simetría con la versión EN (datos Mercury); ES no lo usa.
+  // Aceptados por simetría con la versión EN (datos Mercury / botón de
+  // tarjeta); ES no los usa — los clientes locales pagan por transferencia.
   configuracion?: Record<string, any> | null;
+  payUrl?: string;
 }): EmailTemplate {
   const montoFmt = `Q${params.saldoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
   const vencimiento = params.fechaVencimiento ? formatearFechaGT(params.fechaVencimiento) : 'por confirmar';

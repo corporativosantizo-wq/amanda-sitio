@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     const citaId = session.metadata?.cita_id;
+    const cobroId = session.metadata?.cobro_id;
     const productId = session.metadata?.product_id;
 
     // ── Pago de cita (Fase A: consulta internacional $150 USD) ───────
@@ -120,6 +121,73 @@ export async function POST(req: NextRequest) {
         } catch { /* el 500 de abajo ya provoca el reintento */ }
         // 500 → Stripe reintenta la entrega (backoff, hasta ~3 días).
         return NextResponse.json({ error: 'Error registrando el pago de la cita' }, { status: 500 });
+      }
+    }
+
+    // ── Pago de cobro (Fase B: solicitudes de pago EN, monto variable) ─
+    if (cobroId) {
+      const montoCobro = (session.amount_total ?? 0) / 100;
+      const montoCobroFmt = `$${montoCobro.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${(session.currency ?? 'usd').toUpperCase()}`;
+      try {
+        // Idempotencia: si esta sesión ya generó un pago (evento reenviado
+        // por Stripe), no se registra dos veces (UNIQUE en pagos.stripe_session_id).
+        const adminDb = createAdminClient();
+        const { data: pagoExistente, error: checkErr } = await adminDb
+          .from('pagos')
+          .select('id')
+          .eq('stripe_session_id', session.id)
+          .maybeSingle();
+
+        if (checkErr) throw new Error(`consultando pago existente: ${checkErr.message}`);
+
+        if (pagoExistente) {
+          console.log('[Stripe] Pago ya registrado para sesión', session.id, '— evento duplicado, OK');
+        } else {
+          // Registro REAL en contabilidad: fila en legal.pagos + actualización
+          // del cobro (monto_pagado/estado — fix del trigger fantasma) +
+          // Telegram 💰 + flujo de solicitud de factura. Todo dentro de
+          // registrarPagoCobro. permitirPagado: si el cobro ya quedó pagado
+          // por otra sesión (doble clic → dos checkouts), el dinero REAL se
+          // registra igual y el sobrepago queda visible para reembolso.
+          const { registrarPagoCobro } = await import('@/lib/services/cobros.service');
+          const { cobro } = await registrarPagoCobro({
+            cobro_id: cobroId,
+            monto: montoCobro,
+            metodo: 'tarjeta_stripe',
+            referencia_bancaria: typeof session.payment_intent === 'string'
+              ? session.payment_intent
+              : session.payment_intent?.id ?? undefined,
+            notas: `Pago con tarjeta vía Stripe (correo EN). Sesión ${session.id}`,
+            stripe_session_id: session.id,
+            permitirPagado: true,
+          });
+
+          console.log('[Stripe] Cobro', cobroId, `(#${cobro.numero_cobro})`, 'pago registrado —', montoCobroFmt, '— estado:', cobro.estado);
+
+          // Sobrepago (dos sesiones pagaron el mismo cobro): alerta específica.
+          if (Number(cobro.monto_pagado ?? 0) > Number(cobro.monto ?? 0)) {
+            try {
+              await sendTelegramMessage(
+                `⚠️ <b>Posible DOBLE PAGO en cobro #${cobro.numero_cobro}</b>\n\n` +
+                `El cobro quedó con sobrepago (pagado $${Number(cobro.monto_pagado).toLocaleString('en-US')} de $${Number(cobro.monto).toLocaleString('en-US')}). ` +
+                `Revisá en Stripe si corresponde reembolsar la sesión <code>${escapeHtml(session.id)}</code>.`,
+                { parse_mode: 'HTML' },
+              );
+            } catch { /* best-effort */ }
+          }
+        }
+      } catch (err: any) {
+        console.error('[Stripe] ERROR registrando pago de cobro', cobroId + ':', err?.message ?? err);
+        try {
+          await sendTelegramMessage(
+            `🚨 <b>Pago de cobro SIN registrar</b>\n\n` +
+            `Stripe cobró ${montoCobroFmt} pero el cobro <code>${escapeHtml(cobroId)}</code> no se pudo registrar: ${escapeHtml(err?.message ?? 'error desconocido')}.\n` +
+            `Stripe va a reintentar el evento automáticamente. Sesión: <code>${escapeHtml(session.id)}</code>`,
+            { parse_mode: 'HTML' },
+          );
+        } catch { /* el 500 de abajo ya provoca el reintento */ }
+        // 500 → Stripe reintenta la entrega (backoff, hasta ~3 días).
+        return NextResponse.json({ error: 'Error registrando el pago del cobro' }, { status: 500 });
       }
     }
 
