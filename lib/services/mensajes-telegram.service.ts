@@ -69,6 +69,8 @@ export interface MensajeProgramado {
   frases_personalizadas: string[] | null; // pool propio de frases; NULL/vacío = genérico
   activo: boolean;
   ultima_enviada: string | null; // 'YYYY-MM-DD'
+  ultimo_error: string | null;      // testigo: respuesta de Telegram del último envío rechazado
+  ultimo_error_at: string | null;   // cuándo ocurrió; NULL tras un envío exitoso
   created_at: string;
   updated_at: string;
 }
@@ -176,12 +178,21 @@ const REPORTE_CONFIG_ANITA: ReporteAstroConfig = {
   key: 'anita',
   variable: '{reporte_astrologico}',
   nombre: 'Anita',
+  // Sol y Ascendente calculados con efemérides reales (misma matemática
+  // kepleriana de lib/services/astro.ts) para su nacimiento: 20-jul-1966
+  // 20:15 (UTC-6, sin DST en 1966), Ciudad de Guatemala. Sol a 27°53' de
+  // Cáncer y Ascendente a 25°59' de Acuario.
   signo: 'Cáncer',
   simbolo: '♋',
   ascendente: 'Acuario',
   simboloAsc: '♒',
-  maxChars: 3500,
-  incluyeDoceSignos: true,
+  promptExtra:
+    "Anita nació el 20 de julio de 1966 a las 8:15 PM en Ciudad de Guatemala. Su Sol está a 27°53' de Cáncer y su Ascendente a 26° de Acuario. Su reporte debe ser más íntimo y personal, enfocado en su bienestar, trabajo y energía personal. NO incluir los 12 signos — solo su sección personalizada, tránsitos principales, luna y consejo.",
+  // Versión corta (mismo molde que Amanda): el formato largo con los 12 signos
+  // rozaba el límite de 4096 de Telegram y el envío del 11-jul-2026 fue
+  // rechazado en silencio.
+  maxChars: 2000,
+  incluyeDoceSignos: false,
   fallback:
     '🔮 Los astros están en silencio esta semana, pero tu energía Cáncer con ascendente Acuario sigue brillando. ¡Hermosa semana! ❤️',
 };
@@ -525,6 +536,41 @@ export async function eliminarMensaje(id: string): Promise<void> {
   if (error) throw new MensajeTelegramError('Error al eliminar mensaje', error);
 }
 
+// ── Testigo de fallos de envío ─────────────────────────────────────────────
+// El envío del 11-jul-2026 (reporte de Anita) fue rechazado por Telegram sin
+// dejar rastro: sendTelegramMessage solo lo logueaba y el mensaje se marcaba
+// como enviado igual. Estos helpers persisten el rechazo en la fila del
+// mensaje. Son best-effort: si las columnas aún no existen (migración
+// pendiente) o la actualización falla, se loguea y NO se rompe el flujo.
+
+async function registrarErrorEnvio(id: string, detalle: string): Promise<void> {
+  try {
+    const { error } = await db()
+      .from('mensajes_programados_telegram')
+      .update({
+        ultimo_error: detalle.substring(0, 500),
+        ultimo_error_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    if (error) throw error;
+  } catch (e) {
+    console.error(`[mensajes-telegram] No se pudo persistir el error de envío (id=${id}):`, e);
+  }
+}
+
+async function limpiarErrorEnvio(id: string): Promise<void> {
+  try {
+    const { error } = await db()
+      .from('mensajes_programados_telegram')
+      .update({ ultimo_error: null, ultimo_error_at: null })
+      .eq('id', id);
+    if (error) throw error;
+  } catch (e) {
+    console.error(`[mensajes-telegram] No se pudo limpiar el error de envío (id=${id}):`, e);
+  }
+}
+
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
 /**
@@ -614,7 +660,25 @@ export async function enviarMensaje(m: MensajeProgramado): Promise<string> {
   }
 
   const chatId = resolveChatId(m);
-  await sendTelegramMessage(text, { parse_mode: 'HTML', chatId });
+
+  // Testigo de fallos: si Telegram rechaza el mensaje (o la red falla), el
+  // detalle queda persistido en la fila y se lanza — así ni el cron ni
+  // "Enviar ahora" lo marcan como enviado.
+  let resultado;
+  try {
+    resultado = await sendTelegramMessage(text, { parse_mode: 'HTML', chatId });
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    await registrarErrorEnvio(m.id, `Error de red: ${msg}`);
+    throw new MensajeTelegramError(`Error de red al enviar a Telegram: ${msg}`);
+  }
+  if (!resultado.ok) {
+    const detalle = `Telegram HTTP ${resultado.status ?? '?'}: ${resultado.description ?? 'sin detalle'}`;
+    await registrarErrorEnvio(m.id, detalle);
+    throw new MensajeTelegramError(`Telegram rechazó el envío — ${detalle}`);
+  }
+
+  await limpiarErrorEnvio(m.id);
   return text;
 }
 

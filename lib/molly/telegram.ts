@@ -12,6 +12,16 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID!;
 
 // ── Send message ───────────────────────────────────────────────────────────
 
+// Resultado del envío. Cuando Telegram rechaza el mensaje (400 por texto
+// demasiado largo, HTML mal formado, chat inexistente, etc.) `ok` es false y
+// `description` trae la respuesta cruda de la API — el testigo del fallo.
+// Los errores de red (fetch lanza) siguen propagándose como excepción.
+export interface TelegramSendResult {
+  ok: boolean;
+  status?: number;
+  description?: string;
+}
+
 export async function sendTelegramMessage(
   text: string,
   options?: {
@@ -19,7 +29,7 @@ export async function sendTelegramMessage(
     reply_markup?: unknown;
     chatId?: string;
   },
-): Promise<void> {
+): Promise<TelegramSendResult> {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   const targetChatId = options?.chatId || CHAT_ID;
 
@@ -42,9 +52,10 @@ export async function sendTelegramMessage(
   if (!res.ok) {
     const errText = await res.text();
     console.error('[telegram] Error enviando mensaje:', res.status, errText.substring(0, 300));
-  } else {
-    console.log('[telegram] Mensaje enviado OK');
+    return { ok: false, status: res.status, description: errText.substring(0, 500) };
   }
+  console.log('[telegram] Mensaje enviado OK');
+  return { ok: true };
 }
 
 // ── Build email notification with inline keyboard ──────────────────────────
