@@ -9,6 +9,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { adminFetch } from '@/lib/utils/admin-fetch';
+import { signedUrlUpload } from '@/lib/storage/signed-url-upload';
+import { validarAdjunto } from '@/lib/adjuntos-correo';
 import {
   PageHeader, Badge, EmptyState, Skeleton, Q,
 } from '@/components/admin/ui';
@@ -63,6 +65,39 @@ interface Correo {
   created_at: string;
   plantilla?: { nombre: string; icono: string } | null;
   cliente?: { nombre: string } | null;
+}
+
+// ── Helper: subida directa de adjuntos a Storage ─────────────────────────
+// Valida el archivo ANTES de subir (error claro, no un 413 genérico), pide un
+// signed URL y hace PUT directo a Supabase Storage — el archivo nunca pasa por
+// la función de Vercel (límite de 4.5 MB de body).
+async function subirAdjuntoDirecto(file: File): Promise<AdjuntoMeta> {
+  const contentType = file.type || 'application/octet-stream';
+  const invalido = validarAdjunto({ name: file.name, size: file.size, type: file.type });
+  if (invalido) throw new Error(invalido);
+
+  const pedirUrl = () =>
+    adminFetch('/api/admin/comunicaciones/adjuntos/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, filesize: file.size, contentType }),
+    });
+
+  // La 1a petición tras abrir el diálogo puede fallar por cold-start o por el
+  // handshake de sesión de Clerk — reintento único con el MISMO adminFetch.
+  let urlRes = await pedirUrl().catch(() => null);
+  if (!urlRes || !urlRes.ok) {
+    urlRes = await pedirUrl();
+  }
+  const urlData = await urlRes.json().catch(() => ({}));
+  if (!urlRes.ok || !urlData?.signed_url) {
+    throw new Error(urlData?.error || `Error ${urlRes.status} al preparar la subida de ${file.name}`);
+  }
+
+  const up = await signedUrlUpload(urlData.signed_url, file, contentType);
+  if (!up.ok) throw new Error(`Error al subir ${file.name} (HTTP ${up.status})`);
+
+  return { name: file.name, path: urlData.path, size: file.size, contentType };
 }
 
 interface ClienteBusqueda {
@@ -661,42 +696,23 @@ function NuevoCorreoTab() {
   // FileList vivo del input, que se vacía al resetear el value.
   const handleUploadAdjuntos = async (files: File[]) => {
     if (files.length === 0) return;
+
+    // Validar TODO antes de subir nada: error claro y no se toca Storage.
+    const invalidos = files
+      .map((f) => validarAdjunto({ name: f.name, size: f.size, type: f.type }))
+      .filter((e): e is string => e !== null);
+    if (invalidos.length > 0) {
+      setToast({ type: 'error', msg: invalidos.join(' ') });
+      return;
+    }
+
     setUploadingFiles(true);
-
-    // El stream del FormData se consume al enviarse, así que lo reconstruimos en
-    // cada intento.
-    const buildForm = () => {
-      const fd = new FormData();
-      for (const f of files) fd.append('files', f);
-      return fd;
-    };
-
-    const enviar = () =>
-      adminFetch('/api/admin/comunicaciones/adjuntos', { method: 'POST', body: buildForm() });
-
     try {
-      // La 1a petición tras abrir el diálogo puede fallar por el cold-start de la
-      // función serverless o por el handshake de sesión de Clerk (que con
-      // redirect:'manual' se ve como opaqueredirect → SESSION_EXPIRED). En ambos
-      // casos un reintento inmediato con el MISMO adminFetch (manual) ya pasa,
-      // porque el handshake dejó la cookie fresca. NO reintentar con
-      // fetch(redirect:'follow'): seguir el redirect del handshake en un POST
-      // devuelve HTML no-JSON y rompía la subida (regresión de d9d9b33).
-      let res = await enviar().catch(() => null);
-      if (!res || !res.ok) {
-        res = await enviar();
+      const subidos: AdjuntoMeta[] = [];
+      for (const f of files) {
+        subidos.push(await subirAdjuntoDirecto(f));
       }
-
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || `Error ${res.status}`);
-      }
-
-      const data = await res.json();
-      // Guard contra response sin `adjuntos` o malformado: spread de undefined
-      // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
-      // por state corrupto de uploads previos.
-      setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
+      setAdjuntos(prev => [...prev, ...subidos]);
     } catch (err: any) {
       const msg = err?.message === 'SESSION_EXPIRED'
         ? 'Tu sesión expiró. Recarga la página.'
@@ -1335,7 +1351,6 @@ function NuevoCorreoTab() {
 
 interface ArchivoItem {
   file: File;
-  base64: string;
   clienteId: string | null;
   clienteNombre: string;
   email: string;
@@ -1351,6 +1366,7 @@ function EnvioMasivoDocumentosTab() {
   const [cuenta, setCuenta] = useState('asistente@papeleo.legal');
   const [sending, setSending] = useState(false);
   const [progreso, setProgreso] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ enviados: number; errores: any[] } | null>(null);
 
   // Load plantilla "envio-documento" for default body
@@ -1372,18 +1388,27 @@ function EnvioMasivoDocumentosTab() {
 
   // ── Step 1: File upload ──────────────────────────────────────────────
 
-  const handleFiles = async (files: FileList) => {
+  const handleFiles = (files: FileList) => {
     const items: ArchivoItem[] = [];
+    const rechazados: string[] = [];
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (!['pdf', 'doc', 'docx'].includes(ext ?? '')) continue;
+      if (!['pdf', 'doc', 'docx'].includes(ext ?? '')) {
+        rechazados.push(`"${file.name}": solo se aceptan PDF, DOC y DOCX.`);
+        continue;
+      }
 
-      const base64 = await fileToBase64(file);
+      // Validar tamaño ANTES de aceptar el archivo — error claro en pantalla,
+      // no un 413 genérico al enviar.
+      const invalido = validarAdjunto({ name: file.name, size: file.size, type: file.type });
+      if (invalido) {
+        rechazados.push(invalido);
+        continue;
+      }
+
       const baseName = file.name.replace(/\.[^.]+$/, '').trim();
-
       items.push({
         file,
-        base64,
         clienteId: null,
         clienteNombre: baseName,
         email: '',
@@ -1391,6 +1416,7 @@ function EnvioMasivoDocumentosTab() {
         matched: false,
       });
     }
+    setFileError(rechazados.length > 0 ? rechazados.join(' ') : null);
     setArchivos(prev => [...prev, ...items]);
   };
 
@@ -1450,16 +1476,31 @@ function EnvioMasivoDocumentosTab() {
     setProgreso(`Enviando 0/${enviables.length}...`);
 
     try {
-      const items = enviables.map((a: ArchivoItem) => ({
-        filename: a.file.name,
-        contentType: a.file.type || 'application/octet-stream',
-        contentBase64: a.base64,
-        clienteId: a.clienteId,
-        clienteNombre: a.clienteNombre,
-        email: a.email,
-        cc: a.cc || null,
-      }));
+      // Fase 1: subir cada archivo directo a Storage (signed URL). Al servidor
+      // solo viajan los paths — el base64 en el JSON reventaba el límite de
+      // 4.5 MB de body de Vercel (413). El servidor baja cada archivo y lo
+      // adjunta al correo vía Graph (adjunto real, no enlace).
+      const items: Array<{
+        filename: string; contentType: string; path: string;
+        clienteId: string | null; clienteNombre: string; email: string; cc: string | null;
+      }> = [];
+      for (let i = 0; i < enviables.length; i++) {
+        const a = enviables[i];
+        setProgreso(`Subiendo documento ${i + 1}/${enviables.length} — ${a.file.name}...`);
+        const meta = await subirAdjuntoDirecto(a.file);
+        items.push({
+          filename: a.file.name,
+          contentType: meta.contentType,
+          path: meta.path,
+          clienteId: a.clienteId,
+          clienteNombre: a.clienteNombre,
+          email: a.email,
+          cc: a.cc || null,
+        });
+      }
 
+      // Fase 2: enviar (el servidor descarga de Storage y adjunta).
+      setProgreso(`Enviando ${enviables.length} correo${enviables.length !== 1 ? 's' : ''}...`);
       const res = await adminFetch('/api/admin/comunicaciones/masivo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1471,7 +1512,8 @@ function EnvioMasivoDocumentosTab() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
 
       setResultado({ enviados: data.enviados, errores: data.errores ?? [] });
       setProgreso(null);
@@ -1553,7 +1595,7 @@ function EnvioMasivoDocumentosTab() {
           >
             <div className="text-3xl mb-2">📎</div>
             <p className="text-sm font-medium text-slate-700">Arrastra archivos aquí o haz clic para seleccionar</p>
-            <p className="text-xs text-slate-400 mt-1">PDF, DOC, DOCX</p>
+            <p className="text-xs text-slate-400 mt-1">PDF, DOC, DOCX — máximo 25 MB por archivo</p>
             <input
               id="file-input"
               type="file"
@@ -1563,6 +1605,14 @@ function EnvioMasivoDocumentosTab() {
               onChange={e => e.target.files && handleFiles(e.target.files)}
             />
           </div>
+
+          {/* Archivos rechazados en la validación (tipo/tamaño) */}
+          {fileError && (
+            <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
+              <p className="text-xs text-red-700">⚠️ {fileError}</p>
+              <button onClick={() => setFileError(null)} className="text-xs text-red-400 hover:text-red-600 font-medium shrink-0">✕</button>
+            </div>
+          )}
 
           {/* File list */}
           {archivos.length > 0 && (
@@ -1855,21 +1905,6 @@ function ArchivoRow({ item, index, onChange }: {
   );
 }
 
-// ── Helper: File to base64 ───────────────────────────────────────────────
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Remove data:xxx;base64, prefix
-      resolve(result.split(',')[1] ?? result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 // ── Tab: Lista de correos (Programados / Enviados) ───────────────────────
 
 function CorreosListTab({ estado }: { estado: 'programado' | 'enviado' }) {
@@ -2017,19 +2052,25 @@ function EditarCorreoModal({ correo, onClose, onSaved }: {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (files: FileList) => {
+    const lista = Array.from(files);
+
+    // Validar TODO antes de subir nada: error claro y no se toca Storage.
+    const invalidos = lista
+      .map((f) => validarAdjunto({ name: f.name, size: f.size, type: f.type }))
+      .filter((e): e is string => e !== null);
+    if (invalidos.length > 0) {
+      setError(invalidos.join(' '));
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setUploadingFiles(true);
     try {
-      const formData = new FormData();
-      for (const f of Array.from(files)) formData.append('files', f);
-      const res = await adminFetch('/api/admin/comunicaciones/adjuntos', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      // Guard contra response sin `adjuntos` o malformado: spread de undefined
-      // tira "TypeError: undefined is not iterable" y rompía el flujo del envío
-      // por state corrupto de uploads previos.
-      setAdjuntos(prev => [...prev, ...(data?.adjuntos ?? [])]);
+      const subidos: AdjuntoMeta[] = [];
+      for (const f of lista) {
+        subidos.push(await subirAdjuntoDirecto(f));
+      }
+      setAdjuntos(prev => [...prev, ...subidos]);
     } catch (err: any) {
       setError(err.message ?? 'Error al subir');
     } finally {

@@ -3,32 +3,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { randomUUID } from 'crypto';
 import { handleApiError } from '@/lib/api-error';
+import {
+  ADJUNTOS_BUCKET as BUCKET,
+  MAX_ADJUNTO_SIZE as MAX_SIZE,
+  ALLOWED_ADJUNTO_TYPES as ALLOWED_TYPES,
+  safeStorageName,
+} from '@/lib/adjuntos-correo';
+
+// NOTA: este POST multipart pasa por la función de Vercel, cuyo límite de body
+// es 4.5 MB — archivos mayores devuelven 413 antes de llegar aquí. El frontend
+// ya NO usa esta ruta para subir: usa /adjuntos/upload-url + PUT directo a
+// Storage. Se conserva el POST por compatibilidad (scripts/flows antiguos).
 
 const db = () => createAdminClient();
-const BUCKET = 'adjuntos-correo';
-const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
-
-// Supabase Storage rechaza con 400 las claves de objeto con caracteres no-ASCII
-// (acentos, ñ, etc.). Saneamos SOLO la clave de almacenamiento; el nombre
-// original se conserva en la metadata (`name`) para mostrarlo y adjuntarlo en el
-// correo con su nombre correcto.
-function safeStorageName(name: string): string {
-  const cleaned = name
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')   // elimina diacríticos: É→E, ñ→n
-    .replace(/[^a-zA-Z0-9 ._-]/g, '_') // cualquier otro carácter no seguro → _
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned || 'archivo';
-}
-const ALLOWED_TYPES = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'image/jpeg',
-  'image/png',
-];
 
 export async function POST(req: NextRequest) {
   try {

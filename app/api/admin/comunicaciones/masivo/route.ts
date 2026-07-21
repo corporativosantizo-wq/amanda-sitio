@@ -10,13 +10,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { obtenerPieConfidencialidad } from '@/lib/services/comunicaciones.service';
 import { emailTextoPlano } from '@/lib/templates/emails';
 import { handleApiError } from '@/lib/api-error';
+import { ADJUNTOS_BUCKET } from '@/lib/adjuntos-correo';
 
 const db = () => createAdminClient();
 
 interface EnvioItem {
   filename: string;
   contentType: string;
-  contentBase64: string;
+  // Path en el bucket adjuntos-correo. El cliente sube el archivo directo a
+  // Storage (signed URL) y aquí solo viaja la referencia — mandar el base64 en
+  // el JSON reventaba el límite de 4.5 MB de body de Vercel (413).
+  path: string;
   clienteId: string | null;
   clienteNombre: string;
   email: string;
@@ -65,8 +69,21 @@ export async function POST(req: NextRequest) {
         errores.push({ filename: item.filename, email: '', error: 'Sin email' });
         continue;
       }
+      if (!item.path) {
+        errores.push({ filename: item.filename, email: item.email, error: 'Falta el path del archivo en Storage' });
+        continue;
+      }
 
       try {
+        // Storage es solo tránsito: bajamos el archivo y va como ADJUNTO real
+        // del correo (mismo patrón que enviarCorreoAhora), nunca como enlace.
+        const { data: fileData, error: dlError } = await db().storage
+          .from(ADJUNTOS_BUCKET)
+          .download(item.path);
+        if (dlError || !fileData) {
+          throw new Error(`No se pudo descargar el archivo de Storage: ${dlError?.message ?? 'sin datos'}`);
+        }
+        const contentBase64 = Buffer.from(await fileData.arrayBuffer()).toString('base64');
         const asunto = asunto_template
           .replace(/\{nombre_cliente\}/g, item.clienteNombre || 'Cliente')
           .replace(/\{nombre_documento\}/g, item.filename.replace(/\.[^.]+$/, ''));
@@ -92,7 +109,7 @@ export async function POST(req: NextRequest) {
           attachments: [{
             name: item.filename,
             contentType: item.contentType || 'application/octet-stream',
-            contentBytes: item.contentBase64,
+            contentBytes: contentBase64,
           }],
         });
 
@@ -118,6 +135,10 @@ export async function POST(req: NextRequest) {
           email: item.email,
           error: err.message ?? 'Error desconocido',
         });
+      } finally {
+        // Tránsito interno: limpiar el archivo de Storage (best-effort). Si el
+        // envío falló, el cliente vuelve a subirlo al reintentar.
+        try { await db().storage.from(ADJUNTOS_BUCKET).remove([item.path]); } catch { /* best effort */ }
       }
     }
 

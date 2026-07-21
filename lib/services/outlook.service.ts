@@ -600,7 +600,15 @@ function parseEmailList(input: string | string[] | undefined): string[] {
   return input.split(',').map((e) => e.trim()).filter(Boolean);
 }
 
-const LARGE_ATTACHMENT_THRESHOLD = 4 * 1024 * 1024; // 4MB — Graph API inline limit
+// Límites reales de Graph:
+// - POST /sendMail acepta un request TOTAL de ~4 MB (JSON con adjuntos ya
+//   inflados a base64, +33% sobre los bytes crudos).
+// - POST /messages/{id}/attachments acepta hasta 3 MB por adjunto.
+// La decisión inline vs upload-session debe mirar el tamaño del request
+// completo (suma de adjuntos en base64 + cuerpo), no cada adjunto crudo por
+// separado — un solo PDF de 3.7 MB crudos ya excede /sendMail (caso COT-000030).
+const INLINE_ATTACHMENT_MAX = 3 * 1024 * 1024; // 3MB crudos por adjunto (draft)
+const SENDMAIL_REQUEST_MAX = 3.5 * 1024 * 1024; // margen bajo el límite de 4MB
 const UPLOAD_CHUNK_SIZE = 3.5 * 1024 * 1024; // 3.5MB per chunk
 
 /** Estimate raw byte size from a base64 string */
@@ -664,14 +672,24 @@ export async function sendMail(params: {
     }
   }
 
-  // Check attachment sizes to decide inline vs upload session
-  const hasLargeAttachment = attachments.some((att: { name: string; contentType: string; contentBytes: string }) => {
+  // Decide inline vs upload session mirando el request COMPLETO a /sendMail:
+  // suma de adjuntos en base64 (att.contentBytes.length = bytes reales que
+  // viajan en el JSON) + cuerpo HTML + margen para el resto del payload.
+  let totalRequestBytes = params.htmlBody.length + 16 * 1024;
+  let hasLargeAttachment = false;
+  for (const att of attachments) {
     const rawSize = base64ByteSize(att.contentBytes);
-    console.log(`[sendMail] Adjunto: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB) — ${rawSize < LARGE_ATTACHMENT_THRESHOLD ? 'inline' : 'upload session'}`);
-    return rawSize >= LARGE_ATTACHMENT_THRESHOLD;
-  });
+    totalRequestBytes += att.contentBytes.length;
+    if (rawSize >= INLINE_ATTACHMENT_MAX) hasLargeAttachment = true;
+    console.log(`[sendMail] Adjunto: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB crudos, ${(att.contentBytes.length / 1024 / 1024).toFixed(1)} MB base64)`);
+  }
+  const useUploadSession =
+    attachments.length > 0 && (hasLargeAttachment || totalRequestBytes >= SENDMAIL_REQUEST_MAX);
+  if (attachments.length > 0) {
+    console.log(`[sendMail] Request estimado: ${(totalRequestBytes / 1024 / 1024).toFixed(1)} MB — vía ${useUploadSession ? 'draft + upload session' : 'sendMail inline'}`);
+  }
 
-  if (hasLargeAttachment && attachments.length > 0) {
+  if (useUploadSession) {
     // ── Large attachment flow: draft → upload session → send ──
     await sendMailWithUploadSession(params.from, appToken, {
       subject: params.subject,
@@ -745,7 +763,7 @@ async function sendMailWithUploadSession(
   from: MailboxAlias,
   appToken: string,
   messagePayload: any,
-  attachments: Array<{ name: string; contentType: string; contentBytes: string }>,
+  attachments: Array<{ name: string; contentType: string; contentBytes: string; contentId?: string; isInline?: boolean }>,
 ): Promise<void> {
   const graphBase = `https://graph.microsoft.com/v1.0/users/${from}`;
   const headers = {
@@ -776,8 +794,10 @@ async function sendMailWithUploadSession(
     for (const att of attachments) {
       const rawSize = base64ByteSize(att.contentBytes);
 
-      if (rawSize < LARGE_ATTACHMENT_THRESHOLD) {
-        // Small attachment — add inline to draft
+      if (rawSize < INLINE_ATTACHMENT_MAX) {
+        // Small attachment — add inline to draft. Preservar contentId/isInline
+        // para que los adjuntos CID (logo de marca) sigan renderizando en el
+        // header cuando el correo va por la vía draft.
         console.log(`[sendMail] Adjuntando inline: ${att.name} (${(rawSize / 1024 / 1024).toFixed(1)} MB)`);
         const addRes = await fetch(`${graphBase}/messages/${draftId}/attachments`, {
           method: 'POST',
@@ -787,6 +807,7 @@ async function sendMailWithUploadSession(
             name: att.name,
             contentType: att.contentType,
             contentBytes: att.contentBytes,
+            ...(att.contentId ? { contentId: att.contentId, isInline: att.isInline ?? true } : {}),
           }),
         });
         if (!addRes.ok) {
