@@ -177,9 +177,18 @@ async function enviarConfirmacionLlamada(ll: any): Promise<void> {
     asunto: ll.asunto,
     telefono: ll.telefono_contacto,
   });
-  const cc = ['amanda@papeleo.legal', ...((ll.emails_cc ?? []) as string[])];
+  // amanda@ NO va en CC visible: sendMail ya le agrega BCC automático al
+  // enviar desde asistente@/contador@ (igual que el resto de flujos — el
+  // cliente no debe verla en copia). Exchange entrega una sola copia.
+  const cc = (ll.emails_cc ?? []) as string[];
   try {
-    await sendMail({ from: email.from, to: ll.email_contacto, cc, subject: email.subject, htmlBody: email.html });
+    await sendMail({
+      from: email.from,
+      to: ll.email_contacto,
+      ...(cc.length ? { cc } : {}),
+      subject: email.subject,
+      htmlBody: email.html,
+    });
     await db().from('llamadas_programadas').update({ confirmacion_enviada: true }).eq('id', ll.id);
   } catch (e: any) {
     console.error('[Llamadas] Error enviando confirmación:', e?.message ?? e);

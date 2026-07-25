@@ -213,7 +213,7 @@ export async function procesarRecordatoriosAudiencias(): Promise<{
   const { data: pendientes, error } = await db()
     .from('audiencias_recordatorios')
     .select(`id, plantilla, destinatario_email, fecha_sugerida_envio,
-      audiencia:audiencias(*, cliente:clientes(id, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente))`)
+      audiencia:audiencias(*, cliente:clientes(id, nombre, email), expediente:expedientes(id, numero_expediente))`)
     .in('estado', ['programado', 'aprobado'])
     .is('fecha_enviado', null)
     .lte('fecha_sugerida_envio', ahora);
