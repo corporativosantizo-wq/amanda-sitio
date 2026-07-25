@@ -65,7 +65,9 @@ export default function LlamadasPage() {
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
   const [ccInput, setCcInput] = useState('');
-  const [cc, setCc] = useState<string[]>([]);
+  const [cc, setCc] = useState<string[]>([]);                              // CC tipeado a mano para esta llamada
+  const [ccHeredadoCliente, setCcHeredadoCliente] = useState<string[]>([]); // CC del cliente (legal.clientes.emails_cc), solo referencia
+  const [ccHeredadoChecked, setCcHeredadoChecked] = useState<string[]>([]); // heredados que Amanda marca EXPLÍCITAMENTE (default: ninguno)
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
   const [duracion, setDuracion] = useState(30);
@@ -127,13 +129,18 @@ export default function LlamadasPage() {
     setEmail(c.email ?? '');
     setBusqueda(c.nombre);
     setResultados([]);
-    // Detalle para auto-llenar teléfono y CC
+    // Detalle para auto-llenar teléfono. Los emails_cc del cliente NO se
+    // copian al CC: se muestran como sugerencias DESMARCADAS y solo van si
+    // Amanda las marca (regla de confidencialidad, igual que cotizaciones y
+    // audiencias — clientes como el grupo Rope tienen firmas externas en esa
+    // lista que no deben recibir copia por defecto).
     try {
       await getToken().catch(() => {});
       const res = await adminFetch(`/api/admin/clientes/${c.id}`);
       const d = await res.json();
       if (d?.telefono) setTelefono(d.telefono);
-      if (Array.isArray(d?.emails_cc) && d.emails_cc.length) setCc(d.emails_cc);
+      setCcHeredadoCliente(Array.isArray(d?.emails_cc) ? d.emails_cc : []);
+      setCcHeredadoChecked([]);
     } catch { /* opcional */ }
   };
 
@@ -163,9 +170,16 @@ export default function LlamadasPage() {
     }
   };
 
+  const toggleHeredado = (email: string) => {
+    setCcHeredadoChecked(prev =>
+      prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email],
+    );
+  };
+
   const resetForm = () => {
     setClienteId(null); setBusqueda(''); setResultados([]);
     setNombre(''); setEmail(''); setTelefono(''); setCc([]); setCcInput('');
+    setCcHeredadoCliente([]); setCcHeredadoChecked([]);
     setFecha(''); setHora(''); setDuracion(30); setAsunto(''); setNotas('');
     setDispo(null);
   };
@@ -187,7 +201,11 @@ export default function LlamadasPage() {
           nombre_contacto: nombre.trim(),
           email_contacto: email.trim(),
           telefono_contacto: telefono.trim() || null,
-          emails_cc: cc,
+          // CC final = SOLO lo explícito: tipeado + heredados marcados.
+          // Dedup case-insensitive; los heredados sin marcar nunca se envían.
+          emails_cc: Array.from(new Set(
+            [...cc, ...ccHeredadoChecked].map(x => x.trim().toLowerCase()).filter(Boolean),
+          )),
           fecha, hora, duracion_minutos: duracion,
           asunto: asunto.trim(),
           notas: notas.trim() || null,
@@ -346,6 +364,26 @@ export default function LlamadasPage() {
             placeholder="correo@ejemplo.com (Enter para agregar)"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500"
           />
+          {ccHeredadoCliente.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[11px] text-gray-500 mb-1">
+                CC del cliente (desmarcados — solo se copian los que marques):
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {ccHeredadoCliente.map((e) => (
+                  <label key={e} className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ccHeredadoChecked.includes(e)}
+                      onChange={() => toggleHeredado(e)}
+                      className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    {e}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Notas */}
