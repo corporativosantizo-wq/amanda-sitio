@@ -29,11 +29,9 @@ import {
 } from './outlook.service';
 import { sendTelegramMessage } from '@/lib/molly/telegram';
 // Los correos al CLIENTE se seleccionan ES/EN vía plantillasDeCliente(); los
-// internos y el recordatorio de audiencia judicial quedan siempre en español.
-import {
-  emailNuevaSolicitudInterno,
-  emailRecordatorioAudiencia,
-} from '@/lib/templates/emails';
+// internos quedan siempre en español. (Los recordatorios de audiencia viven en
+// audiencias-recordatorios.service — cutover 21-jun-2026.)
+import { emailNuevaSolicitudInterno } from '@/lib/templates/emails';
 import { plantillasDeCliente } from '@/lib/templates/seleccionar';
 import { obtenerConfiguracionDespacho } from '@/lib/services/configuracion.service';
 import { CONSULTA_INTERNACIONAL_USD } from '@/lib/templates/emails-en';
@@ -749,36 +747,6 @@ async function notificarDespachoNuevaSolicitud(
   }
 }
 
-// Avisa a Amanda por Telegram privado de una audiencia próxima (un día antes).
-async function notificarAmandaAudiencia(cita: any): Promise<void> {
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) {
-    console.warn('[Audiencia] TELEGRAM_CHAT_ID no configurado — no se avisa a Amanda');
-    return;
-  }
-  const cliente = cita.cliente?.nombre ?? 'Cliente';
-  const fechaFmt = cita.fecha
-    ? new Date(cita.fecha + 'T12:00:00').toLocaleDateString('es-GT', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Guatemala',
-      })
-    : '—';
-  const horaFmt = formatearHora12(cita.hora_inicio);
-  const materia = (cita.audiencia_materia ?? '').trim();
-  const diligencia = (cita.audiencia_diligencia ?? '').trim();
-  const expediente = (cita.audiencia_expediente ?? '').trim();
-  const linea4 = [materia, diligencia].filter(Boolean).join(' — ');
-  const texto =
-    `⚖️ <b>Audiencia mañana: ${escapeHtmlTg(cliente)}</b>\n` +
-    `📅 ${fechaFmt} ${horaFmt}\n` +
-    (expediente ? `📂 Expediente: ${escapeHtmlTg(expediente)}\n` : '') +
-    (linea4 ? `📋 ${escapeHtmlTg(linea4)}` : '');
-  try {
-    await sendTelegramMessage(texto, { parse_mode: 'HTML', chatId });
-  } catch (e: any) {
-    console.error('[Audiencia] Error Telegram a Amanda:', e?.message ?? e);
-  }
-}
-
 // Avisa a Mariano que una cita de entrega/firma quedó confirmada. Para firmas
 // con múltiples partes, lista a todos los firmantes (nombre + email).
 async function notificarMarianoCitaConfirmada(
@@ -1145,52 +1113,20 @@ export async function enviarRecordatorios(): Promise<{
   if (enHorarioOficina) {
     const { data: citas24h } = await db()
       .from('citas')
-      .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc, idioma)')
+      .select('*, cliente:clientes(id, codigo, nombre, email, idioma)')
       .eq('fecha', mananaStr)
       .eq('recordatorio_24h_enviado', false)
       // Solo citas confirmadas (las solicitudes pendientes de entrega/firma no
       // reciben recordatorios hasta que Amanda confirme la fecha).
       .eq('estado', 'confirmada')
-      // CUTOVER: las audiencias las maneja el módulo nuevo (legal.audiencias).
-      // El sistema viejo deja de mandar recordatorios de audiencia para evitar
-      // duplicados. Consulta/seguimiento/reunión/personales siguen igual.
+      // CUTOVER: las audiencias las maneja el módulo nuevo (legal.audiencias,
+      // audiencias-recordatorios.service). El sistema viejo no manda
+      // recordatorios de audiencia — su rama de envío (que auto-copiaba
+      // cliente.emails_cc, regla de confidencialidad violada) se eliminó el
+      // 25-jul-2026 tras verificar que nunca llegó a enviar nada.
       .neq('tipo', 'audiencia');
 
     for (const cita of citas24h ?? []) {
-      // ── Audiencias judiciales: correo propio (con CC a emails_cc + amanda@) y
-      //    aviso a Amanda por Telegram privado. Se gatea con el mismo flag. ──
-      if (cita.tipo === 'audiencia') {
-        try {
-          // Destinatarios específicos del evento (p.ej. audiencias penales sensibles):
-          // si hay, el recordatorio va SOLO a esos correos (con CC a amanda@), sin
-          // exponer el asunto al email/emails_cc del cliente. Si no, comportamiento
-          // por defecto: email del cliente + sus emails_cc.
-          const destinatariosPropios = (cita.audiencia_destinatarios ?? []).filter(
-            (e: string) => (e ?? '').trim(),
-          );
-          if (destinatariosPropios.length > 0) {
-            const email = emailRecordatorioAudiencia(cita);
-            await sendMail({
-              from: email.from,
-              to: destinatariosPropios,
-              cc: ['amanda@papeleo.legal'],
-              subject: email.subject,
-              htmlBody: email.html,
-            });
-          } else if (cita.cliente?.email) {
-            const email = emailRecordatorioAudiencia(cita);
-            const cc = [...(cita.cliente.emails_cc ?? []), 'amanda@papeleo.legal'];
-            await sendMail({ from: email.from, to: cita.cliente.email, cc, subject: email.subject, htmlBody: email.html });
-          }
-          await notificarAmandaAudiencia(cita);
-          await db().from('citas').update({ recordatorio_24h_enviado: true }).eq('id', cita.id);
-          enviados_24h++;
-        } catch (e: any) {
-          console.warn('[Citas] Error enviando recordatorio de audiencia para cita', cita.id, e?.message ?? e);
-        }
-        continue;
-      }
-
       if (cita.cliente?.email) {
         try {
           const email = plantillasDeCliente(cita.cliente).emailRecordatorio24h(cita);

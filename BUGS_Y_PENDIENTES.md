@@ -63,18 +63,19 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 ---
 
-### [DOC-002] `clientes.emails_cc` se copia AUTOMÁTICO en cotizaciones (exposición a firmas externas)
+### [DOC-002] `clientes.emails_cc` auto-copiado / pre-llenado en correos — RESUELTO en cotizaciones, citas/audiencias y llamadas
 
-**Fecha:** 21-jun-2026 (diagnóstico pedido por Amanda en Fase 2 de audiencias). **Solo diagnóstico — no se tocó código ni producción.**
+**Fecha original:** 21-jun-2026 (diagnóstico). **Actualizado: 25-jul-2026** tras auditoría con verificación de encabezados reales por Graph (envíos de producción de los últimos 60 días).
 
-**Cómo se comporta `clientes.emails_cc` hoy, por flujo:**
-- **Cotizaciones** (`cotizaciones.service.ts`, 3 rutas: enviar / reenviar / lote): el CC = `cc_emails` de la cotización **+ `cliente.emails_cc`**, **automático y server-side**. Amanda **no** ve ni puede deseleccionar ese CC al enviar.
-- **Citas / audiencia** (`citas.service.ts`, cron): si la cita-audiencia **no** tiene `audiencia_destinatarios`, el recordatorio hace `cc = [...cliente.emails_cc, 'amanda@']` **automático**. Si tiene `audiencia_destinatarios`, va solo a esos (+ amanda@), **sin** `emails_cc`.
-- **Recibos de caja**, **Molly Mail saliente**, **Llamadas**: **pre-llenan** el CC con `cliente.emails_cc` en un campo **editable** que Amanda ve antes de enviar (puede quitarlo). No es silencioso.
+**Estado por flujo (regla objetivo: heredados DESMARCADOS, solo va lo que Amanda marca/tipea):**
 
-**Exposición real del Grupo Rope (datos de prod, solo lectura):** 13 sociedades Rope/AGROPE, cada una con **9 `emails_cc`**. Dominios en esos CC: `ropecorp.com` (interno), `gmail.com`, y **firmas externas `lexincorp.com` y `roalatam.com`**. **8 de las 13** tienen ≥1 cotización ya enviada por correo → esas firmas externas **ya recibieron copia automática** de cotizaciones. En audiencias **no hay exposición** (0 citas tipo audiencia del grupo).
+- **Cotizaciones — ✅ RESUELTO (fix `10979bd`, 21-jun-2026).** El envío/reenvío usa SOLO el CC del modal (heredados desmarcados); el cron de programadas envía sin CC. **Evidencia 25-jul:** encabezados Graph de las 10 últimas enviadas (COT-000050→060): las 8 post-fix con CC vacío — incluida COT-000060 (Juncaya, 4 `emails_cc` externos, ninguno copiado) y COT-000057 (el `cc_emails` guardado NO se envió). La exposición histórica al Grupo Rope (cotizaciones pre-21-jun con copia a `lexincorp.com`/`roalatam.com`) fue real y es irreversible, pero el flujo activo está limpio.
 
-**Implicación:** la regla de confidencialidad de audiencias (heredados desmarcados por defecto) **no aplica a cotizaciones hoy**. Si Amanda quiere el mismo criterio en cotizaciones, es un cambio aparte a evaluar (fuera del módulo de audiencias). **Pendiente: decisión de Amanda.**
+- **Citas / audiencias — ✅ RESUELTO (cutover `686cc70`, 21-jun-2026; rama muerta eliminada 25-jul-2026).** La rama vieja que auto-copiaba `cliente.emails_cc` en recordatorios de audiencia era código muerto desde el cutover (la query excluía `tipo='audiencia'`) y **nunca envió nada** (cero citas-audiencia con `recordatorio_24h_enviado`); se eliminó del código el 25-jul. El módulo nuevo (`audiencias-recordatorios.service.ts`) usa SOLO `audiencias.emails_cc` (lista explícita; UI con heredados desmarcados). **Evidencia 25-jul:** 4/4 recordatorios de audiencia enviados (Los Robles/Rope, 22-25 jun) con CC = solo direcciones internas del cliente, cero firmas externas pese a estar en su `emails_cc`; recordatorios de cita 24h/1h y confirmación van SIN CC (verificado en AGROPE y Juncaya, los únicos clientes con `emails_cc` en 60 días).
+
+- **Llamadas — ✅ RESUELTO (25-jul-2026, esta rama).** La pantalla pre-llenaba el CC **completo** con `cliente.emails_cc` (chips que había que quitar a mano — opt-out, contrario a la regla). **Evidencia 25-jul:** 1 sola confirmación enviada en 60 días (ROPECO, 12-jun) con CC que incluyó `lemzcpaconsulting@gmail.com` y `conta1@roalatam.com` — lista editada a mano y aparentemente intencional (el contacto era la propia firma), pero el mecanismo era el riesgo. Fix aplicado: heredados como checkboxes DESMARCADOS + campo de tipeo libre, mismo patrón que cotizaciones/audiencias. El recordatorio de llamada del cron ya iba sin CC.
+
+- **Recibos de caja y correos de Comunicaciones (`email/comunicaciones`) — ⚠️ PENDIENTE.** Siguen pre-llenando el CC con `cliente.emails_cc` en campo editable visible (opt-out). No auditados con evidencia de producción ni alineados a la regla de heredados desmarcados. Evaluar con Amanda si se les aplica el mismo patrón.
 
 ---
 
