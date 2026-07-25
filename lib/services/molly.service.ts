@@ -172,7 +172,8 @@ export async function retryPendingClassifications(): Promise<number> {
       console.log(`[molly-retry] Reintentando clasificación: ${msg.subject?.substring(0, 60)} (de: ${fromEmail})`);
 
       const knownContact = await getContactName(fromEmail);
-      const classification = await classifyEmail(fromEmail, msg.subject, bodyText, knownContact, account);
+      const hiloPrevio = await getHiloPrevioParaClasificar(msg.thread_id, msg.id);
+      const classification = await classifyEmail(fromEmail, msg.subject, bodyText, knownContact, account, hiloPrevio);
 
       // Update message with classification
       await db()
@@ -475,10 +476,11 @@ async function processOneEmail(
     return { draftCreated: false };
   }
 
-  // Classify with Claude (account-aware)
+  // Classify with Claude (account-aware, con contexto del hilo)
   const knownContact = await getContactName(fromEmail);
+  const hiloPrevio = await getHiloPrevioParaClasificar(thread.id, emailMsg.id);
   console.log('[molly] Clasificando email de', fromEmail, '| cuenta:', account, '| asunto:', msg.subject.substring(0, 60));
-  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact, account);
+  const classification = await classifyEmail(fromEmail, msg.subject, bodyText || '', knownContact, account, hiloPrevio);
   console.log('[molly] Clasificación resultado:', classification.tipo, '| urgencia:', classification.urgencia, '| confianza:', classification.confianza);
 
   // Update message with classification
@@ -782,6 +784,29 @@ async function getClientContext(email: string): Promise<string | null> {
   }
 
   return context;
+}
+
+// Mensajes previos del hilo para CLASIFICAR (excluye el mensaje actual), del
+// más antiguo al más reciente. Sin esto, cada correo se clasificaba aislado y
+// requiere_respuesta salía errático en hilos activos (auditoría 25-jul-2026).
+async function getHiloPrevioParaClasificar(
+  threadId: string,
+  excluirMessageId: string,
+): Promise<Array<{ from: string; body: string; esNuestro: boolean }>> {
+  const { data } = await db()
+    .from('email_messages')
+    .select('id, from_email, body_text, received_at')
+    .eq('thread_id', threadId)
+    .neq('id', excluirMessageId)
+    .order('received_at', { ascending: false })
+    .limit(3);
+  return (data ?? [])
+    .reverse()
+    .map((m: any) => ({
+      from: m.from_email,
+      body: m.body_text || '',
+      esNuestro: isOurEmail(m.from_email),
+    }));
 }
 
 async function getRecentThreadMessages(

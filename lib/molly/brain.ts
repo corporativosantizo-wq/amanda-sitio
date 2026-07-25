@@ -79,7 +79,7 @@ Hoy es ${new Date().toISOString().substring(0, 10)}.
 Clasifica el siguiente email y responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
 
 {
-  "tipo": "legal|administrativo|financiero|spam|personal|urgente",
+  "tipo": "legal|administrativo|financiero|spam|publicidad|notificacion_sistema|personal|urgente",
   "urgencia": 0,
   "resumen": "resumen de 1-2 oraciones",
   "cliente_probable": "nombre del cliente probable o null",
@@ -111,7 +111,11 @@ Reglas de tipo:
 Reglas de respuesta:
 - requiere_respuesta = false para: spam, publicidad, notificacion_sistema, emails donde Amanda es CC
 - requiere_respuesta = true para: preguntas directas, solicitudes, citas, asuntos legales
-- ANTE LA DUDA con un "Contacto conocido" (cliente real del despacho): requiere_respuesta = true. Es preferible un borrador de más que un cliente sin respuesta. Las respuestas de clientes en conversaciones activas ("Re: ...") normalmente requieren respuesta; solo marca false si el mensaje claramente cierra el tema (un simple "gracias", "recibido", "confirmado") sin pregunta ni pendiente.
+- FINANCIERO — distinguir por contenido, no por tipo:
+  * true: preguntas o dudas fiscales/contables de una persona real, cobros que piden acción o confirmación, comprobantes de pago de clientes que esperan acuse de recibo, solicitudes de documentos fiscales.
+  * false: recibos y confirmaciones automáticas (remitentes no-reply, invoice@, plataformas), y entregas de factura o documentos que responden a una solicitud del despacho — llegaron porque los pedimos; salvo que el remitente pida algo o haga una pregunta, no requieren respuesta.
+- Si hay MENSAJES PREVIOS DEL HILO, úsalos para decidir: si el último mensaje del despacho pedía algo y este correo simplemente lo entrega, normalmente NO requiere respuesta; si este correo pregunta, pide o queda esperando algo del despacho, SÍ requiere.
+- ANTE LA DUDA con un "Contacto conocido" (cliente real del despacho): requiere_respuesta = true. Es preferible un borrador de más que un cliente sin respuesta. Las respuestas de clientes en conversaciones activas ("Re: ...") normalmente requieren respuesta; solo marca false si el mensaje claramente cierra el tema (un simple "gracias", "recibido", "confirmado", o la mera entrega de lo que se le pidió) sin pregunta ni pendiente.
 
 Reglas de filtrado (CRÍTICAS — leer con cuidado):
 - Si se indica "Contacto conocido: ..." → NUNCA clasificar como spam, publicidad ni notificacion_sistema. Estos son contactos reales del despacho.
@@ -137,6 +141,10 @@ export async function classifyEmail(
   bodyText: string,
   knownContact?: string | null,
   account?: string,
+  // Últimos mensajes del hilo (del más antiguo al más reciente, SIN incluir el
+  // actual) para que la decisión no sea sobre el correo aislado. esNuestro
+  // marca los enviados por el despacho.
+  hiloPrevio?: Array<{ from: string; body: string; esNuestro: boolean }>,
 ): Promise<MollyClassification> {
   const client = getAnthropicClient();
 
@@ -151,13 +159,28 @@ export async function classifyEmail(
   if (riskLevel === 'high') {
     console.warn('[molly-brain] HIGH RISK email from', fromEmail, '| asunto:', subject.substring(0, 60));
   }
-  const userMessage = `De: ${fromEmail}${contactInfo}\nAsunto: ${subject}\n\n${sanitizedContent}`;
 
-  console.log('[molly-brain] Clasificando email de', fromEmail, '| cuenta:', account ?? 'n/a', '| asunto:', subject.substring(0, 60));
+  // Contexto del hilo: cuerpos de terceros sanitizados igual que el principal.
+  let contextoHilo = '';
+  if (hiloPrevio?.length) {
+    contextoHilo = '\n\nMENSAJES PREVIOS DEL HILO (del más antiguo al más reciente):';
+    for (const m of hiloPrevio.slice(-3)) {
+      const cuerpo = m.esNuestro ? m.body : sanitizeEmailForLLM(m.body).sanitizedContent;
+      contextoHilo += `\n---\nDe: ${m.from}${m.esNuestro ? ' (el despacho)' : ''}\n${cuerpo.substring(0, 400)}`;
+    }
+    contextoHilo += '\n---\nFIN DE MENSAJES PREVIOS. Clasifica ÚNICAMENTE el email siguiente:';
+  }
+
+  const userMessage = `${contextoHilo}\n\nDe: ${fromEmail}${contactInfo}\nAsunto: ${subject}\n\n${sanitizedContent}`;
+
+  console.log('[molly-brain] Clasificando email de', fromEmail, '| cuenta:', account ?? 'n/a', '| hilo previo:', hiloPrevio?.length ?? 0, '| asunto:', subject.substring(0, 60));
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
+    // Determinista: la decisión de requiere_respuesta no debe variar entre
+    // corridas para el mismo correo (incidente jul-2026, flag errático).
+    temperature: 0,
     messages: [
       { role: 'user', content: `${prompt}\n\n---\n\n${userMessage}` },
     ],
