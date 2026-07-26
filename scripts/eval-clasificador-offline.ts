@@ -9,6 +9,8 @@
 // Uso:  pnpm dlx tsx scripts/eval-clasificador-offline.ts
 // ============================================================================
 
+export {}; // módulo aislado: evita colisión de scope global con otros scripts
+
 process.loadEnvFile('.env.local');
 
 type Veredicto = 'ameritaba' | 'no_ameritaba' | 'sin_veredicto';
@@ -81,7 +83,9 @@ async function main() {
     .from('email_contacts')
     .select('email, nombre')
     .in('email', [...new Set(evaluables.map((m: any) => m.from_email.toLowerCase()))]);
-  const nombrePorEmail = new Map((contactos ?? []).map((c: any) => [c.email, c.nombre]));
+  const nombrePorEmail = new Map<string, string | null>(
+    (contactos ?? []).map((c: any) => [c.email as string, (c.nombre ?? null) as string | null]),
+  );
 
   const filas: any[] = [];
   let i = 0;
