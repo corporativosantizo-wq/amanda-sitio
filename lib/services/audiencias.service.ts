@@ -31,7 +31,7 @@ export class AudienciaError extends Error {
 }
 
 const SELECT_CON_RELACIONES =
-  '*, cliente:clientes(id, codigo, nombre, email), expediente:expedientes(id, numero_expediente)';
+  '*, cliente:clientes(id, codigo, nombre, email), expediente:expedientes(id, numero_expediente, tipo_proceso)';
 
 export async function crearAudiencia(
   input: AudienciaInsert,
@@ -114,9 +114,9 @@ export async function listarAudiencias(params: ListAudienciasParams = {}): Promi
     .select(
       `id, expediente_id, cliente_id, titulo, tipo_audiencia, modalidad,
        fecha_hora_inicio, fecha_hora_fin, juzgado, sala, estado, ics_sequence,
-       created_at, updated_at,
+       outlook_event_id, created_at, updated_at,
        cliente:clientes(id, codigo, nombre),
-       expediente:expedientes(id, numero_expediente)`,
+       expediente:expedientes(id, numero_expediente, tipo_proceso)`,
       { count: 'exact' },
     );
 
@@ -150,7 +150,7 @@ export async function listarAudiencias(params: ListAudienciasParams = {}): Promi
 export async function obtenerAudiencia(id: string): Promise<Audiencia> {
   const { data, error } = await db()
     .from('audiencias')
-    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente, tipo_proceso)')
     .eq('id', id)
     .single();
 
@@ -196,7 +196,7 @@ export async function actualizarAudiencia(
     .from('audiencias')
     .update(updates)
     .eq('id', id)
-    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente)')
+    .select('*, cliente:clientes(id, codigo, nombre, email, emails_cc), expediente:expedientes(id, numero_expediente, tipo_proceso)')
     .single();
 
   if (error) throw new AudienciaError('Error al actualizar audiencia', error);

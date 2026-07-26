@@ -50,7 +50,9 @@ interface CitaItem {
   notas: string | null;
   cliente: { id: string; codigo: string; nombre: string; email: string | null } | null;
   participantes?: { id: string; nombre: string; email: string | null }[] | null;
-  _source?: 'outlook' | 'expediente';
+  _source?: 'outlook' | 'expediente' | 'registro';
+  sin_registro?: boolean;   // evento Outlook con "audiencia" en el título sin fila en legal.audiencias
+  registro_id?: string;     // id en legal.audiencias cuando _source === 'registro'
   isAllDay?: boolean;
   expediente_id?: string;
 }
@@ -113,7 +115,14 @@ const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   no_asistio: { label: 'No asistió', color: 'bg-gray-100 text-gray-700' },
   outlook: { label: 'Outlook', color: 'bg-purple-100 text-purple-700' },
   expediente: { label: 'Expediente', color: 'bg-amber-100 text-amber-700' },
+  // Estados del registro de audiencias (legal.audiencias)
+  programada: { label: 'Programada', color: 'bg-blue-100 text-blue-800' },
+  realizada: { label: 'Realizada', color: 'bg-emerald-100 text-emerald-700' },
+  reprogramada: { label: 'Reprogramada', color: 'bg-violet-100 text-violet-700' },
+  suspendida: { label: 'Suspendida', color: 'bg-amber-100 text-amber-700' },
 };
+
+const SIN_REGISTRO_BADGE = 'bg-amber-100 text-amber-800';
 
 const DEEP_WORK_END_HOUR = 14;
 
@@ -202,12 +211,23 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
     { label: 'Expediente', color: 'bg-teal-100 text-teal-700' },
     { label: 'Llamada', color: 'bg-emerald-100 text-emerald-700' },
   ],
+  // Materia de audiencias — mapa COMPLETO de expedientes.tipo_proceso (mismas
+  // etiquetas que TIPO_PROCESO_LABEL). '—' = sin expediente vinculado o valor
+  // desconocido; nunca se asume una materia.
   audiencia: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
     { label: 'Penal', color: 'bg-red-200 text-red-900' },
     { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
     { label: 'Familia', color: 'bg-pink-100 text-pink-700' },
     { label: 'Mercantil', color: 'bg-amber-100 text-amber-800' },
+    { label: 'Contencioso Administrativo', color: 'bg-cyan-100 text-cyan-700' },
+    { label: 'Constitucional', color: 'bg-indigo-100 text-indigo-700' },
+    { label: 'Amparo', color: 'bg-violet-100 text-violet-700' },
+    { label: 'Económico Coactivo', color: 'bg-orange-200 text-orange-900' },
+    { label: 'Internacional', color: 'bg-sky-100 text-sky-700' },
+    { label: 'Administrativo Sancionador', color: 'bg-slate-200 text-slate-700' },
+    { label: 'Administrativo Tributario', color: 'bg-lime-100 text-lime-700' },
+    { label: '—', color: 'bg-gray-100 text-gray-500' },
   ],
   audiencia_expediente: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
@@ -267,12 +287,21 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
       if (t.includes('llamada') || t.includes('teléfono') || t.includes('telefono')) return subs[2]; // Llamada
       return subs[0]; // Trámite
     case 'audiencia':
-    case 'audiencia_expediente':
+    case 'audiencia_expediente': {
+      // Items del registro: materia REAL derivada de expediente.tipo_proceso
+      // (llega en audiencia_materia). Sin expediente o valor desconocido → '—'.
+      if (cita._source === 'registro') {
+        const m = (cita.audiencia_materia ?? '').trim() || '—';
+        return subs.find((s) => s.label === m) ?? { label: m, color: 'bg-gray-100 text-gray-500' };
+      }
+      // Outlook/citas: heurística por palabras del texto. SIN default: si el
+      // texto no dice la materia, no se muestra ninguna (nunca asumir Civil).
       if (t.includes('penal')) return subs[1];
       if (t.includes('laboral')) return subs[2];
       if (t.includes('familia')) return subs[3];
       if (t.includes('mercantil')) return subs[4];
-      return subs[0]; // Civil default
+      return null;
+    }
     case 'reunion':
       if (cita.teams_link || t.includes('teams') || t.includes('virtual')) return subs[2]; // Teams virtual
       if (t.includes('proveedor')) return subs[3]; // Proveedor
@@ -908,8 +937,16 @@ function AgendaView({
                           })()}
                           <div className="flex items-center gap-2 text-[11px] text-gray-500">
                             {cita.tipo === 'audiencia' && <span title="Audiencia judicial">⚖️</span>}
+                            {cita.sin_registro && (
+                              <span className={`px-1.5 py-0 rounded-full font-medium ${SIN_REGISTRO_BADGE}`}>Sin registro</span>
+                            )}
+                            {cita._source === 'registro' && (
+                              <span className={`px-1.5 py-0 rounded-full font-medium ${(ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente).color}`}>
+                                {(ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente).label}
+                              </span>
+                            )}
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
-                            {cita.tipo === 'audiencia' && cita.audiencia_materia && (
+                            {cita.tipo === 'audiencia' && cita._source !== 'registro' && cita.audiencia_materia && (
                               <span className="text-red-600 font-medium">{cita.audiencia_materia}</span>
                             )}
                             {cita.modalidad && cita.modalidad !== 'virtual' && MODALIDAD_INFO[cita.modalidad] && (
@@ -1136,6 +1173,16 @@ function WeekView({
                     {sub && (
                       <span className={`inline-block text-[8px] px-1 py-0 rounded-full font-medium leading-tight ${sub.color}`}>
                         {sub.label}
+                      </span>
+                    )}
+                    {cita.sin_registro && (
+                      <span className={`inline-block text-[8px] px-1 py-0 rounded-full font-medium leading-tight ${SIN_REGISTRO_BADGE}`}>
+                        Sin registro
+                      </span>
+                    )}
+                    {cita._source === 'registro' && cita.estado === 'realizada' && (
+                      <span className="inline-block text-[8px] px-1 py-0 rounded-full font-medium leading-tight bg-emerald-100 text-emerald-700">
+                        ✓ Realizada
                       </span>
                     )}
                     <div className="text-[10px] opacity-75 truncate">
@@ -1368,8 +1415,13 @@ function DetailModal({
   const estado = ESTADO_LABELS[cita.estado] ?? ESTADO_LABELS.pendiente;
   const isOutlook = cita._source === 'outlook';
   const isExpediente = cita._source === 'expediente';
-  const isLocal = !isOutlook && !isExpediente;
-  const canEdit = !isExpediente && cita.estado !== 'cancelada'; // local + outlook
+  const isRegistro = cita._source === 'registro';
+  const isLocal = !isOutlook && !isExpediente && !isRegistro;
+  // Registro: NUNCA Editar/Eliminar desde aquí — eliminaría/tocaría solo el
+  // evento de Outlook y dejaría legal.audiencias apuntando a un evento
+  // inexistente (con recordatorios activos de una audiencia invisible).
+  // Se gestiona en /admin/audiencias/[id].
+  const canEdit = !isExpediente && !isRegistro && cita.estado !== 'cancelada'; // local + outlook
   const activo = isLocal && (cita.estado === 'pendiente' || cita.estado === 'confirmada');
   const tipoColors = TIPO_COLORS[cita.tipo] ?? TIPO_COLORS.consulta_nueva;
 
@@ -1397,6 +1449,9 @@ function DetailModal({
               <div className="flex items-center gap-2">
                 <p className="font-medium">{TIPO_LABELS[cita.tipo] ?? cita.tipo}</p>
                 {(() => { const s = inferSubcategoria(cita); return s ? <span className={`text-[10px] px-1.5 py-0 rounded-full font-medium ${s.color}`}>{s.label}</span> : null; })()}
+                {cita.sin_registro && (
+                  <span className={`text-[10px] px-1.5 py-0 rounded-full font-medium ${SIN_REGISTRO_BADGE}`}>Sin registro</span>
+                )}
               </div>
             </div>
             <div>
@@ -1450,7 +1505,9 @@ function DetailModal({
             </div>
           )}
 
-          {cita.modalidad && MODALIDAD_INFO[cita.modalidad]?.usaOficina && (
+          {/* La dirección de oficina no aplica a audiencias del registro: su
+              modalidad presencial es en el juzgado, no en la oficina. */}
+          {cita._source !== 'registro' && cita.modalidad && MODALIDAD_INFO[cita.modalidad]?.usaOficina && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
               <p className="text-xs text-blue-700 uppercase tracking-wide font-medium">
                 {MODALIDAD_INFO[cita.modalidad].icono} {MODALIDAD_INFO[cita.modalidad].label}
@@ -1508,6 +1565,15 @@ function DetailModal({
               className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
             >
               Ver expediente
+            </a>
+          )}
+
+          {isRegistro && cita.registro_id && (
+            <a
+              href={`/admin/audiencias/${cita.registro_id}`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E40AF] text-white rounded-lg hover:bg-[#1e3a8a] transition text-sm font-medium"
+            >
+              Ver registro →
             </a>
           )}
 

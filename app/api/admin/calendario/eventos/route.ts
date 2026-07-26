@@ -14,8 +14,23 @@ import {
   getCalendarEvents,
 } from '@/lib/services/outlook.service';
 import { actuacionesCalendario } from '@/lib/services/expedientes.service';
+import { listarAudiencias } from '@/lib/services/audiencias.service';
+import { esAudienciaTitulo, idsOutlookRegistrados } from '@/lib/services/audiencias-cruce';
+import { materiaDeAudiencia, type Audiencia } from '@/lib/types/audiencias';
 import type { TipoCita, EstadoCita } from '@/lib/types';
 import { ADMIN_ONLY_TIPOS } from '@/lib/types';
+
+// fecha_hora_inicio del registro es timestamptz; el calendario trabaja con
+// fecha (YYYY-MM-DD) y hora (HH:mm) de pared en Guatemala (sin DST → -06:00).
+const gtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' });
+const gtTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit' });
+const sumarMin = (hhmm: string, min: number) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  const t = h * 60 + m + min;
+  return `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +48,59 @@ export async function GET(req: NextRequest) {
       page: sp.get('page') ? Number(sp.get('page')) : undefined,
       limit: sp.get('limit') ? Number(sp.get('limit')) : undefined,
     });
+
+    // 1b. Audiencias del registro formal (legal.audiencias) — fuente primaria.
+    // Independiente de Outlook: si Graph cae, las audiencias registradas siguen
+    // visibles en el calendario (antes solo existían como espejo de Outlook).
+    let registro: Audiencia[] = [];
+    let registroEvents: any[] = [];
+    if (fechaInicio && fechaFin) {
+      try {
+        const r = await listarAudiencias({
+          desde: `${fechaInicio}T00:00:00-06:00`,
+          hasta: `${fechaFin}T23:59:59-06:00`,
+          limit: 200,
+        });
+        registro = r.data;
+        registroEvents = registro.map((a) => {
+          const horaInicio = gtTime(a.fecha_hora_inicio);
+          const horaFin = a.fecha_hora_fin ? gtTime(a.fecha_hora_fin) : sumarMin(horaInicio, 60);
+          const [sh, sm] = horaInicio.split(':').map(Number);
+          const [eh, em] = horaFin.split(':').map(Number);
+          const duracion = (eh * 60 + em) - (sh * 60 + sm);
+          return {
+            id: `aud_${a.id}`,
+            registro_id: a.id,
+            tipo: 'audiencia',
+            titulo: a.titulo ?? a.tipo_audiencia ?? 'Audiencia',
+            descripcion: null,
+            fecha: gtDate(a.fecha_hora_inicio),
+            hora_inicio: horaInicio,
+            hora_fin: horaFin,
+            duracion_minutos: duracion > 0 ? duracion : 60,
+            estado: a.estado, // estado REAL del registro (programada/realizada/…)
+            costo: 0,
+            modalidad: a.modalidad ?? null,
+            // Materia derivada de expediente.tipo_proceso; null si no hay
+            // expediente o el valor no está en el mapa (el UI muestra '—').
+            audiencia_materia: materiaDeAudiencia(a),
+            audiencia_diligencia: a.tipo_audiencia ?? null,
+            audiencia_juzgado: [a.juzgado, a.sala].filter(Boolean).join(' · ') || null,
+            audiencia_expediente: (a as any).expediente?.numero_expediente ?? null,
+            teams_link: null,
+            notas: null,
+            cliente: (a as any).cliente ?? null,
+            _source: 'registro',
+            isAllDay: false,
+          };
+        });
+      } catch (regErr: any) {
+        console.error('[Calendario] Error al leer registro de audiencias:', regErr.message ?? regErr);
+      }
+    }
+    // Espejos de Outlook de las audiencias registradas → suprimir (cruce por
+    // outlook_event_id; definición única en audiencias-cruce.ts).
+    const espejosRegistro = idsOutlookRegistrados(registro);
 
     // 2. Fetch Outlook events if connected
     let outlookEvents: any[] = [];
@@ -62,6 +130,7 @@ export async function GET(req: NextRequest) {
         // (NO new Date() conversion) to avoid UTC reinterpretation.
         for (const ev of graphEvents) {
           if (linkedIds.has(ev.id)) continue; // already in local citas
+          if (espejosRegistro.has(ev.id)) continue; // espejo de audiencia registrada — el registro es la fuente
 
           const startDT = ev.start?.dateTime ?? '';
           const endDT = ev.end?.dateTime ?? '';
@@ -84,8 +153,9 @@ export async function GET(req: NextRequest) {
           const cats = (ev.categories ?? []).map((c: string) => c.toLowerCase());
           const titleLower = (ev.subject ?? '').toLowerCase();
 
-          // Title-based: audiencias judiciales always red (highest priority)
-          const isAudiencia = !(/auditor[ií]a/i.test(titleLower)) && /\baudiencia\b/i.test(titleLower);
+          // Title-based: audiencias judiciales always red (highest priority).
+          // Mismo criterio de título que la tarjeta (audiencias-cruce.ts).
+          const isAudiencia = esAudienciaTitulo(ev.subject ?? '');
           if (isAudiencia) tipo = 'audiencia';
           // Category-based classification
           else if (cats.includes('azul') || cats.includes('blue category')) tipo = 'consulta_nueva';
@@ -111,6 +181,9 @@ export async function GET(req: NextRequest) {
             notas: null,
             cliente: null,
             _source: 'outlook',
+            // Evento con "audiencia" en el título sin fila en legal.audiencias:
+            // discrepancia visible ("Sin registro"), nunca audiencia normal.
+            sin_registro: isAudiencia,
             isAllDay,
           });
         }
@@ -156,7 +229,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Merge and sort by date + hora_inicio
-    const merged = [...result.data, ...outlookEvents, ...expedienteEvents].sort((a: any, b: any) => {
+    const merged = [...result.data, ...registroEvents, ...outlookEvents, ...expedienteEvents].sort((a: any, b: any) => {
       const cmp = a.fecha.localeCompare(b.fecha);
       if (cmp !== 0) return cmp;
       return a.hora_inicio.localeCompare(b.hora_inicio);
@@ -164,7 +237,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       data: merged,
-      total: result.total + outlookEvents.length + expedienteEvents.length,
+      total: result.total + registroEvents.length + outlookEvents.length + expedienteEvents.length,
       outlook_connected: outlookConnected,
     });
   } catch (err) {
