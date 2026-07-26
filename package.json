@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check-secrets": "bash scripts/check-secrets.sh"
+    "check-secrets": "bash scripts/check-secrets.sh",
+    "typecheck:scripts": "tsc -p scripts --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.73.0",

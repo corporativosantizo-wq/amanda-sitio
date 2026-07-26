@@ -1,0 +1,6 @@
+{
+  "// nota": "Typecheck APARTE de los scripts (no bloquea el build de Next — el 25-jul un error de tipos aquí tumbó el deploy de producción 6 horas). Correr con: npm run typecheck:scripts",
+  "extends": "../tsconfig.json",
+  "include": ["./**/*.ts"],
+  "exclude": []
+}
