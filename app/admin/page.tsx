@@ -212,13 +212,24 @@ const URGENCIA_STYLES: Record<UrgenciaAudiencia, { dot: string; badge: string; l
   green: { dot: 'bg-green-500', badge: 'text-green-600 bg-green-100', label: '', atenuada: false },
 };
 
+// Materia por etiqueta — mapa completo de expedientes.tipo_proceso (via
+// TIPO_PROCESO_LABEL). '—' = audiencia sin expediente vinculado o valor
+// desconocido: nunca se asume una materia.
 const TIPO_COLOR: Record<string, string> = {
-  Civil: 'bg-blue-100 text-blue-700',
-  Penal: 'bg-red-100 text-red-700',
-  Laboral: 'bg-amber-100 text-amber-700',
-  Familia: 'bg-pink-100 text-pink-700',
-  Mercantil: 'bg-teal-100 text-teal-700',
-  General: 'bg-gray-100 text-gray-600',
+  'Civil': 'bg-blue-100 text-blue-700',
+  'Penal': 'bg-red-100 text-red-700',
+  'Laboral': 'bg-amber-100 text-amber-700',
+  'Contencioso Administrativo': 'bg-cyan-100 text-cyan-700',
+  'Constitucional': 'bg-indigo-100 text-indigo-700',
+  'Amparo': 'bg-violet-100 text-violet-700',
+  'Familia': 'bg-pink-100 text-pink-700',
+  'Mercantil': 'bg-teal-100 text-teal-700',
+  'Económico Coactivo': 'bg-orange-100 text-orange-700',
+  'Internacional': 'bg-sky-100 text-sky-700',
+  'Administrativo Sancionador': 'bg-slate-200 text-slate-700',
+  'Administrativo Tributario': 'bg-lime-100 text-lime-700',
+  'General': 'bg-gray-100 text-gray-600',
+  '—': 'bg-gray-100 text-gray-500',
 };
 
 export default function AdminDashboard() {

@@ -211,12 +211,23 @@ const SUBCATEGORIAS: Record<string, SubcatInfo[]> = {
     { label: 'Expediente', color: 'bg-teal-100 text-teal-700' },
     { label: 'Llamada', color: 'bg-emerald-100 text-emerald-700' },
   ],
+  // Materia de audiencias — mapa COMPLETO de expedientes.tipo_proceso (mismas
+  // etiquetas que TIPO_PROCESO_LABEL). '—' = sin expediente vinculado o valor
+  // desconocido; nunca se asume una materia.
   audiencia: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
     { label: 'Penal', color: 'bg-red-200 text-red-900' },
     { label: 'Laboral', color: 'bg-orange-100 text-orange-700' },
     { label: 'Familia', color: 'bg-pink-100 text-pink-700' },
     { label: 'Mercantil', color: 'bg-amber-100 text-amber-800' },
+    { label: 'Contencioso Administrativo', color: 'bg-cyan-100 text-cyan-700' },
+    { label: 'Constitucional', color: 'bg-indigo-100 text-indigo-700' },
+    { label: 'Amparo', color: 'bg-violet-100 text-violet-700' },
+    { label: 'Económico Coactivo', color: 'bg-orange-200 text-orange-900' },
+    { label: 'Internacional', color: 'bg-sky-100 text-sky-700' },
+    { label: 'Administrativo Sancionador', color: 'bg-slate-200 text-slate-700' },
+    { label: 'Administrativo Tributario', color: 'bg-lime-100 text-lime-700' },
+    { label: '—', color: 'bg-gray-100 text-gray-500' },
   ],
   audiencia_expediente: [
     { label: 'Civil', color: 'bg-red-100 text-red-700' },
@@ -276,12 +287,21 @@ function inferSubcategoria(cita: CitaItem): SubcatInfo | null {
       if (t.includes('llamada') || t.includes('teléfono') || t.includes('telefono')) return subs[2]; // Llamada
       return subs[0]; // Trámite
     case 'audiencia':
-    case 'audiencia_expediente':
+    case 'audiencia_expediente': {
+      // Items del registro: materia REAL derivada de expediente.tipo_proceso
+      // (llega en audiencia_materia). Sin expediente o valor desconocido → '—'.
+      if (cita._source === 'registro') {
+        const m = (cita.audiencia_materia ?? '').trim() || '—';
+        return subs.find((s) => s.label === m) ?? { label: m, color: 'bg-gray-100 text-gray-500' };
+      }
+      // Outlook/citas: heurística por palabras del texto. SIN default: si el
+      // texto no dice la materia, no se muestra ninguna (nunca asumir Civil).
       if (t.includes('penal')) return subs[1];
       if (t.includes('laboral')) return subs[2];
       if (t.includes('familia')) return subs[3];
       if (t.includes('mercantil')) return subs[4];
-      return subs[0]; // Civil default
+      return null;
+    }
     case 'reunion':
       if (cita.teams_link || t.includes('teams') || t.includes('virtual')) return subs[2]; // Teams virtual
       if (t.includes('proveedor')) return subs[3]; // Proveedor
@@ -926,7 +946,7 @@ function AgendaView({
                               </span>
                             )}
                             {cita.cliente && <span>{cita.cliente.nombre}</span>}
-                            {cita.tipo === 'audiencia' && cita.audiencia_materia && (
+                            {cita.tipo === 'audiencia' && cita._source !== 'registro' && cita.audiencia_materia && (
                               <span className="text-red-600 font-medium">{cita.audiencia_materia}</span>
                             )}
                             {cita.modalidad && cita.modalidad !== 'virtual' && MODALIDAD_INFO[cita.modalidad] && (

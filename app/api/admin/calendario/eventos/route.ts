@@ -16,7 +16,7 @@ import {
 import { actuacionesCalendario } from '@/lib/services/expedientes.service';
 import { listarAudiencias } from '@/lib/services/audiencias.service';
 import { esAudienciaTitulo, idsOutlookRegistrados } from '@/lib/services/audiencias-cruce';
-import type { Audiencia } from '@/lib/types/audiencias';
+import { materiaDeAudiencia, type Audiencia } from '@/lib/types/audiencias';
 import type { TipoCita, EstadoCita } from '@/lib/types';
 import { ADMIN_ONLY_TIPOS } from '@/lib/types';
 
@@ -81,6 +81,9 @@ export async function GET(req: NextRequest) {
             estado: a.estado, // estado REAL del registro (programada/realizada/…)
             costo: 0,
             modalidad: a.modalidad ?? null,
+            // Materia derivada de expediente.tipo_proceso; null si no hay
+            // expediente o el valor no está en el mapa (el UI muestra '—').
+            audiencia_materia: materiaDeAudiencia(a),
             audiencia_diligencia: a.tipo_audiencia ?? null,
             audiencia_juzgado: [a.juzgado, a.sala].filter(Boolean).join(' · ') || null,
             audiencia_expediente: (a as any).expediente?.numero_expediente ?? null,

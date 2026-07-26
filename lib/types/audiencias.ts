@@ -3,6 +3,8 @@
 // Tipos y labels del módulo de Audiencias (tabla legal.audiencias).
 // ============================================================================
 
+import { TIPO_PROCESO_LABEL, type TipoProceso } from './expedientes';
+
 export type ModalidadAudiencia = 'presencial' | 'virtual' | 'hibrida';
 
 export type EstadoAudiencia =
@@ -109,5 +111,17 @@ export interface Audiencia {
   updated_at: string;
   // Embebidos opcionales (cuando se piden con join).
   cliente?: { id: string; codigo: string; nombre: string; email?: string | null; emails_cc?: string[] | null } | null;
-  expediente?: { id: string; numero_expediente: string | null } | null;
+  expediente?: { id: string; numero_expediente: string | null; tipo_proceso?: string | null } | null;
+}
+
+// Materia de la audiencia, derivada del tipo_proceso del expediente vinculado
+// (legal.audiencias no tiene columna de materia — el expediente es la fuente).
+// SIN valor por defecto: sin expediente o valor fuera del mapa → null y el UI
+// muestra "—". Nunca asumir una materia.
+export function materiaDeAudiencia(a: {
+  expediente?: { tipo_proceso?: string | null } | null;
+}): string | null {
+  const tp = a.expediente?.tipo_proceso;
+  if (!tp) return null;
+  return TIPO_PROCESO_LABEL[tp as TipoProceso] ?? null;
 }

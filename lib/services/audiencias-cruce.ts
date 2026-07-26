@@ -15,7 +15,7 @@
 // ============================================================================
 
 import type { OutlookEvent } from '@/lib/services/outlook.service';
-import type { Audiencia, EstadoAudiencia } from '@/lib/types/audiencias';
+import { materiaDeAudiencia, type Audiencia, type EstadoAudiencia } from '@/lib/types/audiencias';
 
 export interface AudienciaUnificada {
   id: string;                       // registro: uuid | outlook: event id
@@ -24,7 +24,7 @@ export interface AudienciaUnificada {
   fecha: string;                    // ISO con offset
   fecha_fin: string | null;
   todo_dia: boolean;
-  tipo: string | null;              // materia extraída del título (solo outlook)
+  tipo: string | null;              // materia: registro → derivada de expediente.tipo_proceso ('—' si no hay); outlook → extraída del título
   tribunal: string;
   cliente: string;
   estado: EstadoAudiencia | null;   // null en las sin registro
@@ -79,7 +79,9 @@ export function mapAudienciaRegistro(a: Audiencia): AudienciaUnificada {
     fecha: a.fecha_hora_inicio,
     fecha_fin: a.fecha_hora_fin ?? null,
     todo_dia: false,
-    tipo: null,
+    // Materia derivada del expediente. SIN default: sin expediente o valor
+    // desconocido → '—' (nunca asumir Civil).
+    tipo: materiaDeAudiencia(a) ?? '—',
     tribunal: [a.juzgado, a.sala].filter(Boolean).join(' · '),
     cliente: a.cliente?.nombre ?? '',
     estado: a.estado,
