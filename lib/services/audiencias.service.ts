@@ -19,7 +19,7 @@ import {
   actualizarEventoOutlookAudiencia,
   eliminarEventoOutlookAudiencia,
 } from '@/lib/services/audiencias-outlook.service';
-import type { Audiencia, AudienciaInsert } from '@/lib/types/audiencias';
+import type { Audiencia, AudienciaInsert, EstadoAudiencia } from '@/lib/types/audiencias';
 
 const db = () => createAdminClient();
 
@@ -192,6 +192,19 @@ export async function actualizarAudiencia(
     updates.ics_sequence = (actual.ics_sequence ?? 0) + 1;
   }
 
+  // Estados en los que la audiencia ya no va a ocurrir en su fecha → los
+  // recordatorios pendientes sobran y se descartan (mismo patrón 'descartado'
+  // de la reprogramación; los ya enviados se conservan como constancia).
+  // La transición inversa (des-suspender / deshacer realizada-cancelada) sin
+  // cambio de fecha re-encola los previos; con cambio de fecha lo hace la
+  // reprogramación normal.
+  const ESTADOS_SIN_RECORDATORIOS: EstadoAudiencia[] = ['realizada', 'cancelada', 'suspendida'];
+  const nuevoEstado = input.estado;
+  const eraFinal = ESTADOS_SIN_RECORDATORIOS.includes(actual.estado);
+  const seraFinal = !!nuevoEstado && ESTADOS_SIN_RECORDATORIOS.includes(nuevoEstado);
+  const descartarPendientes = seraFinal && !eraFinal;
+  const reactivar = !!nuevoEstado && !seraFinal && eraFinal;
+
   const { data, error } = await db()
     .from('audiencias')
     .update(updates)
@@ -211,12 +224,44 @@ export async function actualizarAudiencia(
     await actualizarEventoOutlookAudiencia(audiencia);
   }
 
-  // Reprogramación automática de recordatorios (best-effort).
-  if (cambioFecha && reprogramarSiCambiaFecha) {
+  // Reprogramación automática de recordatorios (best-effort). Si el estado
+  // nuevo es final (realizada/cancelada/suspendida) no tiene sentido re-encolar.
+  if (cambioFecha && reprogramarSiCambiaFecha && !seraFinal) {
     try {
       await reencolarPorReprogramacion(audiencia);
     } catch (e) {
       console.error('[actualizarAudiencia] Error reprogramando recordatorios:', (e as Error)?.message ?? e);
+    }
+  }
+
+  // Estado → realizada/cancelada/suspendida: descartar lo pendiente (best-effort).
+  if (descartarPendientes) {
+    try {
+      const { error: descErr } = await db().from('audiencias_recordatorios')
+        .update({ estado: 'descartado' })
+        .eq('audiencia_id', id)
+        .is('fecha_enviado', null)
+        .in('estado', ['programado', 'aprobado', 'pendiente_aprobacion']);
+      if (descErr) throw descErr;
+    } catch (e) {
+      console.error('[actualizarAudiencia] Error descartando recordatorios:', (e as Error)?.message ?? e);
+    }
+  }
+
+  // Reactivación sin cambio de fecha: re-encolar los previos (encolar ya
+  // resuelve fechas que quedaron encima — [AUD-1] las mueve a la próxima
+  // ventana hábil y nunca después del inicio). Solo si no quedó nada activo,
+  // para no duplicar filas heredadas de antes de este fix.
+  if (reactivar && !cambioFecha) {
+    try {
+      const { count } = await db().from('audiencias_recordatorios')
+        .select('id', { count: 'exact', head: true })
+        .eq('audiencia_id', id)
+        .is('fecha_enviado', null)
+        .in('estado', ['programado', 'aprobado', 'pendiente_aprobacion']);
+      if ((count ?? 0) === 0) await encolarRecordatoriosAudiencia(audiencia);
+    } catch (e) {
+      console.error('[actualizarAudiencia] Error re-encolando al reactivar:', (e as Error)?.message ?? e);
     }
   }
 
