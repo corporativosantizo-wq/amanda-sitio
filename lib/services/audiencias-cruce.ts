@@ -87,6 +87,15 @@ export function mapAudienciaRegistro(a: Audiencia): AudienciaUnificada {
   };
 }
 
+// IDs de eventos de Outlook que YA son el espejo de una fila del registro.
+// Cualquier vista que mezcle ambas fuentes debe suprimir estos eventos para
+// no duplicar la audiencia — esta función es la única definición del match.
+export function idsOutlookRegistrados(registro: Audiencia[]): Set<string> {
+  return new Set(
+    registro.map((a) => a.outlook_event_id).filter((id): id is string => Boolean(id)),
+  );
+}
+
 /**
  * Mezcla registro + Outlook: todas las del registro salen tal cual; de Outlook
  * solo entran los eventos con "audiencia" en el título cuyo id NO esté ya
@@ -97,7 +106,7 @@ export function cruzarAudienciasConOutlook(
   registro: Audiencia[],
   events: OutlookEvent[],
 ): AudienciaUnificada[] {
-  const idsRegistrados = new Set(registro.map((a) => a.outlook_event_id).filter(Boolean));
+  const idsRegistrados = idsOutlookRegistrados(registro);
   const deOutlook = events
     .filter((ev) => esAudienciaTitulo(ev.subject ?? '') && !idsRegistrados.has(ev.id))
     .map(mapEventoOutlook);
