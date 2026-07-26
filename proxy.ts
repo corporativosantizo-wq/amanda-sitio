@@ -5,6 +5,7 @@
 
 import { clerkClient, clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { emailPrimarioDeClerk } from '@/lib/auth/clerk-email';
 
 // Rutas que SÍ requieren autenticación con Clerk.
 // Rutas de pago públicas A PROPÓSITO (no agregarlas aquí):
@@ -42,11 +43,14 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.isAdmin;
 
   try {
-    // 1. Obtener email del usuario via Clerk
+    // 1. Obtener el correo PRIMARIO del usuario via Clerk. Nunca usar
+    // emailAddresses[0]: Clerk no garantiza el orden y el lookup puede caer
+    // en la fila equivocada de usuarios_admin (incidente 25-jul-2026).
     const client = await clerkClient();
     const user = await client.users.getUser(userId);
-    const email = user.emailAddresses?.[0]?.emailAddress;
+    const email = emailPrimarioDeClerk(user);
     if (!email) {
+      console.error('[proxy] Usuario Clerk sin correo primario resoluble | userId:', userId);
       adminCache.set(userId, { isAdmin: false, ts: Date.now() });
       return false;
     }

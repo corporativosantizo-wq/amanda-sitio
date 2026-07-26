@@ -6,13 +6,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@clerk/nextjs/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { emailPrimarioDeClerk } from '@/lib/auth/clerk-email';
 
 const db = () => createAdminClient();
 
 export async function POST(req: NextRequest) {
   try {
     const user = await currentUser();
-    const email = user?.emailAddresses?.[0]?.emailAddress;
+    const email = emailPrimarioDeClerk(user);
     if (!email) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
     const { accion, modulo, detalle } = await req.json();

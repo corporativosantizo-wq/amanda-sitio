@@ -11,15 +11,19 @@ export const SESSION_EXPIRED_MSG =
  * Detecta si un response indica que la sesión de Clerk expiró.
  *
  * Solo retorna true cuando hay evidencia clara:
- * - Status 401 o 403 explícito
+ * - Status 401 explícito (sin sesión)
  * - Redirect opaco (opaqueredirect) — Clerk interceptó y redirigió a sign-in
  * - Redirect (3xx) cuya Location apunta a una ruta de login de Clerk
  *
- * NO trata un 404 o un 3xx genérico como sesión expirada.
+ * NO trata un 403 como sesión expirada: 403 = autenticado pero sin permisos
+ * (usuario sin acceso admin / desactivado) — re-loguearse no lo arregla, y
+ * mostrarlo como "sesión expiró" ocultaba el problema real (incidente
+ * 25-jul-2026). El cliente muestra el `error` del body en esos casos.
+ * Tampoco trata un 404, 500 o 3xx genérico como sesión expirada.
  */
 export function isSessionExpired(res: Response): boolean {
-  // 401/403 son indicadores claros de autenticación fallida
-  if (res.status === 401 || res.status === 403) return true;
+  // 401 = sin sesión: el único status que amerita "vuelve a iniciar sesión"
+  if (res.status === 401) return true;
 
   // Opaque redirect = el browser no puede leer la URL, pero Clerk lo causó
   // via redirect: 'manual'. Esto solo pasa con middleware de Clerk.

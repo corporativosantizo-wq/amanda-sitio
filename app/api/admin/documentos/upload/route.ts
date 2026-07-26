@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth/api-auth';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@clerk/nextjs/server';
+import { emailPrimarioDeClerk } from '@/lib/auth/clerk-email';
 import { crearDocumento, extraerYGuardarTexto, DocumentoError } from '@/lib/services/documentos.service';
 
 export async function POST(req: NextRequest) {
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const user = await currentUser();
-    const userEmail = user?.emailAddresses?.[0]?.emailAddress ?? null;
+    const userEmail = emailPrimarioDeClerk(user);
 
     const body = await req.json();
     const files: {

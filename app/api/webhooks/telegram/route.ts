@@ -272,7 +272,7 @@ async function handleCallbackQuery(query: any): Promise<void> {
           }
         } catch { /* best effort */ }
         await sendTelegramMessage(
-          `\u270F\uFE0F Abrí el borrador en el dashboard para que lo edites:${contexto}\n\nhttps://papeleo.legal/admin/email?draft=${draftId}`,
+          `\u270F\uFE0F Abrí el borrador en el dashboard para que lo edites:${contexto}\n\nhttps://amandasantizo.com/admin/email?draft=${draftId}`,
           { parse_mode: 'HTML' },
         );
         // Mark original message as "editing in dashboard"
@@ -766,7 +766,7 @@ async function handleFollowupCallback(data: string): Promise<void> {
     case 'followup_quote':
       await sendTelegramMessage(
         `\uD83D\uDCC4 <b>Cotizaci\u00F3n pendiente</b> para ${escapeHtml(clienteName)}\n\n` +
-        `Crea la cotizaci\u00F3n en el dashboard:\nhttps://papeleo.legal/admin/cotizaciones`,
+        `Crea la cotizaci\u00F3n en el dashboard:\nhttps://amandasantizo.com/admin/cotizaciones`,
         { parse_mode: 'HTML' },
       );
       break;
@@ -774,7 +774,7 @@ async function handleFollowupCallback(data: string): Promise<void> {
     case 'followup_summary':
       await sendTelegramMessage(
         `\uD83D\uDCDD <b>Agrega notas</b> de la consulta con ${escapeHtml(clienteName)}\n\n` +
-        `Dashboard: https://papeleo.legal/admin/calendario`,
+        `Dashboard: https://amandasantizo.com/admin/calendario`,
         { parse_mode: 'HTML' },
       );
       break;
@@ -1319,7 +1319,7 @@ async function handleBuscarCommand(query: string): Promise<void> {
 
 async function handleCobrosRecordar(): Promise<void> {
   try {
-    const cronUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://papeleo.legal'}/api/cron/recordatorios-cobro`;
+    const cronUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://amandasantizo.com'}/api/cron/recordatorios-cobro`;
     const res = await fetch(cronUrl, {
       method: 'GET',
       headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },

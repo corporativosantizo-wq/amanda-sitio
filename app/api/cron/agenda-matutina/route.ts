@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
 
 // ── Financial digest: cobros pendientes y vencidos ──────────────────────────
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://papeleo.legal';
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://amandasantizo.com';
 
 const fmtQ = (n: number) => `<code>Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2 })}</code>`;
 
