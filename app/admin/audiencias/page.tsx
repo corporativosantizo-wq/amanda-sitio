@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
-import { useFetch } from '@/lib/hooks/use-fetch';
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch';
 import { TableSkeleton, EmptyState } from '@/components/admin/ui';
 import {
   type Audiencia,
@@ -55,11 +55,24 @@ export default function AudienciasListPage() {
   params.set('page', String(page));
   params.set('limit', '25');
 
-  const { data, loading } = useFetch<{
+  const { data, loading, refetch } = useFetch<{
     data: Audiencia[]; total: number; totalPages: number;
   }>(`/api/admin/audiencias/registro?${params}`);
 
   const audiencias = data?.data ?? [];
+
+  const { mutate } = useMutate();
+  const [marcandoId, setMarcandoId] = useState<string | null>(null);
+
+  async function marcarRealizada(id: string) {
+    setMarcandoId(id);
+    const res = await mutate(`/api/admin/audiencias/registro/${id}`, {
+      method: 'PUT',
+      body: { estado: 'realizada' },
+    });
+    if (res) await refetch();
+    setMarcandoId(null);
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -114,7 +127,7 @@ export default function AudienciasListPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  {['Fecha y hora', 'Cliente', 'Expediente', 'Modalidad', 'Lugar', 'Estado'].map(h => (
+                  {['Fecha y hora', 'Cliente', 'Expediente', 'Modalidad', 'Lugar', 'Estado', ''].map(h => (
                     <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider py-3 px-4 first:pl-5 last:pr-5">{h}</th>
                   ))}
                 </tr>
@@ -135,10 +148,22 @@ export default function AudienciasListPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-500 max-w-[180px] truncate">{lugarDisplay(a)}</td>
-                    <td className="py-3 px-4 pr-5">
+                    <td className="py-3 px-4">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_AUDIENCIA_COLOR[a.estado]}`}>
                         {ESTADO_AUDIENCIA_LABEL[a.estado]}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 pr-5 text-right">
+                      {a.estado !== 'realizada' && a.estado !== 'cancelada' && (
+                        <button
+                          onClick={e => { e.stopPropagation(); marcarRealizada(a.id); }}
+                          disabled={marcandoId === a.id}
+                          title="Marcar como realizada"
+                          className="text-xs font-medium px-2 py-1 rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 transition-colors"
+                        >
+                          {marcandoId === a.id ? '…' : '✓ Realizada'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -114,7 +114,7 @@ export async function listarAudiencias(params: ListAudienciasParams = {}): Promi
     .select(
       `id, expediente_id, cliente_id, titulo, tipo_audiencia, modalidad,
        fecha_hora_inicio, fecha_hora_fin, juzgado, sala, estado, ics_sequence,
-       created_at, updated_at,
+       outlook_event_id, created_at, updated_at,
        cliente:clientes(id, codigo, nombre),
        expediente:expedientes(id, numero_expediente)`,
       { count: 'exact' },

@@ -1,12 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useFetch } from '@/lib/hooks/use-fetch'
+import { useState } from 'react'
+import { useFetch, useMutate } from '@/lib/hooks/use-fetch'
 import { Scale, Shield, Building2, AlertTriangle } from 'lucide-react'
 import {
   ORIGEN_LABEL, ORIGEN_COLOR, TIPO_PROCESO_LABEL,
   type OrigenExpediente,
 } from '@/lib/types/expedientes'
+import { type EstadoAudiencia } from '@/lib/types/audiencias'
 
 const secciones = [
   {
@@ -166,15 +168,17 @@ interface CumplimientoStats {
 }
 
 interface Audiencia {
-  id: string;
+  id: string;                      // registro: uuid | outlook: event id
+  origen: 'registro' | 'outlook';
   titulo: string;
   fecha: string;
-  fecha_fin: string;
+  fecha_fin: string | null;
   todo_dia: boolean;
-  tipo: string;
+  tipo: string | null;
   tribunal: string;
   cliente: string;
-  descripcion: string;
+  estado: EstadoAudiencia | null;  // null en las "sin registro"
+  sin_registro: boolean;
 }
 
 interface AudienciasData {
@@ -183,21 +187,29 @@ interface AudienciasData {
   mes: string;
 }
 
-function getUrgencia(fecha: string): 'red' | 'yellow' | 'green' {
+// Las realizadas y las ya pasadas van en gris, sin badge de urgencia; solo lo
+// pendiente y futuro compite por rojo/amarillo/verde.
+type UrgenciaAudiencia = 'realizada' | 'pasada' | 'red' | 'yellow' | 'green';
+
+function getUrgencia(fecha: string, estado: EstadoAudiencia | null): UrgenciaAudiencia {
+  if (estado === 'realizada') return 'realizada';
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
   const d = new Date(fecha);
   d.setHours(0, 0, 0, 0);
   const diff = Math.floor((d.getTime() - hoy.getTime()) / 86400000);
+  if (diff < 0) return 'pasada';    // ya ocurrió y nadie la marcó
   if (diff <= 1) return 'red';      // hoy o mañana
   if (diff <= 7) return 'yellow';   // esta semana
   return 'green';                    // resto del mes
 }
 
-const URGENCIA_STYLES = {
-  red: { dot: 'bg-red-500', badge: 'text-red-600 bg-red-100', label: 'Urgente' },
-  yellow: { dot: 'bg-amber-500', badge: 'text-amber-600 bg-amber-100', label: 'Esta semana' },
-  green: { dot: 'bg-green-500', badge: 'text-green-600 bg-green-100', label: '' },
+const URGENCIA_STYLES: Record<UrgenciaAudiencia, { dot: string; badge: string; label: string; atenuada: boolean }> = {
+  realizada: { dot: 'bg-slate-300', badge: 'text-emerald-600 bg-emerald-50', label: '✓ Realizada', atenuada: true },
+  pasada: { dot: 'bg-slate-300', badge: 'text-slate-500 bg-slate-100', label: 'Pasada', atenuada: true },
+  red: { dot: 'bg-red-500', badge: 'text-red-600 bg-red-100', label: 'Urgente', atenuada: false },
+  yellow: { dot: 'bg-amber-500', badge: 'text-amber-600 bg-amber-100', label: 'Esta semana', atenuada: false },
+  green: { dot: 'bg-green-500', badge: 'text-green-600 bg-green-100', label: '', atenuada: false },
 };
 
 const TIPO_COLOR: Record<string, string> = {
@@ -213,7 +225,24 @@ export default function AdminDashboard() {
   const { data } = useFetch<ExpedientesStats>('/api/admin/expedientes/stats?dias=7');
   const { data: mercData } = useFetch<CumplimientoStats>('/api/admin/mercantil/stats?dias=30');
   const { data: labData } = useFetch<CumplimientoStats>('/api/admin/laboral/stats?dias=30');
-  const { data: audData } = useFetch<AudienciasData>('/api/admin/audiencias');
+  const { data: audData, setData: setAudData } = useFetch<AudienciasData>('/api/admin/audiencias');
+  const { mutate } = useMutate();
+  const [marcandoId, setMarcandoId] = useState<string | null>(null);
+
+  async function marcarRealizada(id: string) {
+    setMarcandoId(id);
+    const res = await mutate(`/api/admin/audiencias/registro/${id}`, {
+      method: 'PUT',
+      body: { estado: 'realizada' },
+    });
+    if (res) {
+      setAudData(prev => prev ? {
+        ...prev,
+        audiencias: prev.audiencias.map(a => a.id === id ? { ...a, estado: 'realizada' as EstadoAudiencia } : a),
+      } : prev);
+    }
+    setMarcandoId(null);
+  }
 
   const stats = data?.stats;
   const plazosProximos = data?.plazos_proximos ?? [];
@@ -406,32 +435,60 @@ export default function AdminDashboard() {
           </div>
           <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
             {audData.audiencias.map((aud) => {
-              const urgencia = getUrgencia(aud.fecha);
+              const urgencia = getUrgencia(aud.fecha, aud.estado);
               const styles = URGENCIA_STYLES[urgencia];
               const fechaObj = new Date(aud.fecha);
-              const dia = fechaObj.toLocaleDateString('es-GT', { weekday: 'short', day: 'numeric', month: 'short' });
-              const hora = aud.todo_dia ? 'Todo el día' : fechaObj.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+              const dia = fechaObj.toLocaleDateString('es-GT', { timeZone: 'America/Guatemala', weekday: 'short', day: 'numeric', month: 'short' });
+              const hora = aud.todo_dia ? 'Todo el día' : fechaObj.toLocaleTimeString('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit' });
+              const puedeMarcar = aud.origen === 'registro' && aud.estado !== 'realizada';
 
               return (
                 <div key={aud.id} className={`flex items-center gap-3 px-5 py-3 ${urgencia === 'red' ? 'bg-red-50/40' : 'hover:bg-slate-50'} transition-colors`}>
-                  <span className={`w-2 h-2 rounded-full ${styles.dot} shrink-0`} />
+                  <span className={`w-2 h-2 rounded-full ${aud.sin_registro ? 'bg-amber-400' : styles.dot} shrink-0`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm text-slate-900 truncate font-medium">{aud.titulo}</p>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TIPO_COLOR[aud.tipo] ?? TIPO_COLOR.General}`}>
-                        {aud.tipo}
-                      </span>
+                      <p className={`text-sm truncate font-medium ${styles.atenuada ? 'text-slate-400' : 'text-slate-900'}`}>{aud.titulo}</p>
+                      {aud.sin_registro ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">
+                          En calendario, sin registro
+                        </span>
+                      ) : aud.tipo && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TIPO_COLOR[aud.tipo] ?? TIPO_COLOR.General}`}>
+                          {aud.tipo}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${styles.atenuada ? 'text-slate-400' : 'text-slate-500'}`}>
                       {dia} · {hora}
                       {aud.tribunal && <> · {aud.tribunal}</>}
                       {aud.cliente && <> · {aud.cliente}</>}
                     </p>
                   </div>
-                  {styles.label && (
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${styles.badge}`}>
-                      {styles.label}
-                    </span>
+                  {aud.sin_registro ? (
+                    <Link
+                      href="/admin/audiencias/nuevo"
+                      className="text-xs font-medium text-amber-700 hover:text-amber-900 shrink-0"
+                    >
+                      Registrar →
+                    </Link>
+                  ) : (
+                    <>
+                      {styles.label && (
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${styles.badge}`}>
+                          {styles.label}
+                        </span>
+                      )}
+                      {puedeMarcar && (
+                        <button
+                          onClick={() => marcarRealizada(aud.id)}
+                          disabled={marcandoId === aud.id}
+                          title="Marcar como realizada"
+                          className="text-xs font-medium px-2 py-1 rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 shrink-0 transition-colors"
+                        >
+                          {marcandoId === aud.id ? '…' : '✓ Realizada'}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               );
