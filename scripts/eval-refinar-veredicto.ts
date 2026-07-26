@@ -7,6 +7,8 @@
 // sin_veredicto. Solo lectura; reusa eval-clasificador-resultado.json.
 // ============================================================================
 
+export {}; // módulo aislado: evita colisión de scope global con otros scripts
+
 process.loadEnvFile('.env.local');
 
 async function main() {
