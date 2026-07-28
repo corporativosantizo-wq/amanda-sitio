@@ -19,7 +19,7 @@ interface UseFetchResult<T> {
   setData: React.Dispatch<React.SetStateAction<T | null>>;
 }
 
-import { isSessionExpired, SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
+import { fetchWithAuthRetry, isSessionExpired, SESSION_EXPIRED_MSG } from '@/lib/utils/auth-redirect';
 
 export function useFetch<T>(url: string | null, options: UseFetchOptions = {}): UseFetchResult<T> {
   const { immediate = true } = options;
@@ -32,7 +32,8 @@ export function useFetch<T>(url: string | null, options: UseFetchOptions = {}): 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, { redirect: 'manual' });
+      const res = await fetchWithAuthRetry(url);
+      // Solo aparece si el reintento con token fresco también falló
       if (isSessionExpired(res)) {
         throw new Error(SESSION_EXPIRED_MSG);
       }
@@ -74,13 +75,13 @@ export function useMutate() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithAuthRetry(url, {
         method,
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
-        redirect: 'manual',
       });
 
+      // Solo aparece si el reintento con token fresco también falló
       if (isSessionExpired(res)) {
         setError(SESSION_EXPIRED_MSG);
         onError?.(SESSION_EXPIRED_MSG);
