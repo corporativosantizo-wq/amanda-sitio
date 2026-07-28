@@ -95,13 +95,17 @@ export default clerkMiddleware(async (auth, req) => {
   const isApiRoute = pathname.startsWith('/api/');
 
   // Autenticación Clerk obligatoria.
-  // - Rutas /api/*: 401 JSON explícito y no cacheable. NO usar auth.protect()
-  //   aquí — su rewrite-404 es cacheable por el edge (ver NO_STORE_HEADERS) y
-  //   además el 404 confundía el diagnóstico (BUG-001).
-  // - Páginas: se mantiene auth.protect() → redirige al sign-in como siempre.
+  // - Rutas /api/* y requests no-GET a páginas (server actions, POSTs):
+  //   401 JSON explícito y no cacheable. NO usar auth.protect() en estos
+  //   casos — su rewrite-404 es cacheable por el edge (ver NO_STORE_HEADERS),
+  //   el 404 confundía el diagnóstico (BUG-001) y en POSTs de página producía
+  //   el "404 al generar cotizaciones" (incidente 27-jul-2026).
+  // - Navegaciones GET/HEAD a páginas: se mantiene auth.protect() → redirige
+  //   al sign-in como siempre.
   const { userId } = await auth();
   if (!userId) {
-    if (isApiRoute) {
+    const isNavigation = req.method === 'GET' || req.method === 'HEAD';
+    if (isApiRoute || !isNavigation) {
       return NextResponse.json(
         { error: 'No autorizado: sesión inválida o expirada' },
         { status: 401, headers: NO_STORE_HEADERS },

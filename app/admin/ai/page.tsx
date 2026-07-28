@@ -191,7 +191,8 @@ export default function AIAssistantPage() {
           errMsg = err.error ?? errMsg;
         } catch {
           if (res.status === 504) errMsg = 'El asistente tardó demasiado. Intenta con una pregunta más corta.';
-          else if (res.status === 401 || res.status === 403) errMsg = SESSION_EXPIRED_MSG;
+          else if (res.status === 401) errMsg = SESSION_EXPIRED_MSG;
+          else if (res.status === 403) errMsg = 'No tienes permisos para esta acción. Revisa tu usuario admin.';
         }
         throw new Error(errMsg);
       }

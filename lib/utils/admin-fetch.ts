@@ -1,17 +1,15 @@
-import { isSessionExpired } from './auth-redirect';
+import { fetchWithAuthRetry, isSessionExpired } from './auth-redirect';
 
 /**
  * Wrapper global de fetch para toda la app admin.
- * Detecta sesión expirada de Clerk y lanza error específico.
+ * Ante sesión expirada renueva el token de Clerk y reintenta una sola vez;
+ * solo lanza SESSION_EXPIRED si el reintento también falló.
  */
 export async function adminFetch(
   url: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const res = await fetch(url, {
-    ...options,
-    redirect: 'manual',
-  });
+  const res = await fetchWithAuthRetry(url, options);
 
   if (isSessionExpired(res)) {
     throw new Error('SESSION_EXPIRED');
