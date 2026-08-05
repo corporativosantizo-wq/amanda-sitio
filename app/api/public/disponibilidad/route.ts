@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad);
+    // canal 'publico': aplica reglas de oferta pública (p. ej. 48h de
+    // anticipación para entrega/firma).
+    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad, 'publico');
 
     // Filter out past slots if the requested date is today (use Guatemala timezone)
     const nowGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));

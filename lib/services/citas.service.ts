@@ -55,6 +55,11 @@ export async function obtenerDisponibilidad(
   fecha: string,
   tipo: TipoCita,
   modalidad?: ModalidadCita,
+  // 'publico' = formulario /agendar y sus APIs (con y sin token): aplica reglas
+  // de oferta pública como la anticipación de 48h. 'interno' = admin, portal y
+  // la validación de crearCita: Amanda conserva libertad de agendar dentro de
+  // la ventana. (Misma firma que feat/horarios-config para facilitar el merge.)
+  canal: 'interno' | 'publico' = 'interno',
 ): Promise<SlotDisponible[]> {
   const config = HORARIOS[tipo];
   if (!config) throw new CitaError(`Tipo de cita inválido: ${tipo}`);
@@ -92,12 +97,14 @@ export async function obtenerDisponibilidad(
   // Entrega/firma de documentos: anticipación mínima de 48 HORAS — requieren
   // que Amanda prepare los documentos con antelación. La regla vive en el
   // SERVIDOR, no solo en el calendario del navegador: el POST público (con y
-  // sin token) exige que el slot elegido exista en esta lista, así que pegarle
-  // directo a la API tampoco la salta. El seguimiento virtual no la tiene
-  // (reserva directa). Solo afecta agendamiento NUEVO: las citas ya creadas y
-  // la confirmación de solicitudes por Amanda no pasan por aquí.
+  // sin token) exige que el slot elegido exista en esta lista (canal
+  // 'publico'), así que pegarle directo a la API tampoco la salta. SOLO canal
+  // público: Amanda puede agendar entrega/firma dentro de la ventana desde el
+  // admin (canal 'interno'). El seguimiento virtual no la tiene (reserva
+  // directa). Solo afecta agendamiento NUEVO: las citas ya creadas y la
+  // confirmación de solicitudes por Amanda no pasan por aquí.
   let minimoHora48: string | null = null;
-  if (esEntregaFirma) {
+  if (esEntregaFirma && canal === 'publico') {
     const ahoraGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
     const minimo = new Date(ahoraGT.getTime() + 48 * 60 * 60 * 1000);
     const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -227,15 +234,6 @@ function slotsOverlap(
   return startA < endB && startB < endA;
 }
 
-// Suma minutos a una hora 'HH:MM' y devuelve 'HH:MM' (zero-padded).
-function sumarMinutosHora(hora: string, min: number): string {
-  const [h, m] = hora.split(':').map(Number);
-  const total = h * 60 + m + min;
-  const fh = Math.floor(total / 60);
-  const fm = total % 60;
-  return `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
-}
-
 // ── CRUD Citas ──────────────────────────────────────────────────────────────
 
 interface ListCitasParams {
@@ -314,14 +312,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
       slotValido = hasStart && hasHalf;
       console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
-    } else if (input.tipo === 'seguimiento' && input.modalidad === 'firma_documentos') {
-      // La firma de documentos dura 30 min = dos sub-slots de 15 min consecutivos.
-      const next = sumarMinutosHora(input.hora_inicio, 15);
-      const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
-      const hasNext = disponibles.some((s: SlotDisponible) => s.hora_inicio === next);
-      slotValido = hasStart && hasNext;
-      console.log('[crearCita] firma validation: hora=', input.hora_inicio, ', next=', next, ', hasStart=', hasStart, ', hasNext=', hasNext, ', slotValido=', slotValido);
     } else {
+      // Al pasar la modalidad, los slots ya vienen con la duración correcta
+      // por modalidad (virtual/entrega 15 min, firma 30), así que basta el
+      // match exacto. (Antes la firma se validaba como dos sub-slots de 15 min
+      // porque la disponibilidad se pedía sin modalidad, con la ventana base.)
       slotValido = disponibles.some(
         (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
       );

@@ -1979,8 +1979,11 @@ function CreateModal({
     setLoadingSlots(true);
     setSelectedSlot(null);
     const durParam = isSmart ? `&duracion=${duracion}` : '';
+    // El seguimiento tiene ventana/duración por modalidad (entrega/firma 9–16):
+    // se pasa para que los slots coincidan con la validación de crearCita.
+    const modParam = tipo === 'seguimiento' ? `&modalidad=${modalidad}` : '';
     getToken().catch(() => {});
-    adminFetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}`)
+    adminFetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}${modParam}`)
       .then((r) => r.json())
       .then((json) => {
         setSlots(json.slots ?? []);
@@ -1991,7 +1994,7 @@ function CreateModal({
         setSlots([]);
       })
       .finally(() => setLoadingSlots(false));
-  }, [fecha, tipo, duracion, isFree, isSmart, getToken]);
+  }, [fecha, tipo, duracion, isFree, isSmart, modalidad, getToken]);
 
   // Search clientes
   useEffect(() => {

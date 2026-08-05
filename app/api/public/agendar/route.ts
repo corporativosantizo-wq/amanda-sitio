@@ -109,7 +109,9 @@ export async function POST(req: NextRequest) {
 
     // Double-check availability
     console.log('[Agendar] Verificando disponibilidad: fecha=', fecha, ', hora=', hora, ', tipo=', tipoCita);
-    const slots = await obtenerDisponibilidad(fecha, tipoCita, modalidad);
+    // canal 'publico': el slot elegido debe existir en la oferta pública
+    // (incluye la regla de 48h para entrega/firma) — con y sin token.
+    const slots = await obtenerDisponibilidad(fecha, tipoCita, modalidad, 'publico');
     console.log('[Agendar] obtenerDisponibilidad retornó', slots.length, 'slots:', slots.map((s: any) => s.hora_inicio));
 
     // For consulta_nueva the public page sends the hour; match to a slot
