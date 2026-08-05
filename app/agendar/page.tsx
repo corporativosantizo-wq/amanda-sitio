@@ -28,6 +28,10 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
   label: string; icono: string; desc: string; resumen: string;
   duracion: string; costo: string; detalle: string; detalleEsDireccion: boolean; nota?: string;
   dias: readonly number[]; diasLabel: string;
+  // Anticipación mínima en horas para agendar (el servidor aplica la misma
+  // regla en obtenerDisponibilidad; esto solo deshabilita días en el
+  // calendario). Entrega y firma: 48h — Amanda prepara documentos.
+  anticipacionHoras?: number;
 }> = {
   virtual: {
     label: 'Seguimiento Virtual',
@@ -50,8 +54,10 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
+    nota: 'Agendar con mínimo 48 horas de anticipación',
     dias: [1, 2, 3, 4, 5],
     diasLabel: 'Lunes a viernes',
+    anticipacionHoras: 48,
   },
   firma_documentos: {
     label: 'Firma de Documentos',
@@ -62,9 +68,10 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
-    nota: 'Presentarse con DPI original vigente',
+    nota: 'Presentarse con DPI original vigente · Agendar con mínimo 48 horas de anticipación',
     dias: [1, 2, 3, 4, 5],
     diasLabel: 'Lunes a viernes',
+    anticipacionHoras: 48,
   },
 };
 
@@ -738,6 +745,13 @@ function StepFecha({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Anticipación mínima (entrega/firma: 48h). Se deshabilitan los días cuya
+  // fecha cae antes del día de (ahora + anticipación); el día límite queda
+  // habilitado y el servidor filtra las horas exactas que ya no caben.
+  const anticipacionHoras = modInfo?.anticipacionHoras ?? 0;
+  const minDia = new Date(Date.now() + anticipacionHoras * 3600_000);
+  minDia.setHours(0, 0, 0, 0);
+
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [viewYear, setViewYear] = useState(today.getFullYear());
 
@@ -781,6 +795,7 @@ function StepFecha({
   const isDayAllowed = (day: number): boolean => {
     const d = new Date(viewYear, viewMonth, day);
     if (d < today) return false;
+    if (anticipacionHoras > 0 && d < minDia) return false;
     return dias.includes(d.getDay());
   };
 
@@ -791,6 +806,7 @@ function StepFecha({
       </h2>
       <p className="text-gray-500 mb-6 text-sm">
         {tituloLabel}: disponible {diasLabel.toLowerCase()}.
+        {anticipacionHoras > 0 && ` Requiere agendarse con al menos ${anticipacionHoras} horas de anticipación.`}
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 max-w-md mx-auto">

@@ -89,8 +89,34 @@ export async function obtenerDisponibilidad(
     return [];
   }
 
+  // Entrega/firma de documentos: anticipación mínima de 48 HORAS — requieren
+  // que Amanda prepare los documentos con antelación. La regla vive en el
+  // SERVIDOR, no solo en el calendario del navegador: el POST público (con y
+  // sin token) exige que el slot elegido exista en esta lista, así que pegarle
+  // directo a la API tampoco la salta. El seguimiento virtual no la tiene
+  // (reserva directa). Solo afecta agendamiento NUEVO: las citas ya creadas y
+  // la confirmación de solicitudes por Amanda no pasan por aquí.
+  let minimoHora48: string | null = null;
+  if (esEntregaFirma) {
+    const ahoraGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
+    const minimo = new Date(ahoraGT.getTime() + 48 * 60 * 60 * 1000);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const minimoFecha = `${minimo.getFullYear()}-${pad2(minimo.getMonth() + 1)}-${pad2(minimo.getDate())}`;
+    if (fecha < minimoFecha) {
+      console.log('[Disponibilidad] fecha=', fecha, ', modalidad=', modalidad, ': dentro de las próximas 48h (mínimo', minimoFecha + '), sin slots');
+      return [];
+    }
+    if (fecha === minimoFecha) {
+      minimoHora48 = `${pad2(minimo.getHours())}:${pad2(minimo.getMinutes())}`;
+    }
+  }
+
   // Generar slots base
-  const slots = generarSlots(horaInicio, horaFin, duracionMin);
+  let slots = generarSlots(horaInicio, horaFin, duracionMin);
+  if (minimoHora48) {
+    slots = slots.filter((s: SlotDisponible) => s.hora_inicio >= minimoHora48!);
+    console.log('[Disponibilidad] Filtro 48h en', fecha + ': quedan', slots.length, 'slots (desde', minimoHora48 + ')');
+  }
   console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ', modalidad=', modalidad + ':', slots.length, 'slots base (' + horaInicio + '-' + horaFin + ', cada', duracionMin + 'min)');
 
   // Obtener citas existentes del día (no canceladas). Para entrega/firma solo
