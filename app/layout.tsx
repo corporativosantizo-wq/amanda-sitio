@@ -31,6 +31,29 @@ export const metadata: Metadata = {
   verification: {
     google: 'spM97SB-QJux03jZfoXyLImyQMhQCxwCZ3J8mwEKKuQ',
   },
+  // Open Graph del sitio. `title` y `description` NO se declaran aquí a
+  // propósito: Next los resuelve con los de cada página, así que al compartir
+  // /servicios sale su propio título. `url` tampoco: en el layout raíz haría
+  // que todas las páginas anunciaran la portada — los rastreadores usan el
+  // canonical, que sí es correcto por página.
+  // Los artículos del blog declaran su propio openGraph y su opengraph-image,
+  // que prevalecen sobre esto.
+  openGraph: {
+    type: 'website',
+    locale: 'es_GT',
+    siteName: 'Amanda Santizo — Despacho Jurídico',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Amanda Santizo — Despacho Jurídico Boutique',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+  },
 }
 
 export default function RootLayout({
