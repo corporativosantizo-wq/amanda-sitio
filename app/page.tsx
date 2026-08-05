@@ -289,24 +289,26 @@ export default async function Home() {
       )}
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-azure to-cyan">
+      {/* Marino, no el degradado a dorado: la mezcla ensuciaba el centro y
+          dejaba el subtítulo ilegible. El dorado queda como acento. */}
+      <section className="py-20 bg-gradient-to-br from-navy to-navy-dark">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-6">
             ¿Listo para proteger tu negocio?
           </h2>
-          <p className="text-xl text-navy-dark mb-8">
+          <p className="text-xl text-slate-light mb-8">
             Agenda una consulta y conversemos sobre cómo podemos ayudarte.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/agendar"
-              className="px-8 py-4 bg-navy-dark text-white font-semibold rounded-lg hover:bg-navy transition-all duration-300"
+              className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
             >
               Agenda una consulta
             </Link>
             <Link
               href="/tienda"
-              className="px-8 py-4 bg-white text-navy-dark font-semibold rounded-lg hover:bg-slate-lighter transition-all duration-300"
+              className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300"
             >
               Ver plantillas legales
             </Link>
