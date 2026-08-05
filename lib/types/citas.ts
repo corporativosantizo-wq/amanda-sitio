@@ -120,6 +120,10 @@ export interface CitaInsert {
   documentos_entrega?: string | null;
   isOnlineMeeting?: boolean;
   cotizacion_id?: string | null;
+  // CC del correo de confirmación al cliente, escrito A MANO por Amanda en el
+  // panel. NUNCA se auto-carga desde clientes.emails_cc (regla de
+  // confidencialidad del despacho). Solo lo usa el flujo admin.
+  cc?: string[];
   // Solicitudes (entrega/firma): se persisten para que el admin las gestione.
   estado?: EstadoCita;
   fecha_solicitada?: string | null;

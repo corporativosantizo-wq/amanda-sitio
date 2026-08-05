@@ -229,10 +229,12 @@ export async function POST(req: Request) {
               }
             } else if (block.name === 'agendar_cita') {
               const input = block.input as any;
+              // Canal 'publico' (cliente-facing); cc descartado — solo admin.
               const cita = await crearCita({
                 ...input,
+                cc: undefined,
                 cliente_id: session.clienteId,
-              });
+              }, 'publico');
               result = JSON.stringify({
                 exito: true,
                 cita: {

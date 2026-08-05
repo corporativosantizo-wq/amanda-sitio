@@ -293,15 +293,25 @@ export async function obtenerCita(id: string): Promise<Cita> {
   return data;
 }
 
-export async function crearCita(input: CitaInsert): Promise<Cita> {
+export async function crearCita(
+  input: CitaInsert,
+  // 'publico' = formulario /agendar (con y sin token), portal y chat del
+  // portal: valida slot + rate limit contra la oferta pública. 'interno'
+  // (default) = panel admin: LIBERTAD TOTAL — sin validación de slots, días,
+  // ventana ni 48h; Amanda agenda lo que quiera, igual que los tipos
+  // ADMIN_ONLY de siempre. Decisión ago-2026.
+  canal: 'interno' | 'publico' = 'interno',
+): Promise<Cita> {
   const config = HORARIOS[input.tipo];
   if (!config) throw new CitaError(`Tipo de cita inválido: ${input.tipo}`);
 
   const isAdminOnly = ADMIN_ONLY_TIPOS.has(input.tipo);
 
-  if (!isAdminOnly) {
-    // Validar que el slot esté disponible (solo para tipos públicos)
-    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo);
+  if (!isAdminOnly && canal === 'publico') {
+    // Validar que el slot esté disponible contra la OFERTA PÚBLICA: misma
+    // lista que ve el formulario (ventana y duración por modalidad + 48h de
+    // entrega/firma).
+    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo, input.modalidad, 'publico');
 
     let slotValido: boolean;
     if (input.tipo === 'consulta_nueva') {
@@ -349,7 +359,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       }
     }
   } else {
-    console.log('[crearCita] Tipo admin-only:', input.tipo, '— saltando validación de slots/rate limit');
+    console.log(
+      '[crearCita]',
+      isAdminOnly ? `Tipo admin-only: ${input.tipo}` : `Canal interno (admin), tipo: ${input.tipo}`,
+      '— sin validación de slots/rate limit',
+    );
   }
 
   // Insertar cita
@@ -501,7 +515,17 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       // igual con el bloque "coming soon".
       const email = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita, await obtenerConfiguracionDespacho());
       console.log('[crearCita] Template generado: from=', email.from, ', subject=', email.subject, ', html=', email.html.length, 'chars');
-      await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
+      // CC manual escrito por Amanda en el panel (nunca auto-cargado de
+      // clientes.emails_cc — confidencialidad). Vacío = sin copia.
+      const ccManual = (input.cc ?? []).map((e) => e.trim()).filter(Boolean);
+      if (ccManual.length) console.log('[crearCita] CC manual:', ccManual.length, 'destinatario(s)');
+      await sendMail({
+        from: email.from,
+        to: clienteEmail,
+        subject: email.subject,
+        htmlBody: email.html,
+        cc: ccManual.length ? ccManual : undefined,
+      });
       console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);
       await db()
         .from('citas')

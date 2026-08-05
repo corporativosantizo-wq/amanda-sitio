@@ -286,7 +286,7 @@ export async function POST(req: NextRequest) {
       modalidad: modalidadFinal,
       isOnlineMeeting: modalidadFinal === 'virtual',
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
-    });
+    }, 'publico');
 
     console.log('[Agendar] Cita creada OK:', cita.id, ', teams_link=', cita.teams_link ? 'sí' : 'no');
 
