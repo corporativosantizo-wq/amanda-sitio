@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
   title: 'Servicios legales | Amanda Santizo, Abogada — Guatemala',
@@ -8,23 +7,10 @@ export const metadata: Metadata = {
     'Contratos, derecho corporativo, litigio civil y asuntos interjurisdiccionales. Servicios legales para empresas con operaciones dentro y fuera de Guatemala.',
 }
 
-interface ServiceProduct {
-  id: string
-  name: string
-  description: string
-  price: number
-}
-
-export default async function ServiciosPage() {
-  // Obtener servicios de la BD
-  const supabase = await createClient()
-  const { data: dbServicios } = await supabase
-    .from('products')
-    .select('id, name, description, price')
-    .eq('status', 'active')
-    .eq('type', 'service')
-    .order('price', { ascending: true })
-
+export default function ServiciosPage() {
+  // Las áreas y sus honorarios se editan aquí. La sección que listaba
+  // products (type='service') se retiró: duplicaba estos precios y se
+  // desincronizaba. Los productos se compran en /tienda.
   const servicios = [
     {
       id: 'consultoria',
@@ -58,6 +44,23 @@ export default async function ServiciosPage() {
       ],
       pricing: 'Registro de sociedad desde $1,800',
       ideal: 'Ideal para: Empresas establecidas, nuevos negocios, inversionistas',
+    },
+    {
+      id: 'litigio-corporativo',
+      title: 'Litigio Corporativo',
+      subtitle: 'Cuando el acuerdo se rompe',
+      icon: '🏛️',
+      description: 'Disputas societarias y comerciales llevadas por quien conoce la operación desde adentro. Estructuro la relación jurídica y, si el conflicto llega, la defiendo yo misma: no derivo el litigio a otro despacho.',
+      features: [
+        'Cobro de deuda mercantil',
+        'Medidas cautelares y ejecución de garantías',
+        'Disputas entre socios y accionistas',
+        'Incumplimiento de contratos mercantiles',
+        'Impugnación de acuerdos societarios',
+        'Defensa corporativa en juicio',
+      ],
+      pricing: 'Cotización según la cuantía y la complejidad',
+      ideal: 'Ideal para: Empresas y socios en conflicto que necesitan resolver, no solo defenderse',
     },
     {
       id: 'internacional',
@@ -169,7 +172,8 @@ export default async function ServiciosPage() {
             {servicios.map((servicio, index) => (
               <div
                 key={servicio.id}
-                className={`flex flex-col lg:flex-row gap-12 items-center ${
+                id={servicio.id}
+                className={`scroll-mt-28 flex flex-col lg:flex-row gap-12 items-center ${
                   index % 2 === 1 ? 'lg:flex-row-reverse' : ''
                 }`}
               >
@@ -234,59 +238,6 @@ export default async function ServiciosPage() {
           </div>
         </div>
       </section>
-
-      {/* Servicios de la BD */}
-      {(dbServicios ?? []).length > 0 && (
-        <section className="py-20 bg-slate-lighter">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="text-center mb-12">
-              <span className="inline-block px-4 py-2 bg-azure/10 text-azure font-semibold rounded-full text-sm mb-4">
-                Servicios Profesionales
-              </span>
-              <h2 className="font-display text-3xl md:text-4xl font-bold text-navy mb-4">
-                Contrata directamente
-              </h2>
-              <p className="text-slate text-lg max-w-2xl mx-auto">
-                Servicios legales con precio de referencia. Solicita una cotización personalizada
-                según la complejidad de tu caso.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(dbServicios as ServiceProduct[]).map((svc) => (
-                <div
-                  key={svc.id}
-                  className="bg-white rounded-2xl border border-slate-light p-6 hover:border-cyan hover:shadow-xl transition-all duration-300 flex flex-col"
-                >
-                  <h3 className="font-display text-xl font-bold text-navy mb-3">
-                    {svc.name}
-                  </h3>
-                  <p className="text-slate text-sm leading-relaxed mb-6 flex-1">
-                    {svc.description}
-                  </p>
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-light">
-                    <div>
-                      <span className="text-sm font-medium text-slate">Desde </span>
-                      <span className="text-xl font-bold text-navy">
-                        ${Number(svc.price).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                    <Link
-                      href="/tienda/cotizacion-a-medida"
-                      className="px-5 py-2.5 bg-azure text-white font-semibold rounded-lg hover:bg-cyan transition-all duration-300 text-sm flex items-center space-x-2"
-                    >
-                      <span>Consultar</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                      </svg>
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* CTA */}
       <section className="py-20 bg-gradient-to-br from-navy to-navy-dark">

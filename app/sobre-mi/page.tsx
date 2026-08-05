@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Sobre mí | Amanda Santizo, Abogada y Notaria — Guatemala',
   description:
-    'Más de una década de litigio civil y constitucional en Guatemala, con experiencia ante la Corte Interamericana y otros foros internacionales.',
+    'Quince años de litigio civil y constitucional en Guatemala, con experiencia ante la Corte Interamericana y otros foros internacionales.',
 }
 
 export default function SobreMiPage() {
@@ -22,7 +22,7 @@ export default function SobreMiPage() {
             Mi historia
           </h1>
           <p className="text-xl md:text-2xl text-slate-light leading-relaxed max-w-3xl mx-auto">
-            Más de una década litigando, enseñando y defendiendo lo que es justo.
+            Quince años litigando, enseñando y defendiendo lo que es justo.
           </p>
         </div>
       </section>

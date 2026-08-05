@@ -28,10 +28,10 @@ export default function Home() {
       href: '/servicios#internacional',
     },
     {
-      icon: '📚',
-      title: 'Capacitaciones',
-      description: 'Talleres y cursos para equipos de empresas.',
-      href: '/servicios#capacitaciones',
+      icon: '🏛️',
+      title: 'Litigio Corporativo',
+      description: 'Disputas entre socios, cobro mercantil y defensa en juicio.',
+      href: '/servicios#litigio-corporativo',
     },
   ]
 
