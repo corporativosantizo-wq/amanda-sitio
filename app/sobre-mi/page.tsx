@@ -112,7 +112,7 @@ export default function SobreMiPage() {
             El litigio corporativo no siempre es defensa. Bien usado, es una herramienta para ordenar una sociedad, resolver una disputa entre socios o recuperar lo que corresponde. Y cuando toca defender, se defiende.
           </p>
           <p className="text-lg text-slate leading-relaxed">
-            Mi forma de trabajar siempre ha sido la misma: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparación que merece. Si algo aprendí en más de una década de litigio es que no hay atajos. La diferencia está en el trabajo, el estudio y la convicción de que cada cliente merece una defensa seria.
+            Mi forma de trabajar siempre ha sido la misma: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparación que merece. Si algo aprendí en quince años de litigio es que no hay atajos. La diferencia está en el trabajo, el estudio y la convicción de que cada cliente merece una defensa seria.
           </p>
         </div>
       </section>
