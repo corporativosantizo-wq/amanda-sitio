@@ -39,7 +39,7 @@ export default async function ServiciosPage() {
         'Due diligence',
         'Opiniones legales especializadas',
       ],
-      pricing: '$150 por hora — presencial',
+      pricing: '$300 por hora — presencial',
       ideal: 'Ideal para: Empresas que necesitan una opinión legal antes de decidir',
     },
     {
@@ -56,7 +56,7 @@ export default async function ServiciosPage() {
         'Gobierno corporativo',
         'Resolución de conflictos societarios',
       ],
-      pricing: 'Registro de sociedad desde $1,600',
+      pricing: 'Registro de sociedad desde $1,800',
       ideal: 'Ideal para: Empresas establecidas, nuevos negocios, inversionistas',
     },
     {
@@ -89,7 +89,7 @@ export default async function ServiciosPage() {
         'Contratos de licencia',
         'Estrategia de protección IP',
       ],
-      pricing: 'Cotización según el alcance',
+      pricing: 'Registro de marca desde $1,500',
       ideal: 'Ideal para: Empresas que protegen su marca dentro y fuera del país',
     },
     {
@@ -106,7 +106,7 @@ export default async function ServiciosPage() {
         'Políticas de privacidad',
         'Contratos de compraventa',
       ],
-      pricing: 'Cotización según el alcance',
+      pricing: 'Desde $300 por contrato',
       ideal: 'Ideal para: Empresas y profesionales que contratan con terceros',
     },
     {
@@ -122,7 +122,7 @@ export default async function ServiciosPage() {
         'Webinars y conferencias',
         'Material educativo descargable',
       ],
-      pricing: 'Cotización según el alcance',
+      pricing: '$500 por taller',
       ideal: 'Ideal para: Equipos corporativos y áreas legales internas',
     },
   ]
