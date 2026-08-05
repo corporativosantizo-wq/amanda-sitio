@@ -467,6 +467,13 @@ export async function enviarCotizacion(id: string, ccManual?: string[]): Promise
 
 /**
  * Marca cotización como aceptada. Punto de partida para generar factura.
+ *
+ * Camino ÚNICO de aceptación: lo usan tanto el panel admin como la ruta
+ * pública de respuesta (app/api/cotizacion/respuesta). Además de la
+ * transición de estado, crea el cobro automático (idempotente) y envía al
+ * cliente el correo de confirmación de contratación con su enlace personal
+ * de agendamiento. Solo aplica hacia adelante: exige estado 'enviada', así
+ * que las cotizaciones ya aceptadas nunca re-disparan cobro ni correo.
  */
 export async function aceptarCotizacion(id: string): Promise<Cotizacion> {
   const actual = await obtenerCotizacion(id);
@@ -495,7 +502,57 @@ export async function aceptarCotizacion(id: string): Promise<Cotizacion> {
     console.error('[Cotizaciones] Error creando cobro automático:', err.message);
   }
 
+  // Correo de confirmación de contratación (best-effort: si falla, la
+  // aceptación y el cobro ya quedaron firmes).
+  try {
+    await enviarCorreoContratacion(id);
+  } catch (err: any) {
+    console.error('[Cotizaciones] Error enviando correo de contratación:', err.message ?? err);
+  }
+
   return data as Cotizacion;
+}
+
+/**
+ * Correo de confirmación de contratación con el enlace personal de
+ * agendamiento (/agendar?token=token_agendamiento). Idioma según el cliente
+ * (plantillasDeCliente). Devuelve false si no se pudo enviar (sin email, o
+ * cotización no aceptada).
+ */
+export async function enviarCorreoContratacion(cotizacionId: string): Promise<boolean> {
+  const { data: cot, error } = await db()
+    .from('cotizaciones')
+    .select('id, numero, estado, token_agendamiento, tramite_finalizado_at, cliente:clientes!cliente_id(id, nombre, email, idioma)')
+    .eq('id', cotizacionId)
+    .single();
+
+  if (error || !cot) {
+    console.error('[Cotizaciones] Contratación: cotización no encontrada', cotizacionId, error?.message);
+    return false;
+  }
+  if (cot.estado !== EstadoCotizacion.ACEPTADA || cot.tramite_finalizado_at) {
+    console.warn('[Cotizaciones] Contratación: no se envía (estado=', cot.estado, ', finalizada=', !!cot.tramite_finalizado_at, ')');
+    return false;
+  }
+  const cliente = cot.cliente as { nombre: string; email: string | null; idioma?: string | null } | null;
+  if (!cliente?.email) {
+    console.warn('[Cotizaciones] Contratación: cliente sin email en', cot.numero, '— no se envía');
+    return false;
+  }
+  if (!cot.token_agendamiento) {
+    console.error('[Cotizaciones] Contratación: cotización sin token_agendamiento en', cot.numero);
+    return false;
+  }
+
+  const link = `https://amandasantizo.com/agendar?token=${encodeURIComponent(cot.token_agendamiento)}`;
+  const email = plantillasDeCliente(cliente).emailContratacionConfirmada({
+    clienteNombre: cliente.nombre,
+    numeroCotizacion: cot.numero,
+    linkAgendamiento: link,
+  });
+  await sendMail({ from: email.from, to: cliente.email, subject: email.subject, htmlBody: email.html });
+  console.log('[Cotizaciones] Correo de contratación enviado:', cot.numero);
+  return true;
 }
 
 /**

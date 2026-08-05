@@ -112,7 +112,8 @@ export function emailTextoPlano(texto: string, pie?: string): string {
 }
 
 // Bot\u00f3n de marca: navy con borde inferior dorado (sin gradiente teal).
-function botonMarca(label: string, href: string): string {
+// Exportado para que emails-en.ts use el mismo bot\u00f3n.
+export function botonMarca(label: string, href: string): string {
   return `
     <table><tr><td style="padding:16px 0;">
       <a href="${href}" style="display:inline-block;background:${NAVY};color:#fff;padding:12px 28px;border-radius:8px;border-bottom:3px solid ${GOLD};text-decoration:none;font-weight:600;font-size:14px;">
@@ -1356,6 +1357,59 @@ export function emailRecordatorioCobro(params: {
   return {
     from: 'contador@papeleo.legal',
     subject: `${titulo} \u2014 COB-${String(params.numeroCobro).padStart(3, '0')} \u2014 ${montoFmt}`,
+    html,
+  };
+}
+
+// \u2500\u2500 Confirmaci\u00f3n de contrataci\u00f3n (cotizaci\u00f3n aceptada) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Se env\u00eda al aceptar una cotizaci\u00f3n (por la ruta p\u00fablica o desde el admin) e
+// incluye el enlace personal de agendamiento del tr\u00e1mite. Texto aprobado por
+// Amanda (ago-2026). PRIVACIDAD: no incluye monto ni detalle de servicios \u2014
+// solo el n\u00famero de cotizaci\u00f3n como referencia.
+
+export function emailContratacionConfirmada(params: {
+  clienteNombre: string;
+  numeroCotizacion: string;
+  linkAgendamiento: string;
+}): EmailTemplate {
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 4px;color:#0f172a;font-size:20px;">Confirmaci\u00f3n de contrataci\u00f3n</h2>
+    <p style="margin:0 0 16px;"><span style="display:inline-block;background:${AZUL_CLARO};color:${NAVY};padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${escEmail(params.numeroCotizacion)}</span></p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Estimado(a) <strong>${escEmail(params.clienteNombre)}</strong>:</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Hemos recibido la aceptaci\u00f3n de su cotizaci\u00f3n. Gracias por su confianza; a partir de ahora su tr\u00e1mite queda en curso con el despacho.</p>
+
+    <h3 style="margin:24px 0 8px;color:${NAVY};font-size:16px;">Sobre el seguimiento de su tr\u00e1mite</h3>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">A partir de este momento usted puede agendar directamente sus citas de seguimiento desde el enlace de este correo. Estas citas est\u00e1n comprendidas dentro de los honorarios ya convenidos y no generan cobro adicional.</p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-bottom:4px;">Las citas de seguimiento est\u00e1n destinadas a la gesti\u00f3n del tr\u00e1mite contratado:</p>
+    <ul style="margin:4px 0 16px;padding-left:20px;color:#475569;font-size:14px;line-height:1.8;">
+      <li>Consultar el estado y avance del tr\u00e1mite</li>
+      <li>Entregar o recibir documentaci\u00f3n requerida</li>
+      <li>Firma de escrituras, poderes y documentos notariales</li>
+      <li>Aclarar requisitos o pasos del mismo tr\u00e1mite</li>
+    </ul>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Si surge un asunto jur\u00eddico distinto al aqu\u00ed contratado \u2014una nueva gesti\u00f3n, otro expediente, o asesor\u00eda sobre una materia diferente\u2014 corresponde agendarlo como consulta, la cual se cotiza por separado. Con gusto le indicaremos cuando sea el caso.</p>
+
+    <table width="100%" style="margin:16px 0;background:${AZUL_CLARO};border-left:3px solid ${NAVY};border-radius:8px;">
+      <tr><td style="padding:14px 16px;">
+        <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;"><strong style="color:${NAVY};">Citas de firma:</strong> deben agendarse con un m\u00ednimo de 48 horas de anticipaci\u00f3n y quedan sujetas a confirmaci\u00f3n del despacho, ya que requieren la preparaci\u00f3n previa de los documentos y la verificaci\u00f3n de requisitos. Recibir\u00e1 un correo cuando su cita sea confirmada.</p>
+      </td></tr>
+    </table>
+
+    <table width="100%"><tr><td align="center">
+      ${botonMarca('Agendar cita de seguimiento', params.linkAgendamiento)}
+    </td></tr></table>
+
+    <p style="color:#64748b;font-size:13px;line-height:1.6;">El enlace de agendamiento permanecer\u00e1 activo mientras el tr\u00e1mite se encuentre en curso.</p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Cordialmente,<br/><strong>Amanda Santizo</strong><br/>Abogada y Notaria<br/><a href="https://amandasantizo.com" style="color:${NAVY};text-decoration:none;">amandasantizo.com</a></p>
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Confirmaci\u00f3n de contrataci\u00f3n \u2014 ${params.numeroCotizacion}`,
     html,
   };
 }

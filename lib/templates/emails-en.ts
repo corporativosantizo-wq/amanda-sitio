@@ -20,7 +20,7 @@
 // ============================================================================
 
 import type { EmailTemplate } from './emails';
-import { emailWrapper, escEmail, formatearHora } from './emails';
+import { emailWrapper, escEmail, formatearHora, botonMarca } from './emails';
 import { MODALIDAD_INFO, DIRECCION_OFICINA, type ModalidadCita } from '@/lib/types/citas';
 
 const NAVY = '#1e2a5a';
@@ -1098,6 +1098,59 @@ export function emailAvisoAudiencia(params: {
   return {
     from: 'asistente@papeleo.legal',
     subject: 'Important notice: court hearing scheduled — Amanda Santizo Law Firm',
+    html,
+  };
+}
+
+// ── Engagement confirmation (accepted quote) ────────────────────────────────
+// EN counterpart of emailContratacionConfirmada. Traducción fiel del texto
+// aprobado en ES (pendiente de revisión de Amanda). PRIVACY: no amounts, no
+// service breakdown — only the quote number as reference. Sin colegiado (regla
+// de plantillas EN).
+
+export function emailContratacionConfirmada(params: {
+  clienteNombre: string;
+  numeroCotizacion: string;
+  linkAgendamiento: string;
+}): EmailTemplate {
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 4px;color:#0f172a;font-size:20px;">Engagement confirmation</h2>
+    <p style="margin:0 0 16px;"><span style="display:inline-block;background:#eef2f9;color:${NAVY};padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${escEmail(params.numeroCotizacion)}</span></p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;">Dear <strong>${escEmail(params.clienteNombre)}</strong>,</p>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">We have received your acceptance of our quote. Thank you for your trust — your matter is now in progress with our firm.</p>
+
+    <h3 style="margin:24px 0 8px;color:${NAVY};font-size:16px;">About the follow-up of your matter</h3>
+    <p style="color:#475569;font-size:14px;line-height:1.6;">From this moment on, you can schedule your follow-up appointments directly through the link in this email. These appointments are included in the agreed fees and carry no additional charge.</p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-bottom:4px;">Follow-up appointments are intended for the handling of the engaged matter:</p>
+    <ul style="margin:4px 0 16px;padding-left:20px;color:#475569;font-size:14px;line-height:1.8;">
+      <li>Checking the status and progress of your matter</li>
+      <li>Delivering or receiving required documentation</li>
+      <li>Signing deeds, powers of attorney and notarial documents</li>
+      <li>Clarifying requirements or steps of the same matter</li>
+    </ul>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;">If a different legal matter arises — a new engagement, another case, or advice on a different subject — it should be scheduled as a consultation, which is quoted separately. We will gladly let you know when that is the case.</p>
+
+    <table width="100%" style="margin:16px 0;background:#eef2f9;border-left:3px solid ${NAVY};border-radius:8px;">
+      <tr><td style="padding:14px 16px;">
+        <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;"><strong style="color:${NAVY};">Signing appointments:</strong> must be scheduled at least 48 hours in advance and are subject to confirmation by the firm, as they require prior preparation of the documents and verification of requirements. You will receive an email once your appointment is confirmed.</p>
+      </td></tr>
+    </table>
+
+    <table width="100%"><tr><td align="center">
+      ${botonMarca('Schedule a follow-up appointment', params.linkAgendamiento)}
+    </td></tr></table>
+
+    <p style="color:#64748b;font-size:13px;line-height:1.6;">The scheduling link will remain active while your matter is in progress.</p>
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Sincerely,<br/><strong>Amanda Santizo</strong><br/>Attorney at Law &amp; Notary<br/><a href="https://amandasantizo.com" style="color:${NAVY};text-decoration:none;">amandasantizo.com</a></p>
+  `);
+
+  return {
+    from: 'asistente@papeleo.legal',
+    subject: `Engagement confirmation — ${params.numeroCotizacion}`,
     html,
   };
 }
