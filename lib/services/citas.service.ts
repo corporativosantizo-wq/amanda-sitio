@@ -386,6 +386,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       duracion_minutos: input.duracion_minutos,
       costo,
       token_pago: tokenPago,
+      cotizacion_id: input.cotizacion_id ?? null,
       categoria_outlook: config.categoria_outlook,
       modalidad,
       documentos_entrega: input.documentos_entrega ?? null,
@@ -805,6 +806,7 @@ export interface SolicitudInsert {
   hora_fin: string;
   duracion_minutos: number;
   cliente_id?: string | null;
+  cotizacion_id?: string | null;
   comentarios_cliente?: string | null;
   notas?: string | null;
   // Solo para la notificación al despacho (no se persisten en la cita).
@@ -818,6 +820,7 @@ export async function crearSolicitudCita(input: SolicitudInsert): Promise<Cita> 
     .from('citas')
     .insert({
       cliente_id: input.cliente_id ?? null,
+      cotizacion_id: input.cotizacion_id ?? null,
       tipo: input.tipo,
       titulo: input.titulo,
       descripcion: input.descripcion ?? null,

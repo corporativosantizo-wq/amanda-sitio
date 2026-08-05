@@ -88,6 +88,9 @@ export interface Cita {
   // Destinatarios propios del recordatorio (si tiene valor, reemplaza email+CC del cliente).
   audiencia_destinatarios: string[] | null;
   costo: number;
+  // Trámite (cotización) desde cuyo enlace de agendamiento nació la cita.
+  // NULL para citas ajenas al flujo por cotización.
+  cotizacion_id: string | null;
   outlook_event_id: string | null;
   teams_link: string | null;
   categoria_outlook: string | null;
@@ -116,6 +119,7 @@ export interface CitaInsert {
   modalidad?: ModalidadCita;
   documentos_entrega?: string | null;
   isOnlineMeeting?: boolean;
+  cotizacion_id?: string | null;
   // Solicitudes (entrega/firma): se persisten para que el admin las gestione.
   estado?: EstadoCita;
   fecha_solicitada?: string | null;
