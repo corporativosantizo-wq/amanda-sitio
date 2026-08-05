@@ -68,9 +68,9 @@ export function socialCard(opts: CardOptions) {
         height: '100%',
         padding: pad,
         justifyContent: 'space-between',
-        backgroundColor: '#0F172A',
+        backgroundColor: '#16204a',
         backgroundImage:
-          'linear-gradient(135deg, #0F172A 0%, #13315C 48%, #0E7490 100%)',
+          'linear-gradient(135deg, #16204a 0%, #1e2a5a 48%, #2c3e73 100%)',
         fontFamily: 'Plus Jakarta Sans',
         position: 'relative',
       }}
@@ -85,7 +85,7 @@ export function socialCard(opts: CardOptions) {
           width: 520,
           height: 520,
           borderRadius: 520,
-          backgroundColor: 'rgba(34, 211, 238, 0.18)',
+          backgroundColor: 'rgba(194, 160, 90, 0.18)',
         }}
       />
 
@@ -97,7 +97,7 @@ export function socialCard(opts: CardOptions) {
             width: isOg ? 64 : 90,
             height: isOg ? 6 : 8,
             borderRadius: 8,
-            backgroundColor: '#22D3EE',
+            backgroundColor: '#c2a05a',
             marginBottom: isOg ? 18 : 28,
           }}
         />
@@ -115,7 +115,7 @@ export function socialCard(opts: CardOptions) {
         <div
           style={{
             display: 'flex',
-            color: '#67E8F9',
+            color: '#c2a05a',
             fontSize: tagline,
             fontWeight: 600,
             letterSpacing: 3,
@@ -179,7 +179,7 @@ export function socialCard(opts: CardOptions) {
           <div
             style={{
               display: 'flex',
-              color: '#67E8F9',
+              color: '#c2a05a',
               fontSize: urlSize,
               fontWeight: 800,
             }}
