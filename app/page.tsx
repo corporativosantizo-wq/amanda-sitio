@@ -39,53 +39,41 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative min-h-[90vh] flex items-center bg-gradient-to-br from-navy via-navy-dark to-navy-light overflow-hidden">
+      {/* Hero sin fotografía: la identidad la sostienen el color y la
+          tipografía. Columna única centrada. */}
+      <section className="relative min-h-[72vh] flex items-center bg-gradient-to-br from-navy via-navy-dark to-navy-light overflow-hidden">
         {/* Background decorations */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 right-20 w-96 h-96 bg-cyan rounded-full blur-3xl"></div>
           <div className="absolute bottom-20 left-20 w-64 h-64 bg-azure rounded-full blur-3xl"></div>
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Text content */}
-          <div>
-            <span className="inline-block px-4 py-2 bg-cyan/20 text-cyan font-semibold rounded-full text-sm mb-6">
-              Derecho Civil y Empresarial · Guatemala
-            </span>
-            <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
-              Derecho claro para{' '}
-              <span className="text-cyan">decisiones inteligentes</span>
-            </h1>
-            <p className="text-xl text-slate-light mb-8 leading-relaxed">
-              Soy Amanda Santizo, abogada y notaria. Dirijo un despacho jurídico
-              boutique especializado en derecho civil y empresarial, con enfoque
-              transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link
-                href="/agendar"
-                className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 text-center"
-              >
-                Agenda una consulta
-              </Link>
-              <Link
-                href="/servicios"
-                className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300 text-center"
-              >
-                Ver servicios
-              </Link>
-            </div>
-          </div>
-
-          {/* Image */}
-          <div className="relative">
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-              <img
-                src="/images/amanda-platon.jpg"
-                alt="Amanda Santizo — Abogada y Notaria"
-                className="w-full h-auto object-cover"
-              />
-            </div>
+        <div className="relative z-10 max-w-4xl mx-auto px-6 py-24 text-center">
+          <span className="inline-block px-4 py-2 bg-cyan/20 text-cyan font-semibold rounded-full text-sm mb-6">
+            Derecho Civil y Empresarial · Guatemala
+          </span>
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
+            Derecho claro para{' '}
+            <span className="text-cyan">decisiones inteligentes</span>
+          </h1>
+          <p className="text-xl text-slate-light mb-10 leading-relaxed max-w-2xl mx-auto">
+            Soy Amanda Santizo, abogada y notaria. Dirijo un despacho jurídico
+            boutique especializado en derecho civil y empresarial, con enfoque
+            transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/agendar"
+              className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 text-center"
+            >
+              Agenda una consulta
+            </Link>
+            <Link
+              href="/servicios"
+              className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300 text-center"
+            >
+              Ver servicios
+            </Link>
           </div>
         </div>
       </section>
@@ -128,6 +116,26 @@ export default function Home() {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Proceso de agendamiento */}
+      <section className="py-20 bg-navy">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-6">
+            Su consulta, con hora reservada
+          </h2>
+          <p className="text-xl text-slate-light leading-relaxed mb-10">
+            El despacho atiende con agenda. Usted elige día y hora, recibe
+            confirmación y su enlace de reunión — sin llamadas de seguimiento ni
+            esperas. Cada consulta tiene tiempo dedicado.
+          </p>
+          <Link
+            href="/agendar"
+            className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
+          >
+            Agende su consulta
+          </Link>
         </div>
       </section>
 
