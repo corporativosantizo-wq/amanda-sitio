@@ -1,5 +1,45 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { createClient } from '@supabase/supabase-js'
+
+// Los últimos artículos se revalidan cada hora: la portada sigue siendo
+// estática en vez de renderizarse en cada visita.
+export const revalidate = 3600
+
+interface PostPortada {
+  id: string
+  slug: string
+  title: string
+  published_at: string | null
+  category: { name: string; slug: string } | null
+}
+
+async function ultimosPosts(): Promise<PostPortada[]> {
+  try {
+    // Llave anónima y sin cookies: RLS ya limita a los publicados, y así no se
+    // fuerza el renderizado dinámico de la página.
+    const db = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
+    const { data } = await db
+      .from('posts')
+      .select('id, slug, title, published_at, category:categories(name, slug)')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(3)
+    return (data ?? []) as unknown as PostPortada[]
+  } catch {
+    return []
+  }
+}
+
+const formatoFecha = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 
 export const metadata: Metadata = {
   title: 'Amanda Santizo — Abogada y Notaria | Derecho Civil y Empresarial, Guatemala',
@@ -8,7 +48,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
 }
 
-export default function Home() {
+export default async function Home() {
+  const posts = await ultimosPosts()
+
   const servicios = [
     {
       icon: '📄',
@@ -186,6 +228,65 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Últimos artículos. La portada de cada tarjeta es la imagen social que
+          el sitio genera por artículo, que ya lleva el título impreso: por eso
+          debajo solo van fecha y categoría, y el título viaja en el alt. */}
+      {posts.length > 0 && (
+        <section className="py-20 bg-slate-lighter">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="text-center mb-12">
+              <span className="inline-block px-4 py-2 bg-azure/10 text-azure font-semibold rounded-full text-sm mb-4">
+                Blog
+              </span>
+              <h2 className="font-display text-4xl md:text-5xl font-bold text-navy">
+                Últimos artículos
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {posts.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/blog/${post.slug}`}
+                  className="group bg-white rounded-2xl overflow-hidden border border-slate-light
+                           hover:border-cyan hover:shadow-xl transition-all duration-300"
+                >
+                  <img
+                    src={`/blog/${post.slug}/opengraph-image`}
+                    alt={post.title}
+                    width={1200}
+                    height={630}
+                    className="w-full h-auto"
+                  />
+                  <div className="flex items-center justify-between gap-3 px-5 py-4">
+                    <span className="text-sm text-slate">
+                      {post.published_at ? formatoFecha(post.published_at) : ''}
+                    </span>
+                    {post.category && (
+                      <span className="px-3 py-1 bg-cyan/15 text-navy text-xs font-semibold rounded-full whitespace-nowrap">
+                        {post.category.name}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            <div className="text-center mt-12">
+              <Link
+                href="/blog"
+                className="inline-flex items-center px-6 py-3 bg-navy text-white font-semibold rounded-lg hover:bg-azure transition-colors"
+              >
+                Ver todos los artículos
+                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA Section */}
       <section className="py-20 bg-gradient-to-br from-azure to-cyan">

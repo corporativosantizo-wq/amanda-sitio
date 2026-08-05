@@ -85,7 +85,7 @@ export function socialCard(opts: CardOptions) {
           width: 520,
           height: 520,
           borderRadius: 520,
-          backgroundColor: 'rgba(194, 160, 90, 0.18)',
+          backgroundColor: 'rgba(194, 160, 90, 0.28)',
         }}
       />
 
