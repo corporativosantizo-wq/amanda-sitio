@@ -113,6 +113,36 @@ const TIPO_INFO: Record<TipoCita, {
   },
 };
 
+// ── Días públicos desde legal.config_horarios ──────────────────────────────
+// Los `dias`/`diasLabel` de MODALIDAD_PUBLICA y TIPO_INFO son FALLBACK: la
+// fuente es la tabla, servida por /api/public/horarios (fetch al montar la
+// página). Así un cambio de días en la tabla se refleja aquí sin redeploy.
+
+type DiasPublicoMap = Record<string, number[]>;
+
+const DIA_NOMBRES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+function labelDias(dias: readonly number[]): string {
+  const orden = [...dias].sort((a, b) => a - b);
+  if (orden.length === 5 && orden.every((d, i) => d === i + 1)) return 'Lunes a viernes';
+  const nombres = orden.map((d, i) => (i === 0 ? DIA_NOMBRES[d] : DIA_NOMBRES[d].toLowerCase()));
+  if (nombres.length === 1) return nombres[0];
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
+function diasEfectivos(
+  map: DiasPublicoMap | null,
+  tipo: TipoCita,
+  modalidad?: ModalidadPublica,
+): readonly number[] {
+  const key = tipo === 'seguimiento' ? `seguimiento:${modalidad ?? 'virtual'}` : 'consulta_nueva';
+  const dias = map?.[key];
+  if (dias && dias.length) return dias;
+  return tipo === 'seguimiento'
+    ? MODALIDAD_PUBLICA[modalidad ?? 'virtual'].dias
+    : TIPO_INFO[tipo].dias;
+}
+
 const DAY_NAMES = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -176,6 +206,17 @@ export default function AgendarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<BookingResult | null>(null);
+
+  // Días ofrecidos al público por tipo/modalidad, desde legal.config_horarios.
+  // Mientras carga (o si falla) se usan los defaults hardcodeados, que hoy son
+  // idénticos a la tabla.
+  const [diasPublico, setDiasPublico] = useState<DiasPublicoMap | null>(null);
+  useEffect(() => {
+    fetch('/api/public/horarios')
+      .then((r) => r.json())
+      .then((j) => setDiasPublico(j.dias ?? null))
+      .catch(() => {});
+  }, []);
 
   // Fetch slots when date is selected
   const fetchSlots = useCallback(async () => {
@@ -327,6 +368,7 @@ export default function AgendarPage() {
         {step === 1 && (
           <StepTipo
             selected={tipo}
+            diasPublico={diasPublico}
             onSelect={(t, m) => {
               setTipo(t);
               setModalidad(m ?? 'virtual');
@@ -341,6 +383,7 @@ export default function AgendarPage() {
           <StepFecha
             tipo={tipo}
             modalidad={modalidad}
+            diasPublico={diasPublico}
             selected={selectedDate}
             onSelect={(d) => {
               setSelectedDate(d);
@@ -416,9 +459,11 @@ export default function AgendarPage() {
 
 function StepTipo({
   selected,
+  diasPublico,
   onSelect,
 }: {
   selected: TipoCita | null;
+  diasPublico: DiasPublicoMap | null;
   onSelect: (tipo: TipoCita, modalidad?: ModalidadPublica) => void;
 }) {
   const tipos: TipoCita[] = ['consulta_nueva', 'seguimiento'];
@@ -439,6 +484,11 @@ function StepTipo({
         <div className="grid sm:grid-cols-3 gap-4">
           {(['virtual', 'entrega_documentos', 'firma_documentos'] as ModalidadPublica[]).map((m) => {
             const info = MODALIDAD_PUBLICA[m];
+            // Para modalidades sin dirección, el "detalle" son los días de
+            // atención — vienen de la tabla (fallback: info.detalle).
+            const detalle = info.detalleEsDireccion
+              ? info.detalle
+              : labelDias(diasEfectivos(diasPublico, 'seguimiento', m));
             return (
               <button
                 key={m}
@@ -466,7 +516,7 @@ function StepTipo({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       )}
                     </svg>
-                    <span className="leading-snug">{info.detalle}</span>
+                    <span className="leading-snug">{detalle}</span>
                   </div>
                   {info.nota && (
                     <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 mt-1">
@@ -495,6 +545,9 @@ function StepTipo({
         {tipos.map((t) => {
           const info = TIPO_INFO[t];
           const isSelected = selected === t;
+          // Días desde la tabla; el seguimiento muestra "Según modalidad"
+          // porque sus días dependen de la modalidad elegida en el sub-paso.
+          const diasLabel = t === 'seguimiento' ? info.diasLabel : labelDias(diasEfectivos(diasPublico, t));
 
           return (
             <button
@@ -554,7 +607,7 @@ function StepTipo({
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
-                      {info.diasLabel}
+                      {diasLabel}
                     </div>
                   </div>
                 </div>
@@ -572,22 +625,24 @@ function StepTipo({
 function StepFecha({
   tipo,
   modalidad,
+  diasPublico,
   selected,
   onSelect,
   onBack,
 }: {
   tipo: TipoCita;
   modalidad: ModalidadPublica;
+  diasPublico: DiasPublicoMap | null;
   selected: string | null;
   onSelect: (date: string) => void;
   onBack: () => void;
 }) {
-  // Para el seguimiento, los días disponibles dependen de la modalidad
-  // (virtual = mar/mié; entrega/firma = lun–vie). Consulta usa TIPO_INFO.
+  // Días disponibles según tipo+modalidad, desde legal.config_horarios
+  // (fallback: constantes de arriba). El servidor aplica el mismo filtro.
   const tipoInfo = TIPO_INFO[tipo];
   const modInfo = tipo === 'seguimiento' ? MODALIDAD_PUBLICA[modalidad] : null;
-  const dias = modInfo?.dias ?? tipoInfo.dias;
-  const diasLabel = modInfo?.diasLabel ?? tipoInfo.diasLabel;
+  const dias = diasEfectivos(diasPublico, tipo, modalidad);
+  const diasLabel = labelDias(dias);
   const tituloLabel = modInfo?.label ?? tipoInfo.label;
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -36,10 +36,15 @@ export const MODALIDAD_INFO: Record<ModalidadCita, { label: string; icono: strin
   presencial:         { label: 'Presencial en oficina',     icono: '🏢',   usaTeams: false, usaOficina: true  },
 };
 
-// Horarios públicos por modalidad de seguimiento. La entrega y la firma de
-// documentos se atienden en oficina (Mariano), de lunes a viernes 9 AM–4 PM; la
-// firma usa slots de 30 min y la entrega de 15. El seguimiento virtual sigue el
-// horario base de HORARIOS.seguimiento (lo atiende Amanda, mar/mié).
+// Horarios por modalidad de seguimiento. La entrega y la firma de documentos
+// se atienden en oficina (Mariano), de lunes a viernes 9 AM–4 PM; la firma usa
+// slots de 30 min y la entrega de 15. El seguimiento virtual lo atiende Amanda
+// martes y miércoles, dentro del horario base de HORARIOS.seguimiento.
+//
+// FUENTE DE VERDAD: legal.config_horarios (una fila por tipo+modalidad,
+// editable sin redeploy). Estas constantes son el fallback si la tabla no se
+// puede leer — mantenerlas espejadas con el seed de la migración
+// 20260804_config_horarios.sql.
 export interface HorarioModalidad {
   dias: readonly number[];
   hora_inicio: string;
@@ -48,8 +53,20 @@ export interface HorarioModalidad {
 }
 
 export const HORARIOS_MODALIDAD: Partial<Record<ModalidadCita, HorarioModalidad>> = {
+  virtual:            { dias: [2, 3],          hora_inicio: '14:00', hora_fin: '18:00', duracion: 15 },
   entrega_documentos: { dias: [1, 2, 3, 4, 5], hora_inicio: '09:00', hora_fin: '16:00', duracion: 15 },
   firma_documentos:   { dias: [1, 2, 3, 4, 5], hora_inicio: '09:00', hora_fin: '16:00', duracion: 30 },
+};
+
+// Ventana de OFERTA del flujo público (/agendar y /api/public/*): restringe lo
+// que se ofrece al público sin tocar la ventana de validación interna
+// (admin/portal). Hoy solo consulta_nueva la usa: al público se le ofrecen
+// consultas lun/mié/vie de 8 a 12, aunque admin y portal sigan operando
+// lun–vie 8 a 18. Fallback de las columnas *_publico de legal.config_horarios.
+export const HORARIOS_PUBLICO: Partial<
+  Record<TipoCita, Partial<Pick<HorarioModalidad, 'dias' | 'hora_inicio' | 'hora_fin'>>>
+> = {
+  consulta_nueva: { dias: [1, 3, 5], hora_inicio: '08:00', hora_fin: '12:00' },
 };
 
 // Dirección de la oficina (entregas presenciales). Centralizada para emails/PDF.
@@ -165,6 +182,10 @@ export interface HorarioConfig {
   color_admin: string;
 }
 
+// FUENTE DE VERDAD del horario: legal.config_horarios (editable sin redeploy).
+// Estas constantes quedan como fallback de la tabla y como fuente de los campos
+// que NO viven en ella (categoria_outlook, color_admin, duracion_max).
+// Mantener espejadas con el seed de 20260804_config_horarios.sql.
 export const HORARIOS: Record<TipoCita, HorarioConfig> = {
   consulta_nueva: {
     dias: [1, 2, 3, 4, 5],

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
+import { obtenerHorarioEfectivo } from '@/lib/services/horarios.service';
 import { HORARIOS, TipoCita, ModalidadCita } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad);
+    // canal 'publico': aplica la ventana de oferta pública de
+    // legal.config_horarios (p. ej. consultas solo en la mañana).
+    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad, 'publico');
 
     // Filter out past slots if the requested date is today (use Guatemala timezone)
     const nowGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
@@ -41,12 +44,19 @@ export async function GET(req: NextRequest) {
     }
 
     // For consulta_nueva: aggregate 30-min slots into 60-min hourly slots
-    // A 1-hour slot at HH:00 is available only if both HH:00 and HH:30 are free
+    // A 1-hour slot at HH:00 is available only if both HH:00 and HH:30 are free.
+    // El rango de horas sale de la ventana pública de legal.config_horarios
+    // (antes hardcodeado 7..11; la hora 7 era código muerto porque los slots
+    // base arrancan a las 8).
     if (tipo === 'consulta_nueva') {
+      const cfgPub = await obtenerHorarioEfectivo(tipo, modalidad, 'publico');
+      const primeraHora = cfgPub ? Number(cfgPub.hora_inicio.split(':')[0]) : 8;
+      const ultimaHora = cfgPub ? Number(cfgPub.hora_fin.split(':')[0]) - 1 : 11;
+
       const slotSet = new Set(slots.map((s: any) => s.hora_inicio));
       const hourlySlots: { hora_inicio: string; hora_fin: string; duracion_minutos: number }[] = [];
 
-      for (let h = 7; h <= 11; h++) {
+      for (let h = primeraHora; h <= ultimaHora; h++) {
         const horaStr = `${String(h).padStart(2, '0')}:00`;
         const halfStr = `${String(h).padStart(2, '0')}:30`;
 

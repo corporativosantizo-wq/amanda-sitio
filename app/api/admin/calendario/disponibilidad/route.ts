@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
 import { findFreeSlots } from '@/lib/molly/calendar';
-import type { TipoCita } from '@/lib/types';
+import type { TipoCita, ModalidadCita } from '@/lib/types';
 import { ADMIN_ONLY_TIPOS } from '@/lib/types';
 
 // Types that use findFreeSlots() for smart suggestions
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     const fecha = req.nextUrl.searchParams.get('fecha');
     const tipo = req.nextUrl.searchParams.get('tipo') as TipoCita | null;
     const duracion = req.nextUrl.searchParams.get('duracion');
+    const modalidad = (req.nextUrl.searchParams.get('modalidad') as ModalidadCita | null) ?? undefined;
 
     if (!fecha || !tipo) {
       return NextResponse.json(
@@ -53,8 +54,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ slots, mode: 'suggested' });
     }
 
-    // consulta_nueva / seguimiento: existing slot-based availability
-    const slots = await obtenerDisponibilidad(fecha, tipo);
+    // consulta_nueva / seguimiento: existing slot-based availability. Se pasa
+    // la modalidad para que los slots mostrados coincidan con lo que crearCita
+    // va a aceptar (p. ej. seguimiento virtual mar/mié, firma 9–16).
+    const slots = await obtenerDisponibilidad(fecha, tipo, modalidad);
     return NextResponse.json({ slots, mode: 'fixed' });
   } catch (err) {
     const msg = err instanceof CitaError ? err.message : 'Error al obtener disponibilidad';
