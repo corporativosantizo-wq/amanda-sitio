@@ -15,15 +15,17 @@ import {
   cancelarEnvioProgramado,
   reenviarCotizacion,
   programarReenvioCotizacion,
+  marcarTramiteFinalizado,
+  reabrirTramite,
   CotizacionError,
 } from '@/lib/services/cotizaciones.service';
 import { handleApiError } from '@/lib/api-error';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio' | 'reenviar' | 'programar_reenvio';
+type Accion = 'enviar' | 'aceptar' | 'rechazar' | 'duplicar' | 'programar_envio' | 'cancelar_envio' | 'reenviar' | 'programar_reenvio' | 'finalizar_tramite' | 'reabrir_tramite';
 
-const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar', 'programar_reenvio'];
+const ACCIONES_VALIDAS: Accion[] = ['enviar', 'aceptar', 'rechazar', 'duplicar', 'programar_envio', 'cancelar_envio', 'reenviar', 'programar_reenvio', 'finalizar_tramite', 'reabrir_tramite'];
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const __adminGuard = await requireAdmin();
@@ -78,6 +80,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       case 'cancelar_envio':
         resultado = await cancelarEnvioProgramado(id);
+        break;
+
+      // Enlace de agendamiento: finalizar mata el enlace del cliente;
+      // reabrir lo reactiva (reversible si Amanda se equivoca).
+      case 'finalizar_tramite':
+        resultado = await marcarTramiteFinalizado(id);
+        break;
+
+      case 'reabrir_tramite':
+        resultado = await reabrirTramite(id);
         break;
 
       case 'reenviar': {

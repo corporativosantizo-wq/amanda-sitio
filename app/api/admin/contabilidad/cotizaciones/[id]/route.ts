@@ -41,7 +41,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       cobro: undefined,
     }));
 
-    return NextResponse.json({ ...cotizacion, pagos: pagos ?? [] });
+    // Citas de seguimiento agendadas desde el enlace de esta cotización
+    // (citas.cotizacion_id). Sin tope — el contador es informativo.
+    const { count: citasSeguimiento } = await createAdminClient()
+      .from('citas')
+      .select('id', { count: 'exact', head: true })
+      .eq('cotizacion_id', id)
+      .neq('estado', 'cancelada');
+
+    return NextResponse.json({ ...cotizacion, pagos: pagos ?? [], citas_seguimiento: citasSeguimiento ?? 0 });
   } catch (error) {
     return manejarError(error);
   }

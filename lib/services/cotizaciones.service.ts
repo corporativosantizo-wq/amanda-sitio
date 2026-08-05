@@ -556,6 +556,45 @@ export async function enviarCorreoContratacion(cotizacionId: string): Promise<bo
 }
 
 /**
+ * Marca el trámite de la cotización como finalizado. Efecto: el enlace de
+ * agendamiento del cliente deja de ser válido (validarTokenAgendamiento exige
+ * tramite_finalizado_at IS NULL). No toca el enum de estado ni citas ya
+ * agendadas. Reversible con reabrirTramite.
+ */
+export async function marcarTramiteFinalizado(id: string): Promise<Cotizacion> {
+  const actual = await obtenerCotizacion(id);
+  if (actual.estado !== EstadoCotizacion.ACEPTADA) {
+    throw new CotizacionError('Solo se puede finalizar el trámite de una cotización aceptada');
+  }
+  if ((actual as any).tramite_finalizado_at) {
+    throw new CotizacionError('El trámite ya está marcado como finalizado');
+  }
+  const { data, error } = await db()
+    .from('cotizaciones')
+    .update({ tramite_finalizado_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new CotizacionError('Error al finalizar el trámite', error);
+  return data as Cotizacion;
+}
+
+/**
+ * Revierte marcarTramiteFinalizado (Amanda se equivocó): el enlace de
+ * agendamiento vuelve a estar activo.
+ */
+export async function reabrirTramite(id: string): Promise<Cotizacion> {
+  const { data, error } = await db()
+    .from('cotizaciones')
+    .update({ tramite_finalizado_at: null, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new CotizacionError('Error al reabrir el trámite', error);
+  return data as Cotizacion;
+}
+
+/**
  * Marca cotización como rechazada.
  */
 export async function rechazarCotizacion(id: string): Promise<Cotizacion> {
