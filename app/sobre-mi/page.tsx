@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Sobre mí | Amanda Santizo, Abogada y Notaria — Guatemala',
   description:
     'Quince años de litigio civil y constitucional en Guatemala, con experiencia ante la Corte Interamericana y otros foros internacionales.',
+  alternates: { canonical: '/sobre-mi' },
 }
 
 export default function SobreMiPage() {

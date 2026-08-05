@@ -1,7 +1,19 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { unstable_noStore as noStore } from 'next/cache'
+
+// Canónica al dominio apex: el sitio también responde en www, y sin esto
+// cada categoría existiría como dos URLs distintas para el buscador.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  return { alternates: { canonical: `/blog/categoria/${slug}` } }
+}
 
 export default async function BlogCategoriaPage({
   params,

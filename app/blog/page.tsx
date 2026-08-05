@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: 'Blog jurídico | Amanda Santizo, Abogada — Guatemala',
   description:
     'Artículos prácticos sobre contratos, empresas y derecho guatemalteco, escritos por una abogada en ejercicio.',
+  alternates: { canonical: '/blog' },
 }
 
 export default async function BlogPage() {

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import ComprarButton from '../ComprarButton'
@@ -7,6 +8,13 @@ export const dynamic = 'force-dynamic'
 
 interface PageProps {
   params: Promise<{ slug: string }>
+}
+
+// Canónica al dominio apex: el sitio también responde en www, y sin esto
+// cada producto existiría como dos URLs distintas para el buscador.
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params
+  return { alternates: { canonical: `/tienda/${slug}` } }
 }
 
 export default async function ProductoPage({ params }: PageProps) {

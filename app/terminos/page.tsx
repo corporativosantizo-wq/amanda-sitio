@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Términos y Condiciones | Amanda Santizo, Abogada — Guatemala',
   description:
     'Condiciones de uso del sitio y de la contratación de servicios legales con el despacho.',
+  alternates: { canonical: '/terminos' },
 }
 
 export default function TerminosPage() {

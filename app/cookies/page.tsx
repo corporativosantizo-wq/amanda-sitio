@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Política de Cookies | Amanda Santizo, Abogada — Guatemala',
   description:
     'Qué cookies utiliza el sitio del despacho y cómo puede administrarlas desde su navegador.',
+  alternates: { canonical: '/cookies' },
 }
 
 export default function CookiesPage() {
