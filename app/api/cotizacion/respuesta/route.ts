@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendMail } from '@/lib/services/outlook.service';
+import { aceptarCotizacion } from '@/lib/services/cotizaciones.service';
 
 // Rate limiting en memoria para este endpoint público
 const rateCounts = new Map<string, { count: number; resetAt: number }>();
@@ -126,19 +127,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (accion === 'aceptar') {
-      // Actualizar estado a aceptada
+      // Camino ÚNICO de aceptación (mismo que el panel admin): transición de
+      // estado + cobro automático + correo de contratación con el enlace de
+      // agendamiento. Antes esta ruta hacía un UPDATE crudo que ni creaba el
+      // cobro ni avisaba al cliente — solo hacia adelante: las cotizaciones ya
+      // aceptadas no pasan por aquí (el pre-check de arriba las corta).
+      try {
+        await aceptarCotizacion(cotizacion.id);
+      } catch (err: any) {
+        console.error('[cotizacion/respuesta] Error en aceptarCotizacion:', err?.message ?? err);
+        return NextResponse.json({ error: 'Error al procesar la aceptación' }, { status: 500 });
+      }
+
+      // respondida_at es propio del flujo público (el admin no lo setea).
       const { error: updateError } = await db
         .from('cotizaciones')
-        .update({
-          estado: 'aceptada',
-          aceptada_at: new Date().toISOString(),
-          respondida_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
+        .update({ respondida_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', cotizacion.id);
-
       if (updateError) {
-        return NextResponse.json({ error: 'Error al procesar la aceptación' }, { status: 500 });
+        console.error('[cotizacion/respuesta] Error guardando respondida_at:', updateError.message);
       }
 
       // Notificar a Amanda

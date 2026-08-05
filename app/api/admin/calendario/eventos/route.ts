@@ -247,6 +247,8 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -258,6 +260,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // CC manual del correo de confirmación (escrito a mano por Amanda; nunca
+    // auto-cargado del cliente). Validar el formato de CADA dirección ANTES de
+    // llamar a Microsoft Graph, nombrando la inválida — no un error genérico.
+    if (body.cc !== undefined && body.cc !== null) {
+      const lista = (Array.isArray(body.cc) ? body.cc : String(body.cc).split(/[,;]+/))
+        .map((e: unknown) => String(e).trim())
+        .filter(Boolean);
+      const invalida = lista.find((e: string) => !EMAIL_RE.test(e));
+      if (invalida) {
+        return NextResponse.json(
+          { error: `Dirección de correo inválida en CC: "${invalida}"` },
+          { status: 400 }
+        );
+      }
+      body.cc = lista.map((e: string) => e.toLowerCase());
+    }
+
+    // Canal 'interno' (default): el panel admin crea sin validación de
+    // slots/ventanas/48h — libertad total de Amanda.
     const cita = await crearCita(body);
     return NextResponse.json(cita, { status: 201 });
   } catch (err) {

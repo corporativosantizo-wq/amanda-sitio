@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { crearCita, crearSolicitudCita, obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
 import { obtenerHorarioEfectivo } from '@/lib/services/horarios.service';
+import { validarTokenAgendamiento } from '@/lib/services/agendamiento-token.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { HORARIOS, TipoCita } from '@/lib/types';
 
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { tipo, modalidad, fecha, hora, nombres, apellidos, nit, nombre: nombreLegacy, email, telefono, empresa, asunto, numero_caso, _hp } = body;
+    const { tipo, modalidad, fecha, hora, nombres, apellidos, nit, nombre: nombreLegacy, email, telefono, empresa, asunto, numero_caso, token_agendamiento, _hp } = body;
     // Build full name from split fields (fallback to legacy nombre for backwards compat)
     const nombreCompleto = nombres
       ? `${nombres.trim()}${apellidos?.trim() ? ` ${apellidos.trim()}` : ''}`
@@ -54,9 +55,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, cita_id: 'ok', teams_link: null });
     }
 
+    // ── Enlace de agendamiento por cotización ──
+    // Con token válido el cliente ya está identificado: NO se piden nombre ni
+    // correo, el cliente se resuelve server-side desde la cotización (nunca por
+    // el email del body) y la cita queda vinculada al trámite (cotizacion_id).
+    const conToken = typeof token_agendamiento === 'string' && token_agendamiento.trim() !== '';
+    let tokenInfo: { cotizacionId: string; clienteId: string; clienteNombre: string } | null = null;
+    if (conToken) {
+      const resultado = await validarTokenAgendamiento(token_agendamiento);
+      if (!resultado.ok) {
+        // Carrera posible: el trámite se finalizó entre que abrió el enlace y
+        // confirmó. Mensaje amable, sin detalle del caso.
+        return NextResponse.json(
+          {
+            error: 'Este enlace de agendamiento ya no está activo porque el trámite concluyó. Si necesita una nueva gestión, con gusto le atendemos mediante una consulta.',
+            codigo: `token_${resultado.motivo}`,
+          },
+          { status: 410 }
+        );
+      }
+      tokenInfo = resultado;
+      if (tipo !== 'seguimiento') {
+        return NextResponse.json(
+          { error: 'El enlace de agendamiento es para citas de seguimiento del trámite contratado. Las consultas nuevas se agendan por separado.' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Validate required fields — formulario simple: solo nombre, email, fecha y
-    // hora. El teléfono es opcional y el asunto ya no se pide.
-    if (!tipo || !fecha || !hora || !nombreCompleto || !email?.trim()) {
+    // hora. El teléfono es opcional y el asunto ya no se pide. Con token, los
+    // datos de contacto NO se piden (vienen de la cotización).
+    if (!tipo || !fecha || !hora || (!conToken && (!nombreCompleto || !email?.trim()))) {
       return NextResponse.json(
         { error: 'Por favor complete su nombre, correo, fecha y hora.' },
         { status: 400 }
@@ -71,17 +101,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tipo de cita inválido.' }, { status: 400 });
     }
 
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validate email format (solo flujo sin token)
+    if (!conToken && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: 'Email inválido.' }, { status: 400 });
     }
 
     // Costo base del tipo desde legal.config_horarios (fallback a constante).
     const costoBase = (await obtenerHorarioEfectivo(tipoCita))?.costo ?? HORARIOS[tipoCita].costo;
 
-    // Double-check availability — canal 'publico': solo se aceptan horarios que
-    // el flujo público realmente ofrece (ventana *_publico de config_horarios).
+    // Double-check availability
     console.log('[Agendar] Verificando disponibilidad: fecha=', fecha, ', hora=', hora, ', tipo=', tipoCita);
+    // canal 'publico': el slot elegido debe existir en la oferta pública
+    // (incluye la regla de 48h para entrega/firma) — con y sin token.
     const slots = await obtenerDisponibilidad(fecha, tipoCita, modalidad, 'publico');
     console.log('[Agendar] obtenerDisponibilidad retornó', slots.length, 'slots:', slots.map((s: any) => s.hora_inicio));
 
@@ -122,66 +153,77 @@ export async function POST(req: NextRequest) {
 
     console.log('[Agendar] Slot matched:', matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin, '(' + matchedSlot.duracion_minutos + 'min)');
 
-    // Find or create client
+    // Find or create client. Con token, el cliente viene resuelto de la
+    // cotización y su nombre sale de legal.clientes (razón social correcta,
+    // no lo que alguien escriba en un formulario).
     const db = createAdminClient();
     let clienteId: string;
+    let nombreCliente: string;
 
-    const emailMask = email.trim().replace(/(.{2}).+(@.+)/, '$1***$2');
-    console.log('[Agendar] Buscando cliente con email:', emailMask);
-    const { data: existing, error: lookupErr } = await db
-      .from('clientes')
-      .select('id')
-      .ilike('email', email.trim())
-      .limit(1)
-      .maybeSingle();
-
-    if (lookupErr) {
-      console.error('[Agendar] Error al buscar cliente:', JSON.stringify(lookupErr));
-    }
-
-    if (existing) {
-      clienteId = existing.id;
-      console.log('[Agendar] Cliente existente encontrado:', clienteId);
+    if (tokenInfo) {
+      clienteId = tokenInfo.clienteId;
+      nombreCliente = tokenInfo.clienteNombre;
+      console.log('[Agendar] Cliente identificado por token de cotización:', clienteId);
     } else {
-      console.log('[Agendar] Cliente no encontrado, creando nuevo...');
-      const codigo = `CLI-${Date.now().toString(36).toUpperCase()}`;
+      nombreCliente = nombreCompleto;
 
-      // Columns must match legal.clientes table:
-      //   tipo (legal.tipo_persona enum: 'persona'|'empresa'), activo (bool)
-      //   No 'empresa' or 'tipo_persona' or 'estado' columns
-      const insertPayload = {
-        codigo,
-        tipo: 'persona',
-        nombre: nombreCompleto,
-        email: email.trim().toLowerCase(),
-        telefono: telefono.trim(),
-        nit: nit?.trim() || 'CF',
-        notas: empresa?.trim() ? `Empresa: ${empresa.trim()}` : null,
-        fuente: 'web-agendar',
-        activo: true,
-      };
-      console.log('[Agendar] INSERT payload:', JSON.stringify(insertPayload));
-
-      const { data: nuevo, error: createErr } = await db
+      const emailMask = email.trim().replace(/(.{2}).+(@.+)/, '$1***$2');
+      console.log('[Agendar] Buscando cliente con email:', emailMask);
+      const { data: existing, error: lookupErr } = await db
         .from('clientes')
-        .insert(insertPayload)
         .select('id')
-        .single();
+        .ilike('email', email.trim())
+        .limit(1)
+        .maybeSingle();
 
-      if (createErr) {
-        console.error('[Agendar] ERROR al crear cliente:', JSON.stringify(createErr));
-        return NextResponse.json(
-          { error: 'Error al procesar datos del cliente.' },
-          { status: 500 }
-        );
+      if (lookupErr) {
+        console.error('[Agendar] Error al buscar cliente:', JSON.stringify(lookupErr));
       }
-      clienteId = nuevo.id;
-      console.log('[Agendar] Cliente creado:', clienteId);
+
+      if (existing) {
+        clienteId = existing.id;
+        console.log('[Agendar] Cliente existente encontrado:', clienteId);
+      } else {
+        console.log('[Agendar] Cliente no encontrado, creando nuevo...');
+        const codigo = `CLI-${Date.now().toString(36).toUpperCase()}`;
+
+        // Columns must match legal.clientes table:
+        //   tipo (legal.tipo_persona enum: 'persona'|'empresa'), activo (bool)
+        //   No 'empresa' or 'tipo_persona' or 'estado' columns
+        const insertPayload = {
+          codigo,
+          tipo: 'persona',
+          nombre: nombreCompleto,
+          email: email.trim().toLowerCase(),
+          telefono: telefono.trim(),
+          nit: nit?.trim() || 'CF',
+          notas: empresa?.trim() ? `Empresa: ${empresa.trim()}` : null,
+          fuente: 'web-agendar',
+          activo: true,
+        };
+        console.log('[Agendar] INSERT payload:', JSON.stringify(insertPayload));
+
+        const { data: nuevo, error: createErr } = await db
+          .from('clientes')
+          .insert(insertPayload)
+          .select('id')
+          .single();
+
+        if (createErr) {
+          console.error('[Agendar] ERROR al crear cliente:', JSON.stringify(createErr));
+          return NextResponse.json(
+            { error: 'Error al procesar datos del cliente.' },
+            { status: 500 }
+          );
+        }
+        clienteId = nuevo.id;
+        console.log('[Agendar] Cliente creado:', clienteId);
+      }
     }
 
     // Build title
     const tipoLabel = tipoCita === 'consulta_nueva' ? 'Consulta' : 'Seguimiento';
-    const titulo = `${tipoLabel} — ${nombreCompleto}`;
+    const titulo = `${tipoLabel} — ${nombreCliente}`;
 
     // Create cita (handles Outlook event + confirmation email automatically)
     console.log('[Agendar] Creando cita:', titulo, '—', fecha, matchedSlot.hora_inicio + '-' + matchedSlot.hora_fin);
@@ -206,6 +248,7 @@ export async function POST(req: NextRequest) {
         hora_fin: matchedSlot.hora_fin,
         duracion_minutos: matchedSlot.duracion_minutos,
         cliente_id: clienteId,
+        cotizacion_id: tokenInfo?.cotizacionId ?? null,
         comentarios_cliente: asuntoVal || null,
         notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
         cliente_telefono: telefono?.trim(),
@@ -240,11 +283,12 @@ export async function POST(req: NextRequest) {
       hora_fin: matchedSlot.hora_fin,
       duracion_minutos: matchedSlot.duracion_minutos,
       cliente_id: clienteId,
+      cotizacion_id: tokenInfo?.cotizacionId ?? null,
       costo: costoBase,
       modalidad: modalidadFinal,
       isOnlineMeeting: modalidadFinal === 'virtual',
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
-    });
+    }, 'publico');
 
     console.log('[Agendar] Cita creada OK:', cita.id, ', teams_link=', cita.teams_link ? 'sí' : 'no');
 

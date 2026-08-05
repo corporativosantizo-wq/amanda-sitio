@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
 
     // consulta_nueva / seguimiento: existing slot-based availability. Se pasa
     // la modalidad para que los slots mostrados coincidan con lo que crearCita
-    // va a aceptar (p. ej. seguimiento virtual mar/mié, firma 9–16).
+    // va a aceptar (entrega/firma: ventana 9–16 y duración propia). Canal
+    // interno: sin regla de 48h — Amanda agenda con la anticipación que quiera.
     const slots = await obtenerDisponibilidad(fecha, tipo, modalidad);
     return NextResponse.json({ slots, mode: 'fixed' });
   } catch (err) {

@@ -1,10 +1,17 @@
 // ============================================================================
 // app/agendar/page.tsx
-// Página pública para agendar citas — wizard de 5 pasos
+// Página pública para agendar citas — wizard de 5 pasos.
+//
+// Con ?token=... (enlace de agendamiento por cotización) el cliente llega ya
+// identificado: no escribe nombre/correo/teléfono, el wizard pasa a 4 pasos
+// (se salta Datos) y solo agenda seguimientos del trámite. PRIVACIDAD: la
+// pantalla solo muestra el nombre del cliente — nunca monto, servicios ni
+// expediente (el enlace puede reenviarse o filtrarse).
 // ============================================================================
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -21,11 +28,15 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
   label: string; icono: string; desc: string; resumen: string;
   duracion: string; costo: string; detalle: string; detalleEsDireccion: boolean; nota?: string;
   dias: readonly number[]; diasLabel: string;
+  // Anticipación mínima en horas para agendar (el servidor aplica la misma
+  // regla en obtenerDisponibilidad; esto solo deshabilita días en el
+  // calendario). Entrega y firma: 48h — Amanda prepara documentos.
+  anticipacionHoras?: number;
 }> = {
   virtual: {
     label: 'Seguimiento Virtual',
     icono: '💻',
-    desc: 'Consultas y explicaciones por Microsoft Teams.',
+    desc: 'Avance de su trámite en curso, por Microsoft Teams.',
     resumen: 'Virtual por Teams',
     duracion: '15 minutos',
     costo: 'Sin costo',
@@ -43,8 +54,10 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
+    nota: 'Agendar con mínimo 48 horas de anticipación',
     dias: [1, 2, 3, 4, 5],
     diasLabel: 'Lunes a viernes',
+    anticipacionHoras: 48,
   },
   firma_documentos: {
     label: 'Firma de Documentos',
@@ -55,9 +68,10 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
     costo: 'Sin costo',
     detalle: DIRECCION_OFICINA,
     detalleEsDireccion: true,
-    nota: 'Presentarse con DPI original vigente',
+    nota: 'Presentarse con DPI original vigente · Agendar con mínimo 48 horas de anticipación',
     dias: [1, 2, 3, 4, 5],
     diasLabel: 'Lunes a viernes',
+    anticipacionHoras: 48,
   },
 };
 
@@ -94,7 +108,9 @@ const TIPO_INFO: Record<TipoCita, {
   consulta_nueva: {
     label: 'Consulta Legal',
     desc: 'Para nuevos asuntos o consultas generales.',
-    duracion: 'Hasta 1 hora',
+    // Duración COMUNICADA al cliente. El bloque reservado en el calendario
+    // sigue siendo de 1 hora (colchón interno) — ver /api/public/agendar.
+    duracion: '30 minutos de atención',
     costo: 'Q500',
     costoNum: 500,
     modalidad: 'Virtual por Teams',
@@ -150,6 +166,8 @@ const MONTH_NAMES = [
 ];
 
 const STEP_LABELS = ['Tipo', 'Fecha', 'Hora', 'Datos', 'Confirmar'];
+// Con enlace de cotización el cliente ya está identificado: sin paso Datos.
+const STEP_LABELS_TOKEN = ['Tipo', 'Fecha', 'Hora', 'Confirmar'];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -180,7 +198,16 @@ function formatHora12(hora: string): string {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
+// useSearchParams exige un límite de Suspense en App Router.
 export default function AgendarPage() {
+  return (
+    <Suspense fallback={null}>
+      <AgendarWizard />
+    </Suspense>
+  );
+}
+
+function AgendarWizard() {
   const [step, setStep] = useState(1);
 
   // Step 1
@@ -218,6 +245,47 @@ export default function AgendarPage() {
       .catch(() => {});
   }, []);
 
+  // ── Enlace de agendamiento por cotización (?token=...) ──
+  // Validación server-side; la respuesta solo trae el nombre del cliente.
+  const searchParams = useSearchParams();
+  const tokenParam = searchParams.get('token');
+  const [token, setToken] = useState<string | null>(null);
+  const [tokenNombre, setTokenNombre] = useState('');
+  const [tokenEstado, setTokenEstado] = useState<
+    'sin_token' | 'validando' | 'valido' | 'inactivo' | 'invalido'
+  >('sin_token');
+  // El cliente eligió "agendar consulta nueva" desde la pantalla de trámite
+  // concluido: sigue el formulario normal, sin token.
+  const [continuarSinToken, setContinuarSinToken] = useState(false);
+
+  useEffect(() => {
+    if (!tokenParam) return;
+    setTokenEstado('validando');
+    fetch(`/api/public/agendar-token?token=${encodeURIComponent(tokenParam)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.valido) {
+          setToken(tokenParam);
+          setTokenNombre(j.cliente_nombre ?? '');
+          setTipo('seguimiento');
+          setTokenEstado('valido');
+        } else {
+          setTokenEstado(j.motivo === 'no_activo' ? 'inactivo' : 'invalido');
+        }
+      })
+      .catch(() => setTokenEstado('invalido'));
+  }, [tokenParam]);
+
+  const conToken = tokenEstado === 'valido';
+  // Progreso: con token el wizard es de 4 pasos (el interno 5 se muestra como 4).
+  const stepLabels = conToken ? STEP_LABELS_TOKEN : STEP_LABELS;
+  const displayStep = conToken && step === 5 ? 4 : step;
+  const validandoToken = !!tokenParam && tokenEstado === 'validando';
+  const mostrarConcluido =
+    !!tokenParam &&
+    (tokenEstado === 'inactivo' || tokenEstado === 'invalido') &&
+    !continuarSinToken;
+
   // Fetch slots when date is selected
   const fetchSlots = useCallback(async () => {
     if (!selectedDate || !tipo) return;
@@ -240,11 +308,11 @@ export default function AgendarPage() {
     if (step === 3) fetchSlots();
   }, [step, fetchSlots]);
 
-  // Navigation
-  const goNext = () => setStep((s) => Math.min(s + 1, 5));
+  // Navigation — con token se salta el paso 4 (Datos): 3 → 5 y 5 → 3.
+  const goNext = () => setStep((s) => Math.min(conToken && s === 3 ? 5 : s + 1, 5));
   const goBack = () => {
     setError('');
-    setStep((s) => Math.max(s - 1, 1));
+    setStep((s) => Math.max(conToken && s === 5 ? 3 : s - 1, 1));
   };
 
   // Submit
@@ -258,16 +326,29 @@ export default function AgendarPage() {
       const res = await fetch('/api/public/agendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo,
-          modalidad: tipo === 'seguimiento' ? modalidad : 'virtual',
-          fecha: selectedDate,
-          hora: selectedSlot.hora_inicio,
-          nombres: nombres.trim(),
-          email: email.trim(),
-          telefono: telefono.trim() || undefined,
-          _hp: honeypot || undefined,
-        }),
+        body: JSON.stringify(
+          conToken
+            ? {
+                // Enlace por cotización: el servidor identifica al cliente por
+                // el token — no se mandan datos de contacto.
+                tipo: 'seguimiento',
+                modalidad,
+                fecha: selectedDate,
+                hora: selectedSlot.hora_inicio,
+                token_agendamiento: token,
+                _hp: honeypot || undefined,
+              }
+            : {
+                tipo,
+                modalidad: tipo === 'seguimiento' ? modalidad : 'virtual',
+                fecha: selectedDate,
+                hora: selectedSlot.hora_inicio,
+                nombres: nombres.trim(),
+                email: email.trim(),
+                telefono: telefono.trim() || undefined,
+                _hp: honeypot || undefined,
+              },
+        ),
       });
 
       const json = await res.json();
@@ -288,7 +369,7 @@ export default function AgendarPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-teal-600 to-cyan-500">
+      <header className="bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73]">
         <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <span className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg">
@@ -309,6 +390,70 @@ export default function AgendarPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 sm:py-12">
+        {/* ── Enlace por cotización: validando ── */}
+        {validandoToken && (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-8 h-8 border-4 border-[#1e2a5a] border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-gray-500">Verificando su enlace…</p>
+          </div>
+        )}
+
+        {/* ── Enlace por cotización: trámite concluido / enlace no activo ──
+            Pantalla amable y SIN información del caso. */}
+        {mostrarConcluido && (
+          <div className="text-center max-w-lg mx-auto py-12">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl">
+              📁
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+              {tokenEstado === 'inactivo' ? 'Este trámite ya concluyó' : 'Enlace no disponible'}
+            </h2>
+            <p className="text-gray-600 mb-2 leading-relaxed">
+              {tokenEstado === 'inactivo'
+                ? 'El enlace de agendamiento que utilizó corresponde a un trámite que ya fue finalizado, por lo que ya no se encuentra activo.'
+                : 'Este enlace de agendamiento no es válido o ya no se encuentra activo.'}
+            </p>
+            <p className="text-gray-600 mb-8 leading-relaxed">
+              Si desea iniciar una nueva gestión o consultar un asunto distinto, con gusto le
+              atendemos mediante una consulta.
+            </p>
+            <button
+              onClick={() => {
+                setContinuarSinToken(true);
+                setTipo('consulta_nueva');
+                setModalidad('virtual');
+                setSelectedDate(null);
+                setSelectedSlot(null);
+                setStep(2);
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
+            >
+              Agendar consulta nueva
+            </button>
+            <p className="mt-6">
+              <Link href="/" className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition">
+                Volver al sitio web
+              </Link>
+            </p>
+          </div>
+        )}
+
+        {!validandoToken && !mostrarConcluido && (
+        <>
+        {/* Cliente identificado por el enlace: solo el nombre, para que
+            confirme que es él. Nada del caso. */}
+        {conToken && step <= 5 && (
+          <div className="max-w-lg mx-auto mb-8 bg-white border border-[#c3cde4] rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
+            <span className="w-9 h-9 bg-[#eef2f9] rounded-full flex items-center justify-center text-lg">👤</span>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-gray-900">{tokenNombre}</p>
+              <p className="text-xs text-gray-500">
+                Citas de seguimiento de su trámite — incluidas en los honorarios convenidos
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Title */}
         {step <= 5 && (
           <div className="text-center mb-8">
@@ -325,18 +470,18 @@ export default function AgendarPage() {
         {step <= 5 && (
           <div className="mb-10">
             <div className="flex items-center justify-between mb-2">
-              {STEP_LABELS.map((label, i) => {
+              {stepLabels.map((label, i) => {
                 const stepNum = i + 1;
-                const isActive = stepNum === step;
-                const isDone = stepNum < step;
+                const isActive = stepNum === displayStep;
+                const isDone = stepNum < displayStep;
                 return (
                   <div key={i} className="flex flex-col items-center flex-1">
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
                         isDone
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-[#1e2a5a] text-white'
                           : isActive
-                          ? 'bg-teal-600 text-white ring-4 ring-teal-100'
+                          ? 'bg-[#1e2a5a] text-white ring-4 ring-[#dde4f2]'
                           : 'bg-gray-200 text-gray-500'
                       }`}
                     >
@@ -348,7 +493,7 @@ export default function AgendarPage() {
                         stepNum
                       )}
                     </div>
-                    <span className={`text-xs mt-1 hidden sm:block ${isActive ? 'text-teal-700 font-medium' : 'text-gray-400'}`}>
+                    <span className={`text-xs mt-1 hidden sm:block ${isActive ? 'text-[#16204a] font-medium' : 'text-gray-400'}`}>
                       {label}
                     </span>
                   </div>
@@ -357,8 +502,8 @@ export default function AgendarPage() {
             </div>
             <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-teal-600 to-cyan-500 rounded-full transition-all duration-500"
-                style={{ width: `${((step - 1) / 4) * 100}%` }}
+                className="h-full bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] rounded-full transition-all duration-500"
+                style={{ width: `${((displayStep - 1) / (stepLabels.length - 1)) * 100}%` }}
               />
             </div>
           </div>
@@ -368,9 +513,10 @@ export default function AgendarPage() {
         {step === 1 && (
           <StepTipo
             selected={tipo}
+            soloModalidad={conToken}
             diasPublico={diasPublico}
             onSelect={(t, m) => {
-              setTipo(t);
+              setTipo(conToken ? 'seguimiento' : t);
               setModalidad(m ?? 'virtual');
               setSelectedDate(null);
               setSelectedSlot(null);
@@ -409,7 +555,7 @@ export default function AgendarPage() {
           />
         )}
 
-        {step === 4 && tipo && (
+        {step === 4 && tipo && !conToken && (
           <StepDatos
             nombres={nombres}
             email={email}
@@ -430,7 +576,8 @@ export default function AgendarPage() {
             modalidad={modalidad}
             fecha={selectedDate}
             slot={selectedSlot}
-            nombres={nombres}
+            conToken={conToken}
+            nombres={conToken ? tokenNombre : nombres}
             email={email}
             telefono={telefono}
             submitting={submitting}
@@ -441,7 +588,9 @@ export default function AgendarPage() {
         )}
 
         {step === 6 && result && tipo && (
-          <StepExito result={result} tipo={tipo} modalidad={modalidad} nombres={nombres} />
+          <StepExito result={result} tipo={tipo} modalidad={modalidad} nombres={conToken ? tokenNombre : nombres} />
+        )}
+        </>
         )}
       </main>
 
@@ -459,10 +608,14 @@ export default function AgendarPage() {
 
 function StepTipo({
   selected,
+  soloModalidad = false,
   diasPublico,
   onSelect,
 }: {
   selected: TipoCita | null;
+  // Enlace por cotización: tipo fijo 'seguimiento', se muestra directamente el
+  // menú de modalidades (Virtual / Entrega / Firma) — el mismo de siempre.
+  soloModalidad?: boolean;
   diasPublico: DiasPublicoMap | null;
   onSelect: (tipo: TipoCita, modalidad?: ModalidadPublica) => void;
 }) {
@@ -470,22 +623,28 @@ function StepTipo({
   const [showModalidad, setShowModalidad] = useState(false);
 
   // Sub-paso de modalidad (solo seguimiento): virtual o entrega de documentos.
-  if (showModalidad) {
+  if (showModalidad || soloModalidad) {
     return (
       <div>
-        <button
-          onClick={() => setShowModalidad(false)}
-          className="text-sm text-gray-500 hover:text-gray-700 transition mb-4 inline-flex items-center gap-1"
-        >
-          ← Cambiar tipo de cita
-        </button>
+        {!soloModalidad && (
+          <button
+            onClick={() => setShowModalidad(false)}
+            className="text-sm text-gray-500 hover:text-gray-700 transition mb-4 inline-flex items-center gap-1"
+          >
+            ← Cambiar tipo de cita
+          </button>
+        )}
         <h2 className="text-xl font-semibold text-gray-900 mb-2">¿Cómo desea su seguimiento?</h2>
         <p className="text-gray-500 mb-6 text-sm">Elija la modalidad de su cita de seguimiento.</p>
         <div className="grid sm:grid-cols-3 gap-4">
           {(['virtual', 'entrega_documentos', 'firma_documentos'] as ModalidadPublica[]).map((m) => {
             const info = MODALIDAD_PUBLICA[m];
+            // Con enlace de cotización (soloModalidad) las citas están dentro
+            // de los honorarios ya convenidos: cambia la etiqueta. Sin token
+            // queda "Sin costo", como siempre.
+            const costoLabel = soloModalidad ? 'Incluido en su contratación' : info.costo;
             // Para modalidades sin dirección, el "detalle" son los días de
-            // atención — vienen de la tabla (fallback: info.detalle).
+            // atención — vienen de legal.config_horarios (fallback: info.detalle).
             const detalle = info.detalleEsDireccion
               ? info.detalle
               : labelDias(diasEfectivos(diasPublico, 'seguimiento', m));
@@ -493,7 +652,7 @@ function StepTipo({
               <button
                 key={m}
                 onClick={() => onSelect('seguimiento', m)}
-                className="text-left p-5 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:shadow-lg transition-all flex flex-col"
+                className="text-left p-5 rounded-xl border-2 border-gray-200 bg-white hover:border-[#c2a05a] hover:shadow-lg transition-all flex flex-col"
               >
                 <div className="text-3xl mb-2">{info.icono}</div>
                 <h3 className="font-semibold text-gray-900 text-base">{info.label}</h3>
@@ -506,7 +665,7 @@ function StepTipo({
                     </svg>
                     {info.duracion}
                     <span className="text-gray-300">·</span>
-                    <span className="text-emerald-600 font-medium">{info.costo}</span>
+                    <span className="text-[#c2a05a] font-medium">{costoLabel}</span>
                   </div>
                   <div className="flex items-start gap-1.5 text-gray-500">
                     <svg className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -558,15 +717,15 @@ function StepTipo({
               }}
               className={`text-left p-6 rounded-xl border-2 transition-all hover:shadow-lg ${
                 isSelected
-                  ? 'border-teal-500 bg-teal-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-teal-300'
+                  ? 'border-[#1e2a5a] bg-[#eef2f9] shadow-md'
+                  : 'border-gray-200 bg-white hover:border-[#c2a05a]'
               }`}
             >
               <div className="flex items-start gap-4">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   t === 'consulta_nueva'
                     ? 'bg-blue-100 text-blue-600'
-                    : 'bg-emerald-100 text-emerald-600'
+                    : 'bg-[#f3ecdc] text-[#c2a05a]'
                 }`}>
                   {t === 'consulta_nueva' ? (
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -593,7 +752,7 @@ function StepTipo({
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span className={t === 'consulta_nueva' ? 'font-semibold text-gray-900' : 'text-emerald-600 font-medium'}>
+                      <span className={t === 'consulta_nueva' ? 'font-semibold text-gray-900' : 'text-[#c2a05a] font-medium'}>
                         {info.costo}
                       </span>
                     </div>
@@ -647,6 +806,13 @@ function StepFecha({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Anticipación mínima (entrega/firma: 48h). Se deshabilitan los días cuya
+  // fecha cae antes del día de (ahora + anticipación); el día límite queda
+  // habilitado y el servidor filtra las horas exactas que ya no caben.
+  const anticipacionHoras = modInfo?.anticipacionHoras ?? 0;
+  const minDia = new Date(Date.now() + anticipacionHoras * 3600_000);
+  minDia.setHours(0, 0, 0, 0);
+
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [viewYear, setViewYear] = useState(today.getFullYear());
 
@@ -690,6 +856,7 @@ function StepFecha({
   const isDayAllowed = (day: number): boolean => {
     const d = new Date(viewYear, viewMonth, day);
     if (d < today) return false;
+    if (anticipacionHoras > 0 && d < minDia) return false;
     return dias.includes(d.getDay());
   };
 
@@ -700,6 +867,7 @@ function StepFecha({
       </h2>
       <p className="text-gray-500 mb-6 text-sm">
         {tituloLabel}: disponible {diasLabel.toLowerCase()}.
+        {anticipacionHoras > 0 && ` Requiere agendarse con al menos ${anticipacionHoras} horas de anticipación.`}
       </p>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 max-w-md mx-auto">
@@ -756,11 +924,11 @@ function StepFecha({
                 onClick={() => onSelect(dateStr)}
                 className={`h-10 rounded-lg text-sm font-medium transition-all ${
                   isSelected
-                    ? 'bg-teal-600 text-white shadow-md'
+                    ? 'bg-[#1e2a5a] text-white shadow-md'
                     : allowed
-                    ? 'hover:bg-teal-50 hover:text-teal-700 text-gray-700'
+                    ? 'hover:bg-[#eef2f9] hover:text-[#16204a] text-gray-700'
                     : 'text-gray-300 cursor-not-allowed'
-                } ${isToday && !isSelected ? 'ring-2 ring-teal-300' : ''}`}
+                } ${isToday && !isSelected ? 'ring-2 ring-[#c2a05a]' : ''}`}
               >
                 {day}
               </button>
@@ -814,7 +982,7 @@ function StepHora({
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-teal-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-[#1e2a5a] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : slots.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -825,7 +993,7 @@ function StepHora({
           <p className="text-gray-400 text-sm mt-1">Por favor seleccione otra fecha.</p>
           <button
             onClick={onBack}
-            className="mt-4 px-4 py-2 text-sm text-teal-600 hover:text-teal-700 font-medium transition"
+            className="mt-4 px-4 py-2 text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition"
           >
             Elegir otra fecha
           </button>
@@ -841,8 +1009,8 @@ function StepHora({
                   onClick={() => onSelect(slot)}
                   className={`py-3 px-2 rounded-lg text-sm font-medium transition-all border ${
                     isSelected
-                      ? 'border-teal-500 bg-teal-50 text-teal-700 shadow-md'
-                      : 'border-gray-200 text-gray-700 hover:border-teal-300 hover:bg-teal-50'
+                      ? 'border-[#1e2a5a] bg-[#eef2f9] text-[#16204a] shadow-md'
+                      : 'border-gray-200 text-gray-700 hover:border-[#c2a05a] hover:bg-[#eef2f9]'
                   }`}
                 >
                   {formatHora12(slot.hora_inicio)}
@@ -939,7 +1107,7 @@ function StepDatos({
             value={nombres}
             onChange={(e) => onNombres(e.target.value)}
             placeholder="Ej: María García López"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -952,7 +1120,7 @@ function StepDatos({
             value={email}
             onChange={(e) => onEmail(e.target.value)}
             placeholder="correo@ejemplo.com"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -965,7 +1133,7 @@ function StepDatos({
             value={telefono}
             onChange={(e) => onTelefono(e.target.value)}
             placeholder="Ej: 5555-1234"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -982,7 +1150,7 @@ function StepDatos({
           </button>
           <button
             onClick={() => validate() && onNext()}
-            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
+            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
           >
             Continuar
           </button>
@@ -999,6 +1167,7 @@ function StepConfirmar({
   modalidad,
   fecha,
   slot,
+  conToken = false,
   nombres,
   email,
   telefono,
@@ -1011,6 +1180,9 @@ function StepConfirmar({
   modalidad: ModalidadPublica;
   fecha: string;
   slot: SlotItem;
+  // Enlace por cotización: solo se muestra el nombre (los datos de contacto
+  // viven en el expediente del cliente, no se piden ni se exponen).
+  conToken?: boolean;
   nombres: string;
   email: string;
   telefono: string;
@@ -1032,7 +1204,7 @@ function StepConfirmar({
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-w-lg mx-auto">
         {/* Summary header */}
-        <div className="bg-gradient-to-r from-teal-600 to-cyan-500 p-4 text-white">
+        <div className="bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] p-4 text-white">
           <h3 className="font-semibold text-lg">{info.label}</h3>
           <p className="text-white/80 text-sm">
             {tipo === 'seguimiento'
@@ -1051,7 +1223,11 @@ function StepConfirmar({
             <div>
               <span className="text-xs text-gray-500 uppercase tracking-wide">Horario</span>
               <p className="font-medium text-gray-900 mt-0.5">
-                {formatHora12(slot.hora_inicio)} - {formatHora12(slot.hora_fin)}
+                {/* Consulta: solo hora de inicio — se comunican 30 min aunque
+                    el bloque reservado sea de 1 hora. */}
+                {tipo === 'consulta_nueva'
+                  ? formatHora12(slot.hora_inicio)
+                  : `${formatHora12(slot.hora_inicio)} - ${formatHora12(slot.hora_fin)}`}
               </p>
             </div>
           </div>
@@ -1063,8 +1239,8 @@ function StepConfirmar({
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase tracking-wide">Costo</span>
-              <p className={`font-semibold mt-0.5 ${info.costoNum > 0 ? 'text-gray-900' : 'text-emerald-600'}`}>
-                {info.costo}
+              <p className={`font-semibold mt-0.5 ${info.costoNum > 0 ? 'text-gray-900' : 'text-[#c2a05a]'}`}>
+                {conToken ? 'Incluido en su contratación' : info.costo}
                 {info.costoNum > 0 && (
                   <span className="text-xs text-gray-400 font-normal block">Pago al momento de la consulta</span>
                 )}
@@ -1077,14 +1253,16 @@ function StepConfirmar({
           {/* Contact info */}
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Nombre</span>
+              <span className="text-gray-500">{conToken ? 'Cliente' : 'Nombre'}</span>
               <span className="text-gray-900 font-medium">{nombres}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Email</span>
-              <span className="text-gray-900">{email}</span>
-            </div>
-            {telefono && (
+            {!conToken && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Email</span>
+                <span className="text-gray-900">{email}</span>
+              </div>
+            )}
+            {!conToken && telefono && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Teléfono</span>
                 <span className="text-gray-900">{telefono}</span>
@@ -1121,7 +1299,7 @@ function StepConfirmar({
             <button
               onClick={onSubmit}
               disabled={submitting}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -1197,7 +1375,7 @@ function StepExito({
           ¿Alguna consulta? Escríbanos a asistente@papeleo.legal
         </p>
 
-        <Link href="/" className="text-sm text-teal-600 hover:text-teal-700 font-medium transition">
+        <Link href="/" className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition">
           Volver al sitio web
         </Link>
       </div>
@@ -1207,8 +1385,8 @@ function StepExito({
   return (
     <div className="text-center max-w-lg mx-auto">
       {/* Success icon */}
-      <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-        <svg className="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="w-20 h-20 bg-[#f3ecdc] rounded-full flex items-center justify-center mx-auto mb-6">
+        <svg className="w-10 h-10 text-[#c2a05a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       </div>
@@ -1218,6 +1396,12 @@ function StepExito({
       </h2>
       <p className="text-gray-500 mb-8">
         {nombres}, su cita ha sido confirmada. Recibira un email con los detalles.
+        {tipo === 'consulta_nueva' && (
+          <>
+            {' '}Su consulta inicia a las {formatHora12(result.hora_inicio)}. Los honorarios
+            cubren 30 minutos de atención.
+          </>
+        )}
       </p>
 
       {/* Summary card */}
@@ -1234,7 +1418,9 @@ function StepExito({
           <div className="flex justify-between">
             <span className="text-sm text-gray-500">Hora</span>
             <span className="text-sm font-medium text-gray-900">
-              {formatHora12(result.hora_inicio)} - {formatHora12(result.hora_fin)}
+              {tipo === 'consulta_nueva'
+                ? formatHora12(result.hora_inicio)
+                : `${formatHora12(result.hora_inicio)} - ${formatHora12(result.hora_fin)}`}
             </span>
           </div>
           {result.costo > 0 && (
@@ -1252,7 +1438,7 @@ function StepExito({
               href={result.teams_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold w-full justify-center"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold w-full justify-center"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -1287,7 +1473,7 @@ function StepExito({
 
       <Link
         href="/"
-        className="text-sm text-teal-600 hover:text-teal-700 font-medium transition"
+        className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition"
       >
         Volver al sitio web
       </Link>

@@ -57,11 +57,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Forzar el cliente_id del session
+    // Forzar el cliente_id del session. Canal 'publico': el portal es
+    // cliente-facing, aplica la oferta pública. cc se descarta: el CC manual
+    // del correo de confirmación es exclusivo del panel admin.
     const cita = await crearCita({
       ...body,
+      cc: undefined,
       cliente_id: session.clienteId,
-    });
+    }, 'publico');
 
     return NextResponse.json(cita, { status: 201, headers: SECURITY_HEADERS });
   } catch (err) {

@@ -94,8 +94,35 @@ export async function obtenerDisponibilidad(
     return [];
   }
 
+  // Entrega/firma de documentos: anticipación mínima de 48 HORAS — requieren
+  // que Amanda prepare los documentos con antelación. SOLO canal público: el
+  // POST del formulario (con y sin token) exige que el slot exista en esta
+  // lista, así que pegarle directo a la API tampoco la salta. Amanda puede
+  // agendar dentro de la ventana desde el admin (canal 'interno'). El
+  // seguimiento virtual no la tiene (reserva directa). Solo afecta
+  // agendamiento NUEVO: citas existentes y confirmación de solicitudes no
+  // pasan por aquí.
+  let minimoHora48: string | null = null;
+  if (esEntregaFirma && canal === 'publico') {
+    const ahoraGT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guatemala' }));
+    const minimo = new Date(ahoraGT.getTime() + 48 * 60 * 60 * 1000);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const minimoFecha = `${minimo.getFullYear()}-${pad2(minimo.getMonth() + 1)}-${pad2(minimo.getDate())}`;
+    if (fecha < minimoFecha) {
+      console.log('[Disponibilidad] fecha=', fecha, ', modalidad=', modalidad, ': dentro de las próximas 48h (mínimo', minimoFecha + '), sin slots');
+      return [];
+    }
+    if (fecha === minimoFecha) {
+      minimoHora48 = `${pad2(minimo.getHours())}:${pad2(minimo.getMinutes())}`;
+    }
+  }
+
   // Generar slots base
-  const slots = generarSlots(horaInicio, horaFin, duracionMin);
+  let slots = generarSlots(horaInicio, horaFin, duracionMin);
+  if (minimoHora48) {
+    slots = slots.filter((s: SlotDisponible) => s.hora_inicio >= minimoHora48!);
+    console.log('[Disponibilidad] Filtro 48h en', fecha + ': quedan', slots.length, 'slots (desde', minimoHora48 + ')');
+  }
   console.log('[Disponibilidad] fecha=', fecha, ', tipo=', tipo, ', modalidad=', modalidad + ':', slots.length, 'slots base (' + horaInicio + '-' + horaFin + ', cada', duracionMin + 'min)');
 
   // Obtener citas existentes del día (no canceladas). Para entrega/firma solo
@@ -265,18 +292,25 @@ export async function obtenerCita(id: string): Promise<Cita> {
   return data;
 }
 
-export async function crearCita(input: CitaInsert): Promise<Cita> {
+export async function crearCita(
+  input: CitaInsert,
+  // 'publico' = formulario /agendar (con y sin token), portal y chat del
+  // portal: valida slot + rate limit contra la oferta pública. 'interno'
+  // (default) = panel admin: LIBERTAD TOTAL — sin validación de slots, días,
+  // ventana ni 48h; Amanda agenda lo que quiera, igual que los tipos
+  // ADMIN_ONLY de siempre. Decisión ago-2026.
+  canal: CanalHorario = 'interno',
+): Promise<Cita> {
   const config = HORARIOS[input.tipo];
   if (!config) throw new CitaError(`Tipo de cita inválido: ${input.tipo}`);
 
   const isAdminOnly = ADMIN_ONLY_TIPOS.has(input.tipo);
 
-  if (!isAdminOnly) {
-    // Validar que el slot esté disponible (solo para tipos públicos). Se pasa
-    // la modalidad para que aplique su ventana propia (p. ej. seguimiento
-    // virtual mar/mié, firma lun–vie 9–16) — antes se validaba siempre contra
-    // la ventana base del tipo.
-    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo, input.modalidad);
+  if (!isAdminOnly && canal === 'publico') {
+    // Validar que el slot esté disponible contra la OFERTA PÚBLICA: misma
+    // lista que ve el formulario (ventana y duración por modalidad desde
+    // legal.config_horarios + regla de 48h de entrega/firma).
+    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo, input.modalidad, 'publico');
 
     let slotValido: boolean;
     if (input.tipo === 'consulta_nueva') {
@@ -324,7 +358,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       }
     }
   } else {
-    console.log('[crearCita] Tipo admin-only:', input.tipo, '— saltando validación de slots/rate limit');
+    console.log(
+      '[crearCita]',
+      isAdminOnly ? `Tipo admin-only: ${input.tipo}` : `Canal interno (admin), tipo: ${input.tipo}`,
+      '— sin validación de slots/rate limit',
+    );
   }
 
   // Insertar cita
@@ -385,6 +423,7 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       duracion_minutos: input.duracion_minutos,
       costo,
       token_pago: tokenPago,
+      cotizacion_id: input.cotizacion_id ?? null,
       categoria_outlook: config.categoria_outlook,
       modalidad,
       documentos_entrega: input.documentos_entrega ?? null,
@@ -478,7 +517,17 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       // igual con el bloque "coming soon".
       const email = plantillasDeCliente(cita.cliente).emailConfirmacionCita(cita, await obtenerConfiguracionDespacho());
       console.log('[crearCita] Template generado: from=', email.from, ', subject=', email.subject, ', html=', email.html.length, 'chars');
-      await sendMail({ from: email.from, to: clienteEmail, subject: email.subject, htmlBody: email.html });
+      // CC manual escrito por Amanda en el panel (nunca auto-cargado de
+      // clientes.emails_cc — confidencialidad). Vacío = sin copia.
+      const ccManual = (input.cc ?? []).map((e) => e.trim()).filter(Boolean);
+      if (ccManual.length) console.log('[crearCita] CC manual:', ccManual.length, 'destinatario(s)');
+      await sendMail({
+        from: email.from,
+        to: clienteEmail,
+        subject: email.subject,
+        htmlBody: email.html,
+        cc: ccManual.length ? ccManual : undefined,
+      });
       console.log(`[crearCita] ── Email de confirmación ENVIADO OK ──`);
       await db()
         .from('citas')
@@ -804,6 +853,7 @@ export interface SolicitudInsert {
   hora_fin: string;
   duracion_minutos: number;
   cliente_id?: string | null;
+  cotizacion_id?: string | null;
   comentarios_cliente?: string | null;
   notas?: string | null;
   // Solo para la notificación al despacho (no se persisten en la cita).
@@ -817,6 +867,7 @@ export async function crearSolicitudCita(input: SolicitudInsert): Promise<Cita> 
     .from('citas')
     .insert({
       cliente_id: input.cliente_id ?? null,
+      cotizacion_id: input.cotizacion_id ?? null,
       tipo: input.tipo,
       titulo: input.titulo,
       descripcion: input.descripcion ?? null,
@@ -1342,8 +1393,16 @@ function generarBodyEvento(
         cita.audiencia_juzgado ? `<p><strong>Juzgado:</strong> ${cita.audiencia_juzgado}</p>` : '',
       ].join('')
     : '';
+  // Consulta nueva: el cliente lee este cuerpo dentro de la invitación de
+  // Outlook (que muestra el bloque de 60 min — colchón interno). La frase
+  // comunica la cobertura real de honorarios (decisión ago-2026, opción C:
+  // invitación intacta, solo se agrega la frase). Los demás tipos no llevan.
+  const notaConsulta = cita.tipo === 'consulta_nueva'
+    ? `<p>Los honorarios cubren 30 minutos de atención.</p>`
+    : '';
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
+${notaConsulta}
 ${audienciaBlock}
 ${firmantesBlock}
 ${cita.costo > 0 ? `<p><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>` : ''}

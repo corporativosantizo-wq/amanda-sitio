@@ -69,6 +69,10 @@ interface CotizacionDetalle {
   pdf_url: string | null;
   factura_generada: boolean;
   pagos: PagoAsociado[];
+  // Enlace de agendamiento por cotización (feat/agendamiento-cotizacion)
+  token_agendamiento: string | null;
+  tramite_finalizado_at: string | null;
+  citas_seguimiento: number;
 }
 
 // ── Status config ───────────────────────────────────────────────────────
@@ -100,6 +104,16 @@ export default function CotizacionDetallePage() {
   const ejecutarAccion = useCallback(async (accion: string) => {
     if (accion === 'rechazar' && !confirm('¿Confirmas rechazar esta cotización?')) return;
     if (accion === 'cancelar' && !confirm('¿Confirmas cancelar? Esta acción no se puede deshacer.')) return;
+    // Finalizar mata el enlace de agendamiento del cliente — pedir confirmación
+    // explícita. Es reversible con "Reabrir trámite".
+    if (
+      accion === 'finalizar_tramite' &&
+      !confirm(
+        '¿Marcar el trámite como finalizado?\n\nEl enlace de agendamiento del cliente dejará de funcionar (verá "este trámite ya concluyó"). Las citas ya agendadas no se tocan.\n\nSi te equivocas, puedes reabrir el trámite.',
+      )
+    )
+      return;
+    if (accion === 'reabrir_tramite' && !confirm('¿Reabrir el trámite? El enlace de agendamiento del cliente volverá a estar activo.')) return;
 
     await mutate(`/api/admin/contabilidad/cotizaciones/${id}/acciones`, {
       body: { accion },
@@ -107,6 +121,21 @@ export default function CotizacionDetallePage() {
       onError: (err) => alert(`Error: ${err}`),
     });
   }, [id, mutate, refetch]);
+
+  // Copiar enlace de agendamiento (para pegar en WhatsApp). Solo visible si el
+  // enlace está activo: aceptada + trámite no finalizado.
+  const [enlaceCopiado, setEnlaceCopiado] = useState(false);
+  const copiarEnlaceAgendamiento = useCallback(async (token: string) => {
+    const url = `https://amandasantizo.com/agendar?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setEnlaceCopiado(true);
+      setTimeout(() => setEnlaceCopiado(false), 2500);
+    } catch {
+      // Fallback (clipboard bloqueado): mostrarla para copiar a mano.
+      prompt('Copia el enlace de agendamiento:', url);
+    }
+  }, []);
 
   const crearFactura = useCallback(async () => {
     if (!confirm('¿Generar factura a partir de esta cotización?')) return;
@@ -293,6 +322,24 @@ export default function CotizacionDetallePage() {
               </span>
             </div>
           )}
+          {/* Enlace de agendamiento: contador de citas + estado del trámite */}
+          {cot.estado === 'aceptada' && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
+                📅 <strong>{cot.citas_seguimiento}</strong>{' '}
+                {cot.citas_seguimiento === 1 ? 'cita de seguimiento' : 'citas de seguimiento'}
+              </span>
+              {cot.tramite_finalizado_at && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-300 rounded-lg text-sm font-medium text-slate-700">
+                  🏁 Trámite finalizado el{' '}
+                  {new Date(cot.tramite_finalizado_at).toLocaleDateString('es-GT', {
+                    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Guatemala',
+                  })}{' '}
+                  — enlace de agendamiento inactivo
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}
@@ -364,6 +411,33 @@ export default function CotizacionDetallePage() {
               className="px-4 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-all"
             >
               📋 Trámites y avances
+            </button>
+          )}
+          {/* Enlace de agendamiento: copiar (solo activo) + finalizar/reabrir */}
+          {cot.estado === 'aceptada' && !cot.tramite_finalizado_at && cot.token_agendamiento && (
+            <button
+              onClick={() => copiarEnlaceAgendamiento(cot.token_agendamiento!)}
+              className="px-3 py-2 text-sm font-medium border border-[#1E40AF] text-[#1E40AF] rounded-lg hover:bg-[#1E40AF]/5 transition-colors"
+            >
+              {enlaceCopiado ? '✓ Enlace copiado' : '🔗 Copiar enlace de agendamiento'}
+            </button>
+          )}
+          {cot.estado === 'aceptada' && !cot.tramite_finalizado_at && (
+            <button
+              onClick={() => ejecutarAccion('finalizar_tramite')}
+              disabled={actuando}
+              className="px-3 py-2 text-sm font-medium border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50"
+            >
+              🏁 Marcar trámite finalizado
+            </button>
+          )}
+          {cot.estado === 'aceptada' && cot.tramite_finalizado_at && (
+            <button
+              onClick={() => ejecutarAccion('reabrir_tramite')}
+              disabled={actuando}
+              className="px-3 py-2 text-sm font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
+            >
+              ↩️ Reabrir trámite
             </button>
           )}
           {cot.estado === 'aceptada' && !cot.factura_generada && (

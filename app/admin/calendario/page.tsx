@@ -1838,15 +1838,21 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function EmailChipsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [draft, setDraft] = useState('');
+  // Direcciones con formato inválido: antes se descartaban en silencio y el
+  // usuario creía haberlas agregado. Ahora se nombra CUÁL quedó fuera.
+  const [invalidas, setInvalidas] = useState<string[]>([]);
 
   const addFromDraft = () => {
     const partes = draft.split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
     const validos = partes.filter((e) => EMAIL_RE.test(e) && !value.includes(e));
+    const malas = partes.filter((e) => !EMAIL_RE.test(e));
+    setInvalidas(malas);
     if (validos.length) onChange([...value, ...validos]);
     setDraft('');
   };
 
   return (
+    <>
     <div className="border border-gray-300 rounded-lg px-2 py-1.5 flex flex-wrap gap-1.5 focus-within:ring-2 focus-within:ring-cyan">
       {value.map((email) => (
         <span key={email} className="inline-flex items-center gap-1 bg-red-100 text-red-800 text-xs rounded-full px-2 py-0.5">
@@ -1867,6 +1873,12 @@ function EmailChipsInput({ value, onChange }: { value: string[]; onChange: (v: s
         className="flex-1 min-w-[140px] text-sm outline-none py-0.5 bg-transparent"
       />
     </div>
+    {invalidas.length > 0 && (
+      <p className="text-[11px] text-red-600 mt-1">
+        Dirección inválida (no se agregó): {invalidas.join(', ')}
+      </p>
+    )}
+    </>
   );
 }
 
@@ -1886,6 +1898,10 @@ function CreateModal({
   const [tipo, setTipo] = useState<TipoCitaUI>('consulta_nueva');
   const [fecha, setFecha] = useState(initialDate);
   const [duracion, setDuracion] = useState(30);
+  // CC manual del correo de confirmación al cliente. VACÍO por defecto y
+  // escrito a mano: NUNCA se auto-cargan los emails_cc del cliente
+  // (confidencialidad del despacho).
+  const [ccCorreo, setCcCorreo] = useState<string[]>([]);
   const [slots, setSlots] = useState<SlotItem[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotItem | null>(null);
   const [customTime, setCustomTime] = useState(initialTime || '14:00');
@@ -1979,8 +1995,8 @@ function CreateModal({
     setLoadingSlots(true);
     setSelectedSlot(null);
     const durParam = isSmart ? `&duracion=${duracion}` : '';
-    // El seguimiento tiene ventana por modalidad (virtual mar/mié, entrega y
-    // firma 9–16): se pasa para que los slots coincidan con la validación.
+    // El seguimiento tiene ventana/duración por modalidad (entrega/firma 9–16):
+    // se pasa para que los slots coincidan con la validación de crearCita.
     const modParam = tipo === 'seguimiento' ? `&modalidad=${modalidad}` : '';
     getToken().catch(() => {});
     adminFetch(`/api/admin/calendario/disponibilidad?fecha=${fecha}&tipo=${tipo}${durParam}${modParam}`)
@@ -2085,6 +2101,8 @@ function CreateModal({
                 hora_fin: horaFin,
                 duracion_minutos: duracionFinal,
                 cliente_id: clienteId || null,
+                // CC manual del correo de confirmación (solo si escribió alguno).
+                cc: ccCorreo.length ? ccCorreo : undefined,
                 modalidad,
                 documentos_entrega: MODALIDAD_INFO[modalidad]?.usaOficina ? (documentosEntrega.trim() || null) : null,
                 // crearCita combina esto con la modalidad (las entregas nunca llevan Teams).
@@ -2386,6 +2404,21 @@ function CreateModal({
               placeholder={isBloqueo ? 'Ej: Almuerzo, Cita médica' : 'Ej: Consulta sobre contrato'}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan focus:border-transparent"
             />
+          </div>
+          )}
+
+          {/* CC manual del correo de confirmación — solo tipos que lo envían
+              (consulta/seguimiento). Escrito a mano; nunca se auto-cargan los
+              emails_cc del cliente (confidencialidad del despacho). */}
+          {!esPersonalPrivada && (tipo === 'consulta_nueva' || tipo === 'seguimiento') && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Con copia (CC) del correo de confirmación <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <EmailChipsInput value={ccCorreo} onChange={setCcCorreo} />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Escribe las direcciones a mano. No se copian automáticamente los CC guardados del cliente.
+            </p>
           </div>
           )}
 
