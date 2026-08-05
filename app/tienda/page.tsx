@@ -1,8 +1,15 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 
 // Componente del cliente para los filtros
 import TiendaClient from './TiendaClient'
+
+export const metadata: Metadata = {
+  title: 'Plantillas legales | Amanda Santizo, Abogada — Guatemala',
+  description:
+    'Plantillas y documentos legales elaborados por una abogada guatemalteca, listos para descargar.',
+}
 
 export default async function TiendaPage() {
   const supabase = await createClient()

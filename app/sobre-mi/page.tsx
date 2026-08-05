@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Sobre mí | Amanda Santizo, Abogada y Notaria — Guatemala',
+  description:
+    'Quince años de litigio civil y constitucional en Guatemala, con experiencia ante la Corte Interamericana y otros foros internacionales.',
+}
 
 export default function SobreMiPage() {
   return (
@@ -15,7 +22,7 @@ export default function SobreMiPage() {
             Mi historia
           </h1>
           <p className="text-xl md:text-2xl text-slate-light leading-relaxed max-w-3xl mx-auto">
-            Más de una década litigando, enseñando y defendiendo lo que es justo.
+            Quince años litigando, enseñando y defendiendo lo que es justo.
           </p>
         </div>
       </section>
@@ -96,10 +103,16 @@ export default function SobreMiPage() {
             Hoy dirijo mi despacho como un estudio jurídico boutique. No trabajamos en masa. Cada caso recibe atención personalizada porque ante la ley, los abogados y notarios cargamos con una responsabilidad enorme cuando cometemos errores. Esa responsabilidad la tomo en serio.
           </p>
           <p className="text-lg text-slate leading-relaxed mb-6">
-            Contamos con un equipo de trabajo especializado en derecho empresarial, contratos, derecho corporativo, litigios comerciales y procedimientos legales para emprendedores y empresas guatemaltecas. Nuestro enfoque es la calidad, no la cantidad.
+            Acompaño a empresas y familias empresarias en decisiones patrimoniales y corporativas que cruzan fronteras.
+          </p>
+          <p className="text-lg text-slate leading-relaxed mb-6">
+            Quince años de ejercicio me enseñaron que un contrato se redacta mejor cuando se ha litigado uno igual. Por eso trabajo de punta a punta: estructuro la operación y, si llega el conflicto, la defiendo yo misma. No derivo el litigio a otro despacho ni recibo un caso sin entender cómo se construyó.
+          </p>
+          <p className="text-lg text-slate leading-relaxed mb-6">
+            El litigio corporativo no siempre es defensa. Bien usado, es una herramienta para ordenar una sociedad, resolver una disputa entre socios o recuperar lo que corresponde. Y cuando toca defender, se defiende.
           </p>
           <p className="text-lg text-slate leading-relaxed">
-            Mi forma de trabajar siempre ha sido la misma: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparación que merece. Si algo aprendí en más de una década de litigio es que no hay atajos. La diferencia está en el trabajo, el estudio y la convicción de que cada cliente merece una defensa seria.
+            Mi forma de trabajar siempre ha sido la misma: entender el problema a fondo, analizar todos los escenarios y pelear cada caso con la preparación que merece. Si algo aprendí en quince años de litigio es que no hay atajos. La diferencia está en el trabajo, el estudio y la convicción de que cada cliente merece una defensa seria.
           </p>
         </div>
       </section>

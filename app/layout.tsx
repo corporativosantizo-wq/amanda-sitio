@@ -22,8 +22,9 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: 'Amanda Santizo | Derecho Internacional',
-  description: 'Derecho claro para decisiones inteligentes',
+  title: 'Amanda Santizo — Abogada y Notaria | Derecho Civil y Empresarial, Guatemala',
+  description:
+    'Despacho jurídico boutique en Guatemala. Derecho civil y empresarial con enfoque transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.',
 }
 
 export default function RootLayout({

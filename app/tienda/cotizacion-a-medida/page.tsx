@@ -248,7 +248,7 @@ export default function CotizacionAMedidaPage() {
           <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
             {[
               { icon: '⏱️', title: 'Respuesta rápida', desc: 'Máximo 24 horas hábiles' },
-              { icon: '💬', title: 'Sin compromiso', desc: 'Cotización gratuita' },
+              { icon: '💬', title: 'Sin compromiso', desc: 'Cotizamos sin obligación de contratar' },
               { icon: '✅', title: 'A tu medida', desc: 'Documento personalizado' },
             ].map((item, i) => (
               <div key={i} className="p-4">

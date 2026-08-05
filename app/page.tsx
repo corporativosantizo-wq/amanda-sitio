@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Amanda Santizo — Abogada y Notaria | Derecho Civil y Empresarial, Guatemala',
+  description:
+    'Despacho jurídico boutique en Guatemala. Derecho civil y empresarial con enfoque transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.',
+}
 
 export default function Home() {
   const servicios = [
@@ -16,15 +23,15 @@ export default function Home() {
     },
     {
       icon: '🌍',
-      title: 'Derecho Internacional',
-      description: 'Operaciones transfronterizas, comercio exterior y arbitraje.',
+      title: 'Asuntos Transfronterizos',
+      description: 'Contratos, operaciones y patrimonio entre jurisdicciones.',
       href: '/servicios#internacional',
     },
     {
-      icon: '📚',
-      title: 'Capacitaciones',
-      description: 'Talleres y cursos para empresas y emprendedores.',
-      href: '/servicios#capacitaciones',
+      icon: '🏛️',
+      title: 'Litigio Corporativo',
+      description: 'Disputas entre socios, cobro mercantil y defensa en juicio.',
+      href: '/servicios#litigio-corporativo',
     },
   ]
 
@@ -42,16 +49,16 @@ export default function Home() {
           {/* Text content */}
           <div>
             <span className="inline-block px-4 py-2 bg-cyan/20 text-cyan font-semibold rounded-full text-sm mb-6">
-              Derecho Internacional · Guatemala
+              Derecho Civil y Empresarial · Guatemala
             </span>
             <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
               Derecho claro para{' '}
               <span className="text-cyan">decisiones inteligentes</span>
             </h1>
             <p className="text-xl text-slate-light mb-8 leading-relaxed">
-              Soy Amanda Santizo, abogada especializada en derecho internacional. 
-              Ayudo a emprendedores y empresas a proteger sus negocios y tomar 
-              decisiones legales con confianza.
+              Soy Amanda Santizo, abogada y notaria. Dirijo un despacho jurídico
+              boutique especializado en derecho civil y empresarial, con enfoque
+              transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Link
@@ -74,7 +81,7 @@ export default function Home() {
             <div className="relative rounded-2xl overflow-hidden shadow-2xl">
               <img
                 src="/images/amanda-platon.jpg"
-                alt="Amanda Santizo - Abogada especializada en Derecho Internacional"
+                alt="Amanda Santizo — Abogada y Notaria"
                 className="w-full h-auto object-cover"
               />
             </div>
@@ -176,14 +183,14 @@ export default function Home() {
             ¿Listo para proteger tu negocio?
           </h2>
           <p className="text-xl text-navy-dark mb-8">
-            Agenda una consulta gratuita de 15 minutos y conversemos sobre cómo puedo ayudarte.
+            Agenda una consulta y conversemos sobre cómo podemos ayudarte.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/agendar"
               className="px-8 py-4 bg-navy-dark text-white font-semibold rounded-lg hover:bg-navy transition-all duration-300"
             >
-              Agenda consulta gratuita
+              Agenda una consulta
             </Link>
             <Link
               href="/tienda"

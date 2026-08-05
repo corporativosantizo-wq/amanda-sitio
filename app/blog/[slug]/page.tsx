@@ -123,7 +123,7 @@ export default async function PostPage({ params }: PageProps) {
       <section className="py-16 bg-gradient-to-br from-navy to-navy-dark">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <h2 className="font-display text-3xl font-bold text-white mb-4">¿Necesitas ayuda legal?</h2>
-          <Link href="/contacto" className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg">
+          <Link href="/agendar" className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg">
             Agenda una consulta
           </Link>
         </div>

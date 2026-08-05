@@ -1,6 +1,13 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { unstable_noStore as noStore } from 'next/cache'
+
+export const metadata: Metadata = {
+  title: 'Blog jurídico | Amanda Santizo, Abogada — Guatemala',
+  description:
+    'Artículos prácticos sobre contratos, empresas y derecho guatemalteco, escritos por una abogada en ejercicio.',
+}
 
 export default async function BlogPage() {
   // Prevenir el caching de datos - siempre obtener datos frescos
