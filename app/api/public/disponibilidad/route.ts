@@ -41,12 +41,19 @@ export async function GET(req: NextRequest) {
     }
 
     // For consulta_nueva: aggregate 30-min slots into 60-min hourly slots
-    // A 1-hour slot at HH:00 is available only if both HH:00 and HH:30 are free
+    // A 1-hour slot at HH:00 is available only if both HH:00 and HH:30 are free.
+    //
+    // Ventana de OFERTA pública de consultas: inicios 8..11 (última consulta
+    // 11:00–12:00). No confundir con el 08:00–18:00 de HORARIOS.consulta_nueva,
+    // que es la ventana de VALIDACIÓN interna (admin/portal). El rango previo
+    // 7..11 tenía la hora 7 muerta (los slots base arrancan a las 8:00) — la
+    // oferta efectiva siempre fue 8..11. En feat/horarios-config este rango
+    // pasa a leerse de legal.config_horarios (columnas *_publico).
     if (tipo === 'consulta_nueva') {
       const slotSet = new Set(slots.map((s: any) => s.hora_inicio));
       const hourlySlots: { hora_inicio: string; hora_fin: string; duracion_minutos: number }[] = [];
 
-      for (let h = 7; h <= 11; h++) {
+      for (let h = 8; h <= 11; h++) {
         const horaStr = `${String(h).padStart(2, '0')}:00`;
         const halfStr = `${String(h).padStart(2, '0')}:30`;
 

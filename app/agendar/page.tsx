@@ -36,7 +36,7 @@ const MODALIDAD_PUBLICA: Record<ModalidadPublica, {
   virtual: {
     label: 'Seguimiento Virtual',
     icono: '💻',
-    desc: 'Consultas y explicaciones por Microsoft Teams.',
+    desc: 'Avance de su trámite en curso, por Microsoft Teams.',
     resumen: 'Virtual por Teams',
     duracion: '15 minutos',
     costo: 'Sin costo',
@@ -108,7 +108,9 @@ const TIPO_INFO: Record<TipoCita, {
   consulta_nueva: {
     label: 'Consulta Legal',
     desc: 'Para nuevos asuntos o consultas generales.',
-    duracion: 'Hasta 1 hora',
+    // Duración COMUNICADA al cliente. El bloque reservado en el calendario
+    // sigue siendo de 1 hora (colchón interno) — ver /api/public/agendar.
+    duracion: '30 minutos',
     costo: 'Q500',
     costoNum: 500,
     modalidad: 'Virtual por Teams',
@@ -326,7 +328,7 @@ function AgendarWizard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-teal-600 to-cyan-500">
+      <header className="bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73]">
         <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <span className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg">
@@ -350,7 +352,7 @@ function AgendarWizard() {
         {/* ── Enlace por cotización: validando ── */}
         {validandoToken && (
           <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-8 h-8 border-4 border-teal-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-4 border-[#1e2a5a] border-t-transparent rounded-full animate-spin" />
             <p className="text-sm text-gray-500">Verificando su enlace…</p>
           </div>
         )}
@@ -383,12 +385,12 @@ function AgendarWizard() {
                 setSelectedSlot(null);
                 setStep(2);
               }}
-              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
+              className="px-6 py-3 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
             >
               Agendar consulta nueva
             </button>
             <p className="mt-6">
-              <Link href="/" className="text-sm text-teal-600 hover:text-teal-700 font-medium transition">
+              <Link href="/" className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition">
                 Volver al sitio web
               </Link>
             </p>
@@ -400,8 +402,8 @@ function AgendarWizard() {
         {/* Cliente identificado por el enlace: solo el nombre, para que
             confirme que es él. Nada del caso. */}
         {conToken && step <= 5 && (
-          <div className="max-w-lg mx-auto mb-8 bg-white border border-teal-200 rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
-            <span className="w-9 h-9 bg-teal-50 rounded-full flex items-center justify-center text-lg">👤</span>
+          <div className="max-w-lg mx-auto mb-8 bg-white border border-[#c3cde4] rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
+            <span className="w-9 h-9 bg-[#eef2f9] rounded-full flex items-center justify-center text-lg">👤</span>
             <div className="text-left">
               <p className="text-sm font-semibold text-gray-900">{tokenNombre}</p>
               <p className="text-xs text-gray-500">
@@ -436,9 +438,9 @@ function AgendarWizard() {
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
                         isDone
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-[#1e2a5a] text-white'
                           : isActive
-                          ? 'bg-teal-600 text-white ring-4 ring-teal-100'
+                          ? 'bg-[#1e2a5a] text-white ring-4 ring-[#dde4f2]'
                           : 'bg-gray-200 text-gray-500'
                       }`}
                     >
@@ -450,7 +452,7 @@ function AgendarWizard() {
                         stepNum
                       )}
                     </div>
-                    <span className={`text-xs mt-1 hidden sm:block ${isActive ? 'text-teal-700 font-medium' : 'text-gray-400'}`}>
+                    <span className={`text-xs mt-1 hidden sm:block ${isActive ? 'text-[#16204a] font-medium' : 'text-gray-400'}`}>
                       {label}
                     </span>
                   </div>
@@ -459,7 +461,7 @@ function AgendarWizard() {
             </div>
             <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-teal-600 to-cyan-500 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] rounded-full transition-all duration-500"
                 style={{ width: `${((displayStep - 1) / (stepLabels.length - 1)) * 100}%` }}
               />
             </div>
@@ -592,11 +594,15 @@ function StepTipo({
         <div className="grid sm:grid-cols-3 gap-4">
           {(['virtual', 'entrega_documentos', 'firma_documentos'] as ModalidadPublica[]).map((m) => {
             const info = MODALIDAD_PUBLICA[m];
+            // Con enlace de cotización (soloModalidad) las citas están dentro
+            // de los honorarios ya convenidos: cambia la etiqueta. Sin token
+            // queda "Sin costo", como siempre.
+            const costoLabel = soloModalidad ? 'Incluido en su contratación' : info.costo;
             return (
               <button
                 key={m}
                 onClick={() => onSelect('seguimiento', m)}
-                className="text-left p-5 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:shadow-lg transition-all flex flex-col"
+                className="text-left p-5 rounded-xl border-2 border-gray-200 bg-white hover:border-[#c2a05a] hover:shadow-lg transition-all flex flex-col"
               >
                 <div className="text-3xl mb-2">{info.icono}</div>
                 <h3 className="font-semibold text-gray-900 text-base">{info.label}</h3>
@@ -609,7 +615,7 @@ function StepTipo({
                     </svg>
                     {info.duracion}
                     <span className="text-gray-300">·</span>
-                    <span className="text-emerald-600 font-medium">{info.costo}</span>
+                    <span className="text-[#c2a05a] font-medium">{costoLabel}</span>
                   </div>
                   <div className="flex items-start gap-1.5 text-gray-500">
                     <svg className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -658,15 +664,15 @@ function StepTipo({
               }}
               className={`text-left p-6 rounded-xl border-2 transition-all hover:shadow-lg ${
                 isSelected
-                  ? 'border-teal-500 bg-teal-50 shadow-md'
-                  : 'border-gray-200 bg-white hover:border-teal-300'
+                  ? 'border-[#1e2a5a] bg-[#eef2f9] shadow-md'
+                  : 'border-gray-200 bg-white hover:border-[#c2a05a]'
               }`}
             >
               <div className="flex items-start gap-4">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   t === 'consulta_nueva'
                     ? 'bg-blue-100 text-blue-600'
-                    : 'bg-emerald-100 text-emerald-600'
+                    : 'bg-[#f3ecdc] text-[#c2a05a]'
                 }`}>
                   {t === 'consulta_nueva' ? (
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -693,7 +699,7 @@ function StepTipo({
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span className={t === 'consulta_nueva' ? 'font-semibold text-gray-900' : 'text-emerald-600 font-medium'}>
+                      <span className={t === 'consulta_nueva' ? 'font-semibold text-gray-900' : 'text-[#c2a05a] font-medium'}>
                         {info.costo}
                       </span>
                     </div>
@@ -863,11 +869,11 @@ function StepFecha({
                 onClick={() => onSelect(dateStr)}
                 className={`h-10 rounded-lg text-sm font-medium transition-all ${
                   isSelected
-                    ? 'bg-teal-600 text-white shadow-md'
+                    ? 'bg-[#1e2a5a] text-white shadow-md'
                     : allowed
-                    ? 'hover:bg-teal-50 hover:text-teal-700 text-gray-700'
+                    ? 'hover:bg-[#eef2f9] hover:text-[#16204a] text-gray-700'
                     : 'text-gray-300 cursor-not-allowed'
-                } ${isToday && !isSelected ? 'ring-2 ring-teal-300' : ''}`}
+                } ${isToday && !isSelected ? 'ring-2 ring-[#c2a05a]' : ''}`}
               >
                 {day}
               </button>
@@ -921,7 +927,7 @@ function StepHora({
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-teal-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-[#1e2a5a] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : slots.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -932,7 +938,7 @@ function StepHora({
           <p className="text-gray-400 text-sm mt-1">Por favor seleccione otra fecha.</p>
           <button
             onClick={onBack}
-            className="mt-4 px-4 py-2 text-sm text-teal-600 hover:text-teal-700 font-medium transition"
+            className="mt-4 px-4 py-2 text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition"
           >
             Elegir otra fecha
           </button>
@@ -948,8 +954,8 @@ function StepHora({
                   onClick={() => onSelect(slot)}
                   className={`py-3 px-2 rounded-lg text-sm font-medium transition-all border ${
                     isSelected
-                      ? 'border-teal-500 bg-teal-50 text-teal-700 shadow-md'
-                      : 'border-gray-200 text-gray-700 hover:border-teal-300 hover:bg-teal-50'
+                      ? 'border-[#1e2a5a] bg-[#eef2f9] text-[#16204a] shadow-md'
+                      : 'border-gray-200 text-gray-700 hover:border-[#c2a05a] hover:bg-[#eef2f9]'
                   }`}
                 >
                   {formatHora12(slot.hora_inicio)}
@@ -1046,7 +1052,7 @@ function StepDatos({
             value={nombres}
             onChange={(e) => onNombres(e.target.value)}
             placeholder="Ej: María García López"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -1059,7 +1065,7 @@ function StepDatos({
             value={email}
             onChange={(e) => onEmail(e.target.value)}
             placeholder="correo@ejemplo.com"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -1072,7 +1078,7 @@ function StepDatos({
             value={telefono}
             onChange={(e) => onTelefono(e.target.value)}
             placeholder="Ej: 5555-1234"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#1e2a5a] focus:border-transparent transition"
           />
         </div>
 
@@ -1089,7 +1095,7 @@ function StepDatos({
           </button>
           <button
             onClick={() => validate() && onNext()}
-            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
+            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold"
           >
             Continuar
           </button>
@@ -1143,7 +1149,7 @@ function StepConfirmar({
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-w-lg mx-auto">
         {/* Summary header */}
-        <div className="bg-gradient-to-r from-teal-600 to-cyan-500 p-4 text-white">
+        <div className="bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] p-4 text-white">
           <h3 className="font-semibold text-lg">{info.label}</h3>
           <p className="text-white/80 text-sm">
             {tipo === 'seguimiento'
@@ -1162,7 +1168,11 @@ function StepConfirmar({
             <div>
               <span className="text-xs text-gray-500 uppercase tracking-wide">Horario</span>
               <p className="font-medium text-gray-900 mt-0.5">
-                {formatHora12(slot.hora_inicio)} - {formatHora12(slot.hora_fin)}
+                {/* Consulta: solo hora de inicio — se comunican 30 min aunque
+                    el bloque reservado sea de 1 hora. */}
+                {tipo === 'consulta_nueva'
+                  ? formatHora12(slot.hora_inicio)
+                  : `${formatHora12(slot.hora_inicio)} - ${formatHora12(slot.hora_fin)}`}
               </p>
             </div>
           </div>
@@ -1174,8 +1184,8 @@ function StepConfirmar({
             </div>
             <div>
               <span className="text-xs text-gray-500 uppercase tracking-wide">Costo</span>
-              <p className={`font-semibold mt-0.5 ${info.costoNum > 0 ? 'text-gray-900' : 'text-emerald-600'}`}>
-                {info.costo}
+              <p className={`font-semibold mt-0.5 ${info.costoNum > 0 ? 'text-gray-900' : 'text-[#c2a05a]'}`}>
+                {conToken ? 'Incluido en su contratación' : info.costo}
                 {info.costoNum > 0 && (
                   <span className="text-xs text-gray-400 font-normal block">Pago al momento de la consulta</span>
                 )}
@@ -1234,7 +1244,7 @@ function StepConfirmar({
             <button
               onClick={onSubmit}
               disabled={submitting}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold disabled:opacity-50"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -1310,7 +1320,7 @@ function StepExito({
           ¿Alguna consulta? Escríbanos a asistente@papeleo.legal
         </p>
 
-        <Link href="/" className="text-sm text-teal-600 hover:text-teal-700 font-medium transition">
+        <Link href="/" className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition">
           Volver al sitio web
         </Link>
       </div>
@@ -1320,8 +1330,8 @@ function StepExito({
   return (
     <div className="text-center max-w-lg mx-auto">
       {/* Success icon */}
-      <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-        <svg className="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="w-20 h-20 bg-[#f3ecdc] rounded-full flex items-center justify-center mx-auto mb-6">
+        <svg className="w-10 h-10 text-[#c2a05a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       </div>
@@ -1347,7 +1357,9 @@ function StepExito({
           <div className="flex justify-between">
             <span className="text-sm text-gray-500">Hora</span>
             <span className="text-sm font-medium text-gray-900">
-              {formatHora12(result.hora_inicio)} - {formatHora12(result.hora_fin)}
+              {tipo === 'consulta_nueva'
+                ? formatHora12(result.hora_inicio)
+                : `${formatHora12(result.hora_inicio)} - ${formatHora12(result.hora_fin)}`}
             </span>
           </div>
           {result.costo > 0 && (
@@ -1365,7 +1377,7 @@ function StepExito({
               href={result.teams_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-500 text-white rounded-lg hover:shadow-lg transition text-sm font-semibold w-full justify-center"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1e2a5a] to-[#2c3e73] text-white rounded-lg hover:shadow-lg transition text-sm font-semibold w-full justify-center"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -1400,7 +1412,7 @@ function StepExito({
 
       <Link
         href="/"
-        className="text-sm text-teal-600 hover:text-teal-700 font-medium transition"
+        className="text-sm text-[#1e2a5a] hover:text-[#16204a] font-medium transition"
       >
         Volver al sitio web
       </Link>

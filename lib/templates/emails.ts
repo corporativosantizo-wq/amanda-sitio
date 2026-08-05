@@ -202,8 +202,17 @@ function oficinaSeccionHTML(cita: any): string {
 export function emailConfirmacionCita(cita: any, _configuracion?: Record<string, any> | null): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
-  const duracion = cita.duracion_minutos ? `${cita.duracion_minutos} minutos` : (cita.tipo === 'consulta_nueva' ? '60 minutos' : '15 minutos');
+  // Consulta nueva: al cliente se le COMUNICAN 30 minutos y solo la hora de
+  // inicio. El bloque reservado en calendario sigue siendo de 60 min
+  // (duracion_minutos de la cita) — colchón interno de Amanda; mostrar el
+  // rango completo delataría la hora entera. Decisión ago-2026 (Fase 5B).
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const horaFmt = esConsulta
+    ? formatearHora(cita.hora_inicio)
+    : `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  const duracion = esConsulta
+    ? '30 minutos'
+    : (cita.duracion_minutos ? `${cita.duracion_minutos} minutos` : '15 minutos');
   const clienteNombre = cita.cliente?.nombre ?? '';
 
   // Modalidad \u2014 adapta la l\u00ednea, las secciones (Teams / oficina) y el cierre.

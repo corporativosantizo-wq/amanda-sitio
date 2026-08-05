@@ -251,8 +251,16 @@ function accionSolicitud(cita: any): 'signing' | 'delivery' {
 export function emailConfirmacionCita(cita: any, configuracion?: Record<string, any> | null): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Legal Consultation' : 'Case Follow-up';
   const fechaFmt = formatDateEN(cita.fecha);
-  const horaFmt = `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
-  const duracion = cita.duracion_minutos ? `${cita.duracion_minutos} minutes` : (cita.tipo === 'consulta_nueva' ? '60 minutes' : '15 minutes');
+  // Consultation: the client is told 30 minutes and only the start time; the
+  // reserved calendar block stays 60 min (internal buffer). Mirrors the ES
+  // template — Fase 5B, ago-2026.
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const horaFmt = esConsulta
+    ? formatTimeEN(cita.hora_inicio)
+    : `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  const duracion = esConsulta
+    ? '30 minutes'
+    : (cita.duracion_minutos ? `${cita.duracion_minutos} minutes` : '15 minutes');
   const clienteNombre = cita.cliente?.nombre ?? '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
