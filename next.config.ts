@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // /sobremi era la biografía de prueba del desarrollo; la real es /sobre-mi.
+  // statusCode 301 en vez de `permanent: true`, que en Next.js emite 308.
+  redirects: async () => [
+    { source: '/sobremi', destination: '/sobre-mi', statusCode: 301 },
+  ],
   headers: async () => [
     {
       source: '/:path*',

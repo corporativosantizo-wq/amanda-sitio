@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Política de Privacidad | Amanda Santizo, Abogada — Guatemala',
+  description:
+    'Cómo el despacho recopila, usa y protege los datos personales de quienes contactan o contratan sus servicios.',
+}
 
 export default function PrivacidadPage() {
   return (
@@ -23,7 +30,7 @@ export default function PrivacidadPage() {
             1. Información que Recopilamos
           </h2>
           <p className="text-slate mb-4">
-            En Amanda Santizo - Derecho Internacional, recopilamos información que nos proporcionas directamente cuando:
+            En Amanda Santizo — Despacho Jurídico, recopilamos información que nos proporcionas directamente cuando:
           </p>
           <ul className="text-slate mb-6 list-disc pl-6 space-y-2">
             <li>Completas el formulario de contacto</li>

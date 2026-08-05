@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Sobre mí | Amanda Santizo, Abogada y Notaria — Guatemala',
+  description:
+    'Más de una década de litigio civil y constitucional en Guatemala, con experiencia ante la Corte Interamericana y otros foros internacionales.',
+}
 
 export default function SobreMiPage() {
   return (

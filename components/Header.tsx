@@ -11,7 +11,7 @@ export default function Header() {
     { name: 'Blog', href: '/blog' },
     { name: 'Tienda', href: '/tienda' },
     { name: 'Servicios', href: '/servicios' },
-    { name: 'Sobre mí', href: '/sobremi' },
+    { name: 'Sobre mí', href: '/sobre-mi' },
     { name: 'Contacto', href: '/contacto' },
   ]
 
@@ -29,7 +29,7 @@ export default function Header() {
               <div className="font-display font-bold text-white text-lg group-hover:text-cyan transition-colors">
                 Amanda Santizo
               </div>
-              <div className="text-cyan text-xs font-medium">Derecho Internacional</div>
+              <div className="text-cyan text-xs font-medium">Derecho Civil y Empresarial</div>
             </div>
           </Link>
 

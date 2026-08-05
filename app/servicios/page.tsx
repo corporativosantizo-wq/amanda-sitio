@@ -1,5 +1,12 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+
+export const metadata: Metadata = {
+  title: 'Servicios legales | Amanda Santizo, Abogada — Guatemala',
+  description:
+    'Contratos, derecho corporativo, litigio civil y asuntos interjurisdiccionales. Servicios legales para empresas con operaciones dentro y fuera de Guatemala.',
+}
 
 interface ServiceProduct {
   id: string
@@ -32,8 +39,8 @@ export default async function ServiciosPage() {
         'Due diligence',
         'Opiniones legales especializadas',
       ],
-      pricing: 'Desde $150/hora',
-      ideal: 'Ideal para: Empresas en crecimiento, startups, emprendedores',
+      pricing: '$150 por hora — presencial',
+      ideal: 'Ideal para: Empresas que necesitan una opinión legal antes de decidir',
     },
     {
       id: 'empresarial',
@@ -49,25 +56,25 @@ export default async function ServiciosPage() {
         'Gobierno corporativo',
         'Resolución de conflictos societarios',
       ],
-      pricing: 'Paquetes desde $1,500',
+      pricing: 'Registro de sociedad desde $1,600',
       ideal: 'Ideal para: Empresas establecidas, nuevos negocios, inversionistas',
     },
     {
       id: 'internacional',
-      title: 'Derecho Internacional',
-      subtitle: 'Expande tu negocio más allá de fronteras',
+      title: 'Asuntos Interjurisdiccionales',
+      subtitle: 'Cuando su operación cruza fronteras',
       icon: '🌍',
-      description: 'Especialización en derecho internacional público y privado. Te ayudo a navegar el complejo mundo del comercio internacional.',
+      description: 'Contratos, operaciones y patrimonio que cruzan fronteras. Estructura legal para que su negocio funcione en más de una jurisdicción.',
       features: [
-        'Tratados comerciales',
-        'Importación y exportación',
         'Contratos internacionales',
-        'Resolución de conflictos internacionales',
-        'Derecho diplomático',
-        'Arbitraje internacional',
+        'Operaciones entre jurisdicciones',
+        'Patrimonio y sucesiones transfronterizas',
+        'Sociedades con socios o activos en el exterior',
+        'Ejecución de resoluciones extranjeras',
+        'Arbitraje comercial',
       ],
-      pricing: 'Consulta por proyecto',
-      ideal: 'Ideal para: Exportadores, empresas multinacionales, organismos',
+      pricing: 'Cotización por proyecto',
+      ideal: 'Ideal para: Empresas con operaciones dentro y fuera de Guatemala',
     },
     {
       id: 'propiedad-intelectual',
@@ -82,8 +89,8 @@ export default async function ServiciosPage() {
         'Contratos de licencia',
         'Estrategia de protección IP',
       ],
-      pricing: 'Desde $800 por registro',
-      ideal: 'Ideal para: Emprendedores, startups tech, creativos',
+      pricing: 'Cotización según el alcance',
+      ideal: 'Ideal para: Empresas que protegen su marca dentro y fuera del país',
     },
     {
       id: 'contratos',
@@ -99,8 +106,8 @@ export default async function ServiciosPage() {
         'Políticas de privacidad',
         'Contratos de compraventa',
       ],
-      pricing: 'Desde $300 por contrato',
-      ideal: 'Ideal para: Freelancers, pequeñas empresas, profesionales',
+      pricing: 'Cotización según el alcance',
+      ideal: 'Ideal para: Empresas y profesionales que contratan con terceros',
     },
     {
       id: 'capacitaciones',
@@ -115,8 +122,8 @@ export default async function ServiciosPage() {
         'Webinars y conferencias',
         'Material educativo descargable',
       ],
-      pricing: 'Desde $500 por taller',
-      ideal: 'Ideal para: Equipos corporativos, profesionales, estudiantes',
+      pricing: 'Cotización según el alcance',
+      ideal: 'Ideal para: Equipos corporativos y áreas legales internas',
     },
   ]
 
@@ -288,7 +295,7 @@ export default async function ServiciosPage() {
             ¿No estás seguro qué servicio necesitas?
           </h2>
           <p className="text-xl text-slate-light mb-8">
-            Agenda una consulta inicial gratuita de 15 minutos.
+            Agenda una consulta inicial y le orientamos sobre el camino a seguir.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link

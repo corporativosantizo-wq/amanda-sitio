@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Términos y Condiciones | Amanda Santizo, Abogada — Guatemala',
+  description:
+    'Condiciones de uso del sitio y de la contratación de servicios legales con el despacho.',
+}
 
 export default function TerminosPage() {
   return (

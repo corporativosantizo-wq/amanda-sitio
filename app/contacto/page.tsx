@@ -377,7 +377,7 @@ export default function ContactoPage() {
                   ¿Prefieres hablar directamente?
                 </h3>
                 <p className="text-navy-dark mb-4">
-                  Agenda una consulta inicial gratuita de 15 minutos.
+                  Agenda una consulta inicial y le orientamos sobre el camino a seguir.
                 </p>
                 <a 
                   href="https://wa.me/50230150618?text=Hola%20Amanda,%20me%20gustaría%20agendar%20una%20consulta."
@@ -412,7 +412,7 @@ export default function ContactoPage() {
               },
               {
                 q: '¿La primera consulta tiene costo?',
-                a: 'Ofrezco una llamada inicial gratuita de 15 minutos para conocer tu caso y determinar cómo puedo ayudarte.',
+                a: 'La consulta nueva tiene un costo de Q500 e incluye 30 minutos de atención. El seguimiento de un trámite ya contratado no tiene costo adicional.',
               },
             ].map((faq, index) => (
               <details
