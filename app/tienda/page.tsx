@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: 'Plantillas legales | Amanda Santizo, Abogada — Guatemala',
   description:
     'Plantillas y documentos legales elaborados por una abogada guatemalteca, listos para descargar.',
+  alternates: { canonical: '/tienda' },
 }
 
 export default async function TiendaPage() {

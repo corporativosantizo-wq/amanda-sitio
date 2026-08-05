@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: 'Contacto | Amanda Santizo, Abogada — Guatemala',
   description:
     'Despacho en Edificio Géminis 10, zona 10, Ciudad de Guatemala. Respuesta en máximo 24 horas hábiles.',
+  alternates: { canonical: '/contacto' },
 }
 
 export default function ContactoLayout({ children }: { children: React.ReactNode }) {

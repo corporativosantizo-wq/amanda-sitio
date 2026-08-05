@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Política de Privacidad | Amanda Santizo, Abogada — Guatemala',
   description:
     'Cómo el despacho recopila, usa y protege los datos personales de quienes contactan o contratan sus servicios.',
+  alternates: { canonical: '/privacidad' },
 }
 
 export default function PrivacidadPage() {

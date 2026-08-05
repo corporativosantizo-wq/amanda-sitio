@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Servicios legales | Amanda Santizo, Abogada — Guatemala',
   description:
     'Contratos, derecho corporativo, litigio civil y asuntos interjurisdiccionales. Servicios legales para empresas con operaciones dentro y fuera de Guatemala.',
+  alternates: { canonical: '/servicios' },
 }
 
 export default function ServiciosPage() {
