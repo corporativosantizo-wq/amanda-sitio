@@ -95,7 +95,7 @@ export default function PrivacidadPage() {
           </h2>
           <p className="text-slate mb-4">
             Nuestro sitio utiliza cookies para mejorar tu experiencia. Para más información, consulta nuestra{' '}
-            <Link href="/cookies" className="text-azure hover:text-cyan">
+            <Link href="/cookies" className="text-azure hover:underline">
               Política de Cookies
             </Link>.
           </p>
@@ -108,7 +108,7 @@ export default function PrivacidadPage() {
           </p>
           <ul className="text-slate mb-6 list-disc pl-6 space-y-2">
             <li>Email: info@amandasantizo.com</li>
-            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:text-cyan">formulario de contacto</Link></li>
+            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:underline">formulario de contacto</Link></li>
           </ul>
 
           <h2 className="font-display text-2xl font-bold text-navy mt-8 mb-4">

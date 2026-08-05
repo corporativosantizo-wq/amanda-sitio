@@ -12,7 +12,7 @@ export default function SobreMiPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Hero */}
-      <section className="relative bg-gradient-to-br from-navy via-navy-dark to-teal-700 py-28 overflow-hidden">
+      <section className="relative bg-gradient-to-br from-navy via-navy-dark to-navy-dark py-28 overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 right-20 w-96 h-96 bg-cyan rounded-full blur-3xl"></div>
           <div className="absolute bottom-10 left-10 w-80 h-80 bg-azure rounded-full blur-3xl"></div>
@@ -119,7 +119,7 @@ export default function SobreMiPage() {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-navy to-teal-700">
+      <section className="py-20 bg-gradient-to-br from-navy to-navy-dark">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-8">
             Trabajemos juntos

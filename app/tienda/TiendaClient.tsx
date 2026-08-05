@@ -229,7 +229,7 @@ export default function TiendaClient({ productos, categorias }: Props) {
               </p>
               <button
                 onClick={() => setCategoriaActiva('todos')}
-                className="text-azure font-semibold hover:text-cyan transition-colors"
+                className="text-azure font-semibold hover:underline transition-colors"
               >
                 Ver todos los productos
               </button>

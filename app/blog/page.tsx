@@ -99,7 +99,7 @@ export default async function BlogPage() {
                     <p className="text-slate text-sm mb-4 line-clamp-3">
                       {post.excerpt || post.content?.substring(0, 150) + '...'}
                     </p>
-                    <span className="text-azure font-semibold group-hover:text-cyan">
+                    <span className="text-azure font-semibold group-hover:underline">
                       Leer artículo →
                     </span>
                   </div>

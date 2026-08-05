@@ -2,6 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Paleta por variable CSS. Los valores van como canales RGB sueltos para que
+  Tailwind pueda aplicar opacidades (`bg-cyan/20`, `border-cyan/30`).
+
+  :root      → paleta del despacho, la misma de las plantillas de correo.
+               Es la que ve el sitio público.
+  .tema-admin→ los colores anteriores, tal cual estaban. Se aplica en el layout
+               del panel para que la administración no cambie de aspecto.
+*/
+:root {
+  /* Azul marino de marca #1e2a5a, con su versión oscura y clara. */
+  --c-navy: 30 42 90;          /* #1e2a5a */
+  --c-navy-dark: 22 32 74;     /* #16204a */
+  --c-navy-light: 44 62 115;   /* #2c3e73 */
+
+  /* Azul secundario: variantes del marino, no el azul eléctrico anterior. */
+  --c-azure: 44 62 115;        /* #2c3e73 */
+  --c-azure-light: 61 82 144;  /* #3d5290 */
+  --c-azure-dark: 22 32 74;    /* #16204a */
+
+  /* Acento dorado #c2a05a. Para botones, filetes e iconos: sobre blanco no
+     alcanza el contraste mínimo de texto pequeño, así que el texto va marino. */
+  --c-cyan: 194 160 90;        /* #c2a05a */
+  --c-cyan-light: 212 185 126; /* #d4b97e */
+  --c-cyan-dark: 168 134 63;   /* #a8863f */
+}
+
+.tema-admin {
+  --c-navy: 30 58 138;         /* #1E3A8A */
+  --c-navy-dark: 15 23 42;     /* #0F172A */
+  --c-navy-light: 15 52 96;    /* #0F3460 */
+
+  --c-azure: 59 130 246;       /* #3B82F6 */
+  --c-azure-light: 96 165 250; /* #60A5FA */
+  --c-azure-dark: 37 99 235;   /* #2563EB */
+
+  --c-cyan: 34 211 238;        /* #22D3EE */
+  --c-cyan-light: 103 232 249; /* #67E8F9 */
+  --c-cyan-dark: 6 182 212;    /* #06B6D4 */
+}
+
 @layer base {
   body {
     @apply bg-white text-slate-900;

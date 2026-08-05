@@ -8,21 +8,28 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Los tres tokens de marca se resuelven por variable CSS (definidas en
+      // globals.css). El sitio público usa la paleta del despacho; el panel de
+      // administración conserva sus colores mediante la clase `tema-admin` en
+      // su layout. Los canales van sueltos —"30 42 90"— para que sigan
+      // funcionando las opacidades tipo `bg-cyan/20`.
       colors: {
         navy: {
-          dark: '#0F172A',
-          DEFAULT: '#1E3A8A',
-          light: '#0F3460',
+          dark: 'rgb(var(--c-navy-dark) / <alpha-value>)',
+          DEFAULT: 'rgb(var(--c-navy) / <alpha-value>)',
+          light: 'rgb(var(--c-navy-light) / <alpha-value>)',
         },
         azure: {
-          DEFAULT: '#3B82F6',
-          light: '#60A5FA',
-          dark: '#2563EB',
+          DEFAULT: 'rgb(var(--c-azure) / <alpha-value>)',
+          light: 'rgb(var(--c-azure-light) / <alpha-value>)',
+          dark: 'rgb(var(--c-azure-dark) / <alpha-value>)',
         },
+        // `cyan` es el token de acento. En el sitio público vale dorado
+        // #c2a05a; el nombre se conserva para no tocar 158 clases.
         cyan: {
-          DEFAULT: '#22D3EE',
-          light: '#67E8F9',
-          dark: '#06B6D4',
+          DEFAULT: 'rgb(var(--c-cyan) / <alpha-value>)',
+          light: 'rgb(var(--c-cyan-light) / <alpha-value>)',
+          dark: 'rgb(var(--c-cyan-dark) / <alpha-value>)',
         },
         slate: {
           DEFAULT: '#1E293B',
