@@ -1372,8 +1372,16 @@ function generarBodyEvento(
         cita.audiencia_juzgado ? `<p><strong>Juzgado:</strong> ${cita.audiencia_juzgado}</p>` : '',
       ].join('')
     : '';
+  // Consulta nueva: el cliente lee este cuerpo dentro de la invitación de
+  // Outlook (que muestra el bloque de 60 min — colchón interno). La frase
+  // comunica la cobertura real de honorarios (decisión ago-2026, opción C:
+  // invitación intacta, solo se agrega la frase). Los demás tipos no llevan.
+  const notaConsulta = cita.tipo === 'consulta_nueva'
+    ? `<p>Los honorarios cubren 30 minutos de atención.</p>`
+    : '';
   return `<p><strong>Cliente:</strong> ${clienteNombre}</p>
 <p><strong>Tipo:</strong> ${tipo}</p>
+${notaConsulta}
 ${audienciaBlock}
 ${firmantesBlock}
 ${cita.costo > 0 ? `<p><strong>Costo:</strong> Q${Number(cita.costo).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>` : ''}
