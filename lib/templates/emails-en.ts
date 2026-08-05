@@ -259,8 +259,13 @@ export function emailConfirmacionCita(cita: any, configuracion?: Record<string, 
     ? formatTimeEN(cita.hora_inicio)
     : `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
   const duracion = esConsulta
-    ? '30 minutes'
+    ? '30 minutes of consultation time'
     : (cita.duracion_minutos ? `${cita.duracion_minutos} minutes` : '15 minutes');
+  // Approved phrasing (ago-2026): start time + fee coverage, no time range
+  // anywhere the client can see.
+  const notaConsulta = esConsulta
+    ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Your consultation starts at <strong>${formatTimeEN(cita.hora_inicio)}</strong> (Guatemala time, GMT-6). The professional fee covers <strong>30 minutes of consultation time</strong>.</p>`
+    : '';
   const clienteNombre = cita.cliente?.nombre ?? '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
@@ -314,6 +319,7 @@ export function emailConfirmacionCita(cita: any, configuracion?: Record<string, 
         <p style="margin:8px 0;font-size:14px;"><strong>Format:</strong> ${modalidadLabelEN(cita)}</p>
       </td></tr>
     </table>
+    ${notaConsulta}
     ${teamsHTML}
     ${officeHTML}
     <p style="margin:12px 0 0;color:#64748b;font-size:13px;">${closing}</p>
@@ -329,9 +335,17 @@ export function emailConfirmacionCita(cita: any, configuracion?: Record<string, 
 }
 
 export function emailRecordatorio24h(cita: any): EmailTemplate {
-  const tipoCita = cita.tipo === 'consulta_nueva' ? 'Legal Consultation' : 'Case Follow-up';
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const tipoCita = esConsulta ? 'Legal Consultation' : 'Case Follow-up';
   const fechaFmt = formatDateEN(cita.fecha);
-  const horaFmt = `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  // Consultation: start time only (60-min block is an internal buffer; the
+  // client is told 30 minutes of consultation time).
+  const horaFmt = esConsulta
+    ? formatTimeEN(cita.hora_inicio)
+    : `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  const duracionLinea = esConsulta
+    ? `<p style="margin:8px 0;font-size:14px;"><strong>Duration:</strong> 30 minutes of consultation time</p>`
+    : '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
   const teamsBtn = info.usaTeams ? teamsSectionEN(cita) : '';
@@ -345,6 +359,7 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Type:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Time:</strong> ${horaFmt} (Guatemala time, GMT-6)</p>
+        ${duracionLinea}
         <p style="margin:8px 0;font-size:14px;"><strong>Format:</strong> ${modalidadLabelEN(cita)}</p>
       </td></tr>
     </table>
@@ -360,9 +375,16 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
 }
 
 export function emailRecordatorio1h(cita: any): EmailTemplate {
-  const tipoCita = cita.tipo === 'consulta_nueva' ? 'Legal Consultation' : 'Case Follow-up';
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const tipoCita = esConsulta ? 'Legal Consultation' : 'Case Follow-up';
   const fechaFmt = formatDateEN(cita.fecha);
-  const horaFmt = `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  // Consultation: start time only + communicated duration (see 24h reminder).
+  const horaFmt = esConsulta
+    ? formatTimeEN(cita.hora_inicio)
+    : `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  const duracionLinea = esConsulta
+    ? `<p style="margin:8px 0;font-size:14px;"><strong>Duration:</strong> 30 minutes of consultation time</p>`
+    : '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
   const teamsBtn = info.usaTeams ? teamsSectionEN(cita) : '';
@@ -379,6 +401,7 @@ export function emailRecordatorio1h(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Type:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Time:</strong> ${horaFmt} (Guatemala time, GMT-6)</p>
+        ${duracionLinea}
         <p style="margin:8px 0;font-size:14px;"><strong>Format:</strong> ${modalidadLabelEN(cita)}</p>
       </td></tr>
     </table>
@@ -396,7 +419,10 @@ export function emailRecordatorio1h(cita: any): EmailTemplate {
 export function emailCancelacionCita(cita: any): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Legal Consultation' : 'Case Follow-up';
   const fechaFmt = formatDateEN(cita.fecha);
-  const horaFmt = `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
+  // Consultation: start time only (no range — internal 60-min buffer).
+  const horaFmt = cita.tipo === 'consulta_nueva'
+    ? formatTimeEN(cita.hora_inicio)
+    : `${formatTimeEN(cita.hora_inicio)} - ${formatTimeEN(cita.hora_fin)}`;
 
   const html = wrapEN(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Appointment Cancelled</h2>

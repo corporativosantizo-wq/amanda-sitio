@@ -110,7 +110,7 @@ const TIPO_INFO: Record<TipoCita, {
     desc: 'Para nuevos asuntos o consultas generales.',
     // Duración COMUNICADA al cliente. El bloque reservado en el calendario
     // sigue siendo de 1 hora (colchón interno) — ver /api/public/agendar.
-    duracion: '30 minutos',
+    duracion: '30 minutos de atención',
     costo: 'Q500',
     costoNum: 500,
     modalidad: 'Virtual por Teams',
@@ -1341,6 +1341,12 @@ function StepExito({
       </h2>
       <p className="text-gray-500 mb-8">
         {nombres}, su cita ha sido confirmada. Recibira un email con los detalles.
+        {tipo === 'consulta_nueva' && (
+          <>
+            {' '}Su consulta inicia a las {formatHora12(result.hora_inicio)}. Los honorarios
+            cubren 30 minutos de atención.
+          </>
+        )}
       </p>
 
       {/* Summary card */}

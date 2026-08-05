@@ -211,8 +211,13 @@ export function emailConfirmacionCita(cita: any, _configuracion?: Record<string,
     ? formatearHora(cita.hora_inicio)
     : `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
   const duracion = esConsulta
-    ? '30 minutos'
+    ? '30 minutos de atención'
     : (cita.duracion_minutos ? `${cita.duracion_minutos} minutos` : '15 minutos');
+  // Frase aprobada (ago-2026) para la consulta: inicio + cobertura de
+  // honorarios, sin rango de horas en ningún punto visible al cliente.
+  const notaConsulta = esConsulta
+    ? `<p style="color:#475569;font-size:14px;line-height:1.6;">Su consulta inicia a las <strong>${formatearHora(cita.hora_inicio)}</strong>. Los honorarios cubren <strong>30 minutos de atención</strong>.</p>`
+    : '';
   const clienteNombre = cita.cliente?.nombre ?? '';
 
   // Modalidad \u2014 adapta la l\u00ednea, las secciones (Teams / oficina) y el cierre.
@@ -273,6 +278,7 @@ export function emailConfirmacionCita(cita: any, _configuracion?: Record<string,
         <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${modalidadLabel}</p>
       </td></tr>
     </table>
+    ${notaConsulta}
     ${teamsSectionHTML}
     ${oficinaSectionHTML}
     ${cierreModalidadHTML}
@@ -288,9 +294,17 @@ export function emailConfirmacionCita(cita: any, _configuracion?: Record<string,
 }
 
 export function emailRecordatorio24h(cita: any): EmailTemplate {
-  const tipoCita = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const tipoCita = esConsulta ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  // Consulta: solo hora de inicio (el bloque de 60 min es colch\u00f3n interno; al
+  // cliente se le comunican 30 minutos de atenci\u00f3n).
+  const horaFmt = esConsulta
+    ? formatearHora(cita.hora_inicio)
+    : `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  const duracionLinea = esConsulta
+    ? `<p style="margin:8px 0;font-size:14px;"><strong>Duraci\u00f3n:</strong> 30 minutos de atenci\u00f3n</p>`
+    : '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
   const teamsBtn = info.usaTeams && cita.teams_link ? `<table>${teamsButton(cita.teams_link)}</table>` : '';
@@ -304,6 +318,7 @@ export function emailRecordatorio24h(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
+        ${duracionLinea}
         <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${info.icono} ${info.label}</p>
       </td></tr>
     </table>
@@ -361,9 +376,16 @@ export function emailRecordatorioAudiencia(cita: any): EmailTemplate {
 }
 
 export function emailRecordatorio1h(cita: any): EmailTemplate {
-  const tipoCita = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
+  const esConsulta = cita.tipo === 'consulta_nueva';
+  const tipoCita = esConsulta ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  // Consulta: solo hora de inicio + duraci\u00f3n comunicada (ver recordatorio 24h).
+  const horaFmt = esConsulta
+    ? formatearHora(cita.hora_inicio)
+    : `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  const duracionLinea = esConsulta
+    ? `<p style="margin:8px 0;font-size:14px;"><strong>Duraci\u00f3n:</strong> 30 minutos de atenci\u00f3n</p>`
+    : '';
 
   const info = MODALIDAD_INFO[modalidadDeCita(cita)];
   const teamsBtn = info.usaTeams && cita.teams_link ? `<table>${teamsButton(cita.teams_link)}</table>` : '';
@@ -380,6 +402,7 @@ export function emailRecordatorio1h(cita: any): EmailTemplate {
         <p style="margin:8px 0;font-size:14px;"><strong>Tipo:</strong> ${tipoCita}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Fecha:</strong> ${fechaFmt}</p>
         <p style="margin:8px 0;font-size:14px;"><strong>Hora:</strong> ${horaFmt}</p>
+        ${duracionLinea}
         <p style="margin:8px 0;font-size:14px;"><strong>Modalidad:</strong> ${info.icono} ${info.label}</p>
       </td></tr>
     </table>
@@ -397,7 +420,10 @@ export function emailRecordatorio1h(cita: any): EmailTemplate {
 export function emailCancelacionCita(cita: any): EmailTemplate {
   const tipo = cita.tipo === 'consulta_nueva' ? 'Consulta Nueva' : 'Seguimiento';
   const fechaFmt = formatearFechaGT(cita.fecha);
-  const horaFmt = `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
+  // Consulta: solo hora de inicio (el rango delataría el bloque interno de 60).
+  const horaFmt = cita.tipo === 'consulta_nueva'
+    ? formatearHora(cita.hora_inicio)
+    : `${formatearHora(cita.hora_inicio)} - ${formatearHora(cita.hora_fin)}`;
 
   const html = emailWrapper(`
     <h2 style="margin:0 0 16px;color:#0f172a;font-size:20px;">Cita Cancelada</h2>
