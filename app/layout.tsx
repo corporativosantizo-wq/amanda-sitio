@@ -25,6 +25,12 @@ export const metadata: Metadata = {
   title: 'Amanda Santizo — Abogada y Notaria | Derecho Civil y Empresarial, Guatemala',
   description:
     'Despacho jurídico boutique en Guatemala. Derecho civil y empresarial con enfoque transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.',
+  // Verificación de propiedad en Google Search Console. Va aquí y no en la
+  // portada: el metadata se fusiona campo por campo, y como ninguna página
+  // declara `verification`, esta etiqueta llega a todas, portada incluida.
+  verification: {
+    google: 'spM97SB-QJux03jZfoXyLImyQMhQCxwCZ3J8mwEKKuQ',
+  },
 }
 
 export default function RootLayout({
