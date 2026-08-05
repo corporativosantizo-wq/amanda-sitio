@@ -20,17 +20,21 @@ export default function Header() {
       <nav className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
+          {/* El logo es tinta marino sobre transparencia: necesita fondo claro
+              para verse contra la barra. Ya trae el nombre, así que no se
+              repite en texto; solo se conserva el descriptor. */}
           <Link href="/" className="flex items-center space-x-3 group">
-            <div className="w-12 h-12 bg-gradient-to-br from-azure to-cyan rounded-lg flex items-center justify-center 
-                          transform group-hover:scale-110 transition-transform duration-300">
-              <span className="text-white font-display font-bold text-xl">AS</span>
-            </div>
-            <div className="hidden md:block">
-              <div className="font-display font-bold text-white text-lg group-hover:text-cyan transition-colors">
-                Amanda Santizo
-              </div>
-              <div className="text-cyan text-xs font-medium">Derecho Civil y Empresarial</div>
-            </div>
+            <span className="bg-white rounded-lg px-3 py-2 flex items-center
+                           transform group-hover:scale-105 transition-transform duration-300">
+              <img
+                src="/logo-amanda-santizo.png"
+                alt="Amanda Santizo — Abogada y Notaria"
+                className="h-8 w-auto"
+              />
+            </span>
+            <span className="hidden md:block text-cyan text-xs font-medium">
+              Derecho Civil y Empresarial
+            </span>
           </Link>
 
           {/* Desktop Navigation */}

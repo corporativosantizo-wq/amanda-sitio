@@ -134,7 +134,7 @@ export default async function ProductoPage({ params }: PageProps) {
                 {product.type === 'digital' && (
                   <Link
                     href="/tienda/cotizacion-a-medida"
-                    className="block text-center text-sm text-azure hover:text-cyan transition-colors pt-2"
+                    className="block text-center text-sm text-azure hover:underline transition-colors pt-2"
                   >
                     ¿Necesitas este documento a la medida? Solicita una cotización
                   </Link>

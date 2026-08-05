@@ -109,10 +109,10 @@ export default function CookiesPage() {
             Enlaces a Configuración de Navegadores
           </h3>
           <ul className="text-slate mb-6 list-disc pl-6 space-y-2">
-            <li><a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer" className="text-azure hover:text-cyan">Google Chrome</a></li>
-            <li><a href="https://support.mozilla.org/es/kb/cookies-informacion-que-los-sitios-web-guardan-en-" target="_blank" rel="noopener noreferrer" className="text-azure hover:text-cyan">Mozilla Firefox</a></li>
-            <li><a href="https://support.apple.com/es-es/guide/safari/sfri11471/mac" target="_blank" rel="noopener noreferrer" className="text-azure hover:text-cyan">Safari</a></li>
-            <li><a href="https://support.microsoft.com/es-es/microsoft-edge/eliminar-las-cookies-en-microsoft-edge-63947406-40ac-c3b8-57b9-2a946a29ae09" target="_blank" rel="noopener noreferrer" className="text-azure hover:text-cyan">Microsoft Edge</a></li>
+            <li><a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer" className="text-azure hover:underline">Google Chrome</a></li>
+            <li><a href="https://support.mozilla.org/es/kb/cookies-informacion-que-los-sitios-web-guardan-en-" target="_blank" rel="noopener noreferrer" className="text-azure hover:underline">Mozilla Firefox</a></li>
+            <li><a href="https://support.apple.com/es-es/guide/safari/sfri11471/mac" target="_blank" rel="noopener noreferrer" className="text-azure hover:underline">Safari</a></li>
+            <li><a href="https://support.microsoft.com/es-es/microsoft-edge/eliminar-las-cookies-en-microsoft-edge-63947406-40ac-c3b8-57b9-2a946a29ae09" target="_blank" rel="noopener noreferrer" className="text-azure hover:underline">Microsoft Edge</a></li>
           </ul>
 
           <h2 className="font-display text-2xl font-bold text-navy mt-8 mb-4">
@@ -142,7 +142,7 @@ export default function CookiesPage() {
           </p>
           <ul className="text-slate mb-6 list-disc pl-6 space-y-2">
             <li>Email: info@amandasantizo.com</li>
-            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:text-cyan">formulario de contacto</Link></li>
+            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:underline">formulario de contacto</Link></li>
           </ul>
 
         </div>

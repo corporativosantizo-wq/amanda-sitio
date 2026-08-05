@@ -10,14 +10,16 @@ export default function Footer() {
           
           {/* Columna 1: Sobre */}
           <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-azure to-cyan rounded-lg flex items-center justify-center">
-                <span className="text-white font-display font-bold text-lg">AS</span>
-              </div>
-              <div>
-                <h3 className="text-white font-display font-bold">Amanda Santizo</h3>
-                <p className="text-cyan text-xs">Derecho Civil y Empresarial</p>
-              </div>
+            {/* Mismo criterio que el header: fondo claro bajo el logo. */}
+            <div className="space-y-3">
+              <span className="bg-white rounded-lg px-3 py-2 inline-flex items-center">
+                <img
+                  src="/logo-amanda-santizo.png"
+                  alt="Amanda Santizo — Abogada y Notaria"
+                  className="h-9 w-auto"
+                />
+              </span>
+              <p className="text-cyan text-xs">Derecho Civil y Empresarial</p>
             </div>
             <p className="text-sm leading-relaxed">
               Despacho jurídico boutique en Guatemala. Derecho civil y empresarial para

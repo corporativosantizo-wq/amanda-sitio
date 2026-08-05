@@ -138,7 +138,7 @@ export default function TerminosPage() {
           </p>
           <ul className="text-slate mb-6 list-disc pl-6 space-y-2">
             <li>Email: info@amandasantizo.com</li>
-            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:text-cyan">formulario de contacto</Link></li>
+            <li>A través de nuestro <Link href="/contacto" className="text-azure hover:underline">formulario de contacto</Link></li>
           </ul>
 
         </div>

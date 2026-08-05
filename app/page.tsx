@@ -116,9 +116,11 @@ export default function Home() {
                   {servicio.title}
                 </h3>
                 <p className="text-slate">{servicio.description}</p>
-                <div className="mt-4 flex items-center text-cyan font-semibold">
+                {/* Texto en marino y dorado solo en el icono: el dorado sobre
+                    blanco no alcanza el contraste de un texto pequeño. */}
+                <div className="mt-4 flex items-center text-navy font-semibold">
                   <span>Ver más</span>
-                  <svg className="w-4 h-4 ml-2 group-hover:translate-x-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 ml-2 text-cyan group-hover:translate-x-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>

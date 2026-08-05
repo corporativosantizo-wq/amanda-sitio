@@ -987,7 +987,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    // `tema-admin` restituye la paleta anterior (ver globals.css): el sitio
+    // público usa los colores de marca, la administración se queda como estaba.
+    <div className="tema-admin min-h-screen bg-gray-100">
       {/* Session expired modal */}
       {sessionExpired && <SessionExpiredModal onReconnect={handleReconnect} />}
 

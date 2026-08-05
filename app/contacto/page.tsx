@@ -272,7 +272,7 @@ export default function ContactoPage() {
                     />
                     <label htmlFor="privacidad" className="ml-3 text-sm text-slate">
                       Acepto la{' '}
-                      <Link href="/privacidad" className="text-azure hover:text-cyan transition-colors">
+                      <Link href="/privacidad" className="text-azure hover:underline transition-colors">
                         política de privacidad
                       </Link>{' '}
                       y el tratamiento de mis datos.
@@ -331,7 +331,7 @@ export default function ContactoPage() {
                       {info.link ? (
                         <a
                           href={info.link}
-                          className="text-azure hover:text-cyan transition-colors font-medium"
+                          className="text-azure hover:underline transition-colors font-medium"
                           target={info.link.startsWith('http') ? '_blank' : undefined}
                           rel={info.link.startsWith('http') ? 'noopener noreferrer' : undefined}
                         >

@@ -113,7 +113,7 @@ export default async function BlogCategoriaPage({
                     <p className="text-slate text-sm mb-4 line-clamp-3">
                       {post.excerpt || post.content?.substring(0, 150) + '...'}
                     </p>
-                    <span className="text-azure font-semibold group-hover:text-cyan">
+                    <span className="text-azure font-semibold group-hover:underline">
                       Leer artículo →
                     </span>
                   </div>
@@ -126,7 +126,7 @@ export default async function BlogCategoriaPage({
               <h3 className="font-display text-xl font-bold text-navy mt-4">
                 Aún no hay artículos en esta categoría
               </h3>
-              <Link href="/blog" className="inline-block mt-4 text-azure font-semibold hover:text-cyan">
+              <Link href="/blog" className="inline-block mt-4 text-azure font-semibold hover:underline">
                 Ver todos los artículos →
               </Link>
             </div>
