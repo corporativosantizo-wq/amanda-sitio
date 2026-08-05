@@ -15,10 +15,10 @@ import {
   EstadoCita,
   ModalidadCita,
   HORARIOS,
-  HORARIOS_MODALIDAD,
   ADMIN_ONLY_TIPOS,
   MODALIDAD_INFO,
 } from '@/lib/types';
+import { obtenerHorarioEfectivo, CanalHorario } from './horarios.service';
 import {
   isOutlookConnected,
   createCalendarEvent,
@@ -55,22 +55,27 @@ export async function obtenerDisponibilidad(
   fecha: string,
   tipo: TipoCita,
   modalidad?: ModalidadCita,
+  canal: CanalHorario = 'interno',
 ): Promise<SlotDisponible[]> {
-  const config = HORARIOS[tipo];
+  if (!HORARIOS[tipo]) throw new CitaError(`Tipo de cita inválido: ${tipo}`);
+
+  // Ventana horaria desde legal.config_horarios (fila tipo+modalidad si existe,
+  // si no la base del tipo; canal 'publico' aplica además la ventana de oferta
+  // pública). Con fallback a las constantes de lib/types/citas.ts.
+  const config = await obtenerHorarioEfectivo(tipo, modalidad, canal);
   if (!config) throw new CitaError(`Tipo de cita inválido: ${tipo}`);
 
-  // Entrega/firma de documentos: las atiende Mariano en oficina, con horario
-  // propio (lun–vie 9–16), sin consultar la agenda de Outlook de Amanda, y solo
-  // chocan contra otras citas de entrega/firma. El resto usa HORARIOS[tipo].
+  // Entrega/firma de documentos: las atiende Mariano en oficina, sin consultar
+  // la agenda de Outlook de Amanda, y solo chocan contra otras citas de
+  // entrega/firma. (Su ventana horaria propia ya viene resuelta en config.)
   const esEntregaFirma =
     tipo === 'seguimiento' &&
     (modalidad === 'entrega_documentos' || modalidad === 'firma_documentos');
-  const modConfig = esEntregaFirma ? HORARIOS_MODALIDAD[modalidad!] : undefined;
 
-  const dias = modConfig?.dias ?? config.dias;
-  const horaInicio = modConfig?.hora_inicio ?? config.hora_inicio;
-  const horaFin = modConfig?.hora_fin ?? config.hora_fin;
-  const duracionMin = modConfig?.duracion ?? config.duracion_min;
+  const dias = config.dias;
+  const horaInicio = config.hora_inicio;
+  const horaFin = config.hora_fin;
+  const duracionMin = config.duracion_slot;
 
   // Verificar que el día es válido
   const date = new Date(fecha + 'T12:00:00');
@@ -201,15 +206,6 @@ function slotsOverlap(
   return startA < endB && startB < endA;
 }
 
-// Suma minutos a una hora 'HH:MM' y devuelve 'HH:MM' (zero-padded).
-function sumarMinutosHora(hora: string, min: number): string {
-  const [h, m] = hora.split(':').map(Number);
-  const total = h * 60 + m + min;
-  const fh = Math.floor(total / 60);
-  const fm = total % 60;
-  return `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
-}
-
 // ── CRUD Citas ──────────────────────────────────────────────────────────────
 
 interface ListCitasParams {
@@ -276,8 +272,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
   const isAdminOnly = ADMIN_ONLY_TIPOS.has(input.tipo);
 
   if (!isAdminOnly) {
-    // Validar que el slot esté disponible (solo para tipos públicos)
-    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo);
+    // Validar que el slot esté disponible (solo para tipos públicos). Se pasa
+    // la modalidad para que aplique su ventana propia (p. ej. seguimiento
+    // virtual mar/mié, firma lun–vie 9–16) — antes se validaba siempre contra
+    // la ventana base del tipo.
+    const disponibles = await obtenerDisponibilidad(input.fecha, input.tipo, input.modalidad);
 
     let slotValido: boolean;
     if (input.tipo === 'consulta_nueva') {
@@ -288,14 +287,11 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
       const hasHalf = disponibles.some((s: SlotDisponible) => s.hora_inicio === halfHour);
       slotValido = hasStart && hasHalf;
       console.log('[crearCita] consulta_nueva validation: hora=', input.hora_inicio, ', halfHour=', halfHour, ', hasStart=', hasStart, ', hasHalf=', hasHalf, ', slotValido=', slotValido);
-    } else if (input.tipo === 'seguimiento' && input.modalidad === 'firma_documentos') {
-      // La firma de documentos dura 30 min = dos sub-slots de 15 min consecutivos.
-      const next = sumarMinutosHora(input.hora_inicio, 15);
-      const hasStart = disponibles.some((s: SlotDisponible) => s.hora_inicio === input.hora_inicio);
-      const hasNext = disponibles.some((s: SlotDisponible) => s.hora_inicio === next);
-      slotValido = hasStart && hasNext;
-      console.log('[crearCita] firma validation: hora=', input.hora_inicio, ', next=', next, ', hasStart=', hasStart, ', hasNext=', hasNext, ', slotValido=', slotValido);
     } else {
+      // Al pasar la modalidad, los slots ya vienen con la duración correcta
+      // por modalidad (virtual/entrega 15 min, firma 30), así que basta el
+      // match exacto. (Antes la firma se validaba como dos sub-slots de 15 min
+      // porque la disponibilidad se pedía sin modalidad, con la ventana base.)
       slotValido = disponibles.some(
         (s: SlotDisponible) => s.hora_inicio === input.hora_inicio && s.hora_fin === input.hora_fin
       );
@@ -353,10 +349,13 @@ export async function crearCita(input: CitaInsert): Promise<Cita> {
     clienteEsInternacional = cliIdioma?.idioma === 'en';
     clienteMonedaUSD = cliIdioma?.moneda === 'USD';
   }
+  // Costo default del tipo desde legal.config_horarios (fila base); fallback a
+  // la constante si la tabla no se puede leer.
+  const costoBaseTipo = (await obtenerHorarioEfectivo(input.tipo))?.costo ?? config.costo;
   const costoDefault =
     clienteEsInternacional && input.tipo === 'consulta_nueva'
       ? CONSULTA_INTERNACIONAL_USD
-      : config.costo;
+      : costoBaseTipo;
   const costo = input.costo ?? (esModalidadSinCosto ? 0 : costoDefault);
 
   // Fase A pagos: token del link "Pay by card" (correo EN) SOLO para la

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { crearCita, crearSolicitudCita, obtenerDisponibilidad, CitaError } from '@/lib/services/citas.service';
+import { obtenerHorarioEfectivo } from '@/lib/services/horarios.service';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { HORARIOS, TipoCita } from '@/lib/types';
 
@@ -75,11 +76,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email inválido.' }, { status: 400 });
     }
 
-    const config = HORARIOS[tipoCita];
+    // Costo base del tipo desde legal.config_horarios (fallback a constante).
+    const costoBase = (await obtenerHorarioEfectivo(tipoCita))?.costo ?? HORARIOS[tipoCita].costo;
 
-    // Double-check availability
+    // Double-check availability — canal 'publico': solo se aceptan horarios que
+    // el flujo público realmente ofrece (ventana *_publico de config_horarios).
     console.log('[Agendar] Verificando disponibilidad: fecha=', fecha, ', hora=', hora, ', tipo=', tipoCita);
-    const slots = await obtenerDisponibilidad(fecha, tipoCita, modalidad);
+    const slots = await obtenerDisponibilidad(fecha, tipoCita, modalidad, 'publico');
     console.log('[Agendar] obtenerDisponibilidad retornó', slots.length, 'slots:', slots.map((s: any) => s.hora_inicio));
 
     // For consulta_nueva the public page sends the hour; match to a slot
@@ -237,7 +240,7 @@ export async function POST(req: NextRequest) {
       hora_fin: matchedSlot.hora_fin,
       duracion_minutos: matchedSlot.duracion_minutos,
       cliente_id: clienteId,
-      costo: config.costo,
+      costo: costoBase,
       modalidad: modalidadFinal,
       isOnlineMeeting: modalidadFinal === 'virtual',
       notas: numero_caso ? `Caso/referencia: ${numero_caso}` : undefined,
