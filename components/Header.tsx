@@ -16,7 +16,9 @@ export default function Header() {
   ]
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-navy/95 backdrop-blur-sm border-b border-navy-light">
+    {/* Marino opaco: con 95% de opacidad se notaba la costura contra el hero,
+        y el desenfoque al desplazar no aportaba nada. */}
+    <header className="fixed top-0 left-0 right-0 z-50 bg-navy border-b border-navy-light">
       <nav className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
