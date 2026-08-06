@@ -372,18 +372,18 @@ export default function ContactoPage() {
               </div>
 
               {/* CTA Consulta */}
-              <div className="mt-8 p-6 bg-gradient-to-br from-azure to-cyan rounded-2xl text-center">
+              <div className="mt-8 p-6 bg-gradient-to-br from-navy to-navy-dark rounded-2xl text-center">
                 <h3 className="font-display text-xl font-bold text-white mb-2">
                   ¿Prefieres hablar directamente?
                 </h3>
-                <p className="text-navy-dark mb-4">
+                <p className="text-slate-light mb-4">
                   Agenda una consulta inicial y le orientamos sobre el camino a seguir.
                 </p>
-                <a 
+                <a
                   href="https://wa.me/50230150618?text=Hola%20Amanda,%20me%20gustaría%20agendar%20una%20consulta."
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block px-6 py-3 bg-navy-dark text-white font-semibold rounded-lg hover:bg-navy transition-all duration-300"
+                  className="inline-block px-6 py-3 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
                 >
                   Agendar por WhatsApp
                 </a>

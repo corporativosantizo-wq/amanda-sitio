@@ -1,5 +1,45 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { createClient } from '@supabase/supabase-js'
+
+// Los últimos artículos se revalidan cada hora: la portada sigue siendo
+// estática en vez de renderizarse en cada visita.
+export const revalidate = 3600
+
+interface PostPortada {
+  id: string
+  slug: string
+  title: string
+  published_at: string | null
+  category: { name: string; slug: string } | null
+}
+
+async function ultimosPosts(): Promise<PostPortada[]> {
+  try {
+    // Llave anónima y sin cookies: RLS ya limita a los publicados, y así no se
+    // fuerza el renderizado dinámico de la página.
+    const db = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
+    const { data } = await db
+      .from('posts')
+      .select('id, slug, title, published_at, category:categories(name, slug)')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(3)
+    return (data ?? []) as unknown as PostPortada[]
+  } catch {
+    return []
+  }
+}
+
+const formatoFecha = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 
 export const metadata: Metadata = {
   title: 'Amanda Santizo — Abogada y Notaria | Derecho Civil y Empresarial, Guatemala',
@@ -8,7 +48,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
 }
 
-export default function Home() {
+export default async function Home() {
+  const posts = await ultimosPosts()
+
   const servicios = [
     {
       icon: '📄',
@@ -39,53 +81,41 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative min-h-[90vh] flex items-center bg-gradient-to-br from-navy via-navy-dark to-navy-light overflow-hidden">
+      {/* Hero sin fotografía: la identidad la sostienen el color y la
+          tipografía. Columna única centrada. */}
+      <section className="relative min-h-[72vh] flex items-center bg-gradient-to-br from-navy via-navy-dark to-navy-light overflow-hidden">
         {/* Background decorations */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 right-20 w-96 h-96 bg-cyan rounded-full blur-3xl"></div>
           <div className="absolute bottom-20 left-20 w-64 h-64 bg-azure rounded-full blur-3xl"></div>
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Text content */}
-          <div>
-            <span className="inline-block px-4 py-2 bg-cyan/20 text-cyan font-semibold rounded-full text-sm mb-6">
-              Derecho Civil y Empresarial · Guatemala
-            </span>
-            <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
-              Derecho claro para{' '}
-              <span className="text-cyan">decisiones inteligentes</span>
-            </h1>
-            <p className="text-xl text-slate-light mb-8 leading-relaxed">
-              Soy Amanda Santizo, abogada y notaria. Dirijo un despacho jurídico
-              boutique especializado en derecho civil y empresarial, con enfoque
-              transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link
-                href="/agendar"
-                className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 text-center"
-              >
-                Agenda una consulta
-              </Link>
-              <Link
-                href="/servicios"
-                className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300 text-center"
-              >
-                Ver servicios
-              </Link>
-            </div>
-          </div>
-
-          {/* Image */}
-          <div className="relative">
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-              <img
-                src="/images/amanda-platon.jpg"
-                alt="Amanda Santizo — Abogada y Notaria"
-                className="w-full h-auto object-cover"
-              />
-            </div>
+        <div className="relative z-10 max-w-4xl mx-auto px-6 py-24 text-center">
+          <span className="inline-block px-4 py-2 bg-cyan/20 text-cyan font-semibold rounded-full text-sm mb-6">
+            Derecho Civil y Empresarial · Guatemala
+          </span>
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
+            Derecho claro para{' '}
+            <span className="text-cyan">decisiones inteligentes</span>
+          </h1>
+          <p className="text-xl text-slate-light mb-10 leading-relaxed max-w-2xl mx-auto">
+            Soy Amanda Santizo, abogada y notaria. Dirijo un despacho jurídico
+            boutique especializado en derecho civil y empresarial, con enfoque
+            transfronterizo: contratos, empresas y patrimonio que cruzan fronteras.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/agendar"
+              className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300 text-center"
+            >
+              Agenda una consulta
+            </Link>
+            <Link
+              href="/servicios"
+              className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300 text-center"
+            >
+              Ver servicios
+            </Link>
           </div>
         </div>
       </section>
@@ -128,6 +158,26 @@ export default function Home() {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Proceso de agendamiento */}
+      <section className="py-20 bg-navy">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-6">
+            Su consulta, con hora reservada
+          </h2>
+          <p className="text-xl text-slate-light leading-relaxed mb-10">
+            El despacho atiende con agenda. Usted elige día y hora, recibe
+            confirmación y su enlace de reunión — sin llamadas de seguimiento ni
+            esperas. Cada consulta tiene tiempo dedicado.
+          </p>
+          <Link
+            href="/agendar"
+            className="inline-block px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
+          >
+            Agende su consulta
+          </Link>
         </div>
       </section>
 
@@ -179,25 +229,86 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Últimos artículos. La portada de cada tarjeta es la imagen social que
+          el sitio genera por artículo, que ya lleva el título impreso: por eso
+          debajo solo van fecha y categoría, y el título viaja en el alt. */}
+      {posts.length > 0 && (
+        <section className="py-20 bg-slate-lighter">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="text-center mb-12">
+              <span className="inline-block px-4 py-2 bg-azure/10 text-azure font-semibold rounded-full text-sm mb-4">
+                Blog
+              </span>
+              <h2 className="font-display text-4xl md:text-5xl font-bold text-navy">
+                Últimos artículos
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {posts.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/blog/${post.slug}`}
+                  className="group bg-white rounded-2xl overflow-hidden border border-slate-light
+                           hover:border-cyan hover:shadow-xl transition-all duration-300"
+                >
+                  <img
+                    src={`/blog/${post.slug}/opengraph-image`}
+                    alt={post.title}
+                    width={1200}
+                    height={630}
+                    className="w-full h-auto"
+                  />
+                  <div className="flex items-center justify-between gap-3 px-5 py-4">
+                    <span className="text-sm text-slate">
+                      {post.published_at ? formatoFecha(post.published_at) : ''}
+                    </span>
+                    {post.category && (
+                      <span className="px-3 py-1 bg-cyan/15 text-navy text-xs font-semibold rounded-full whitespace-nowrap">
+                        {post.category.name}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            <div className="text-center mt-12">
+              <Link
+                href="/blog"
+                className="inline-flex items-center px-6 py-3 bg-navy text-white font-semibold rounded-lg hover:bg-azure transition-colors"
+              >
+                Ver todos los artículos
+                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-azure to-cyan">
+      {/* Marino, no el degradado a dorado: la mezcla ensuciaba el centro y
+          dejaba el subtítulo ilegible. El dorado queda como acento. */}
+      <section className="py-20 bg-gradient-to-br from-navy to-navy-dark">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-6">
             ¿Listo para proteger tu negocio?
           </h2>
-          <p className="text-xl text-navy-dark mb-8">
+          <p className="text-xl text-slate-light mb-8">
             Agenda una consulta y conversemos sobre cómo podemos ayudarte.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/agendar"
-              className="px-8 py-4 bg-navy-dark text-white font-semibold rounded-lg hover:bg-navy transition-all duration-300"
+              className="px-8 py-4 bg-cyan text-navy-dark font-semibold rounded-lg hover:bg-white transition-all duration-300"
             >
               Agenda una consulta
             </Link>
             <Link
               href="/tienda"
-              className="px-8 py-4 bg-white text-navy-dark font-semibold rounded-lg hover:bg-slate-lighter transition-all duration-300"
+              className="px-8 py-4 border-2 border-cyan text-cyan font-semibold rounded-lg hover:bg-cyan hover:text-navy-dark transition-all duration-300"
             >
               Ver plantillas legales
             </Link>

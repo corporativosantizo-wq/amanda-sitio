@@ -10,15 +10,14 @@ export default function Footer() {
           
           {/* Columna 1: Sobre */}
           <div className="space-y-4">
-            {/* Mismo criterio que el header: fondo claro bajo el logo. */}
+            {/* Mismo sello negativo que el header, sin recuadro. Aquí hay más
+                espacio, así que va a 80 px. */}
             <div className="space-y-3">
-              <span className="bg-white rounded-lg px-3 py-2 inline-flex items-center">
-                <img
-                  src="/logo-amanda-santizo.png"
-                  alt="Amanda Santizo — Abogada y Notaria"
-                  className="h-9 w-auto"
-                />
-              </span>
+              <img
+                src="/logo-sello-negativo.png"
+                alt="Amanda Santizo — Abogada y Notaria"
+                className="h-20 w-20"
+              />
               <p className="text-cyan text-xs">Derecho Civil y Empresarial</p>
             </div>
             <p className="text-sm leading-relaxed">

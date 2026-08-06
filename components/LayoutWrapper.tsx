@@ -15,7 +15,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   return (
     <>
       <Header />
-      <div className="pt-20">
+      {/* Debe igualar la altura de la barra fija: sello de 60 px + py-4. */}
+      <div className="pt-24">
         {children}
       </div>
       <Footer />
